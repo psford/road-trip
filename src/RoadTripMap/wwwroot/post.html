@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="noindex, nofollow">
+    <title>Post Photo - Road Trip Map</title>
+    <link rel="stylesheet" href="/css/styles.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="anonymous">
+</head>
+<body>
+    <div class="container">
+        <nav class="nav">
+            <a href="/">← Back to Home</a>
+        </nav>
+
+        <!-- Header with trip name -->
+        <div id="tripHeader">
+            <h1 id="tripName">Loading...</h1>
+            <p id="tripDescription"></p>
+        </div>
+
+        <!-- Error message -->
+        <div id="errorMessage" class="message error hidden"></div>
+
+        <!-- Add Photo Button -->
+        <button id="addPhotoButton" class="button button-primary add-photo-button">
+            📷 Add Photo
+        </button>
+        <input type="file" id="fileInput" accept="image/*" capture="environment">
+
+        <!-- Photo Preview Section (hidden until photo selected) -->
+        <div id="previewSection" class="card preview-section">
+            <img id="photoThumbnail" class="photo-thumbnail" alt="Photo preview">
+
+            <!-- Place Name Display -->
+            <div id="placeNameDisplay" class="place-name-display"></div>
+
+            <!-- Pin-drop Map (shown when no GPS) -->
+            <div id="mapSection" class="map-section">
+                <p class="map-instruction">Tap the map to set your photo location</p>
+                <div id="pinDropMap"></div>
+            </div>
+
+            <!-- Caption Input -->
+            <input type="text" id="captionInput" class="caption-input"
+                placeholder="Add a caption (optional)">
+
+            <!-- Post Button Group -->
+            <div class="post-button-group">
+                <button id="cancelButton" class="button button-secondary">Cancel</button>
+                <button id="postButton" class="button button-primary">Post Photo</button>
+            </div>
+        </div>
+
+        <!-- Posted Photos List -->
+        <div id="photoList" class="photo-list">
+            <h3>Photos</h3>
+            <div id="photoGrid" class="photo-grid"></div>
+        </div>
+    </div>
+
+    <!-- Toast notification area -->
+    <div id="toastContainer" class="toast-container"></div>
+
+    <!-- Scripts -->
+    <script src="/lib/exifr/lite.umd.js"></script>
+    <script src="/js/exifUtil.js"></script>
+    <script src="/js/api.js"></script>
+    <script src="/js/postService.js"></script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="anonymous"></script>
+    <script src="/js/postUI.js"></script>
+</body>
+</html>
