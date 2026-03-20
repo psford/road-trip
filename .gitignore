@@ -1,0 +1,25 @@
+## .NET
+bin/
+obj/
+*.dll
+*.exe
+*.pdb
+*.so
+*.dylib
+
+## Visual Studio
+.vs/
+.vscode/
+
+## User-specific files
+*.user
+*.suo
+*.userprefs
+
+## Rider
+.idea/
+*.sln.iml
+
+## Environment
+.env
+.env.local
