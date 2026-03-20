@@ -80,12 +80,12 @@ const API = {
     },
 
     /**
-     * List all photos for a trip
+     * List all photos for a trip (authenticated, for post page)
      * @param {string} secretToken - Trip secret token
      * @returns {Promise<PhotoResponse[]>}
      */
     async listTripPhotos(secretToken) {
-        const response = await fetch(`${this.baseUrl}/trips/${secretToken}/photos`);
+        const response = await fetch(`${this.baseUrl}/post/${secretToken}/photos`);
         if (!response.ok) {
             throw new Error('Failed to load photos');
         }

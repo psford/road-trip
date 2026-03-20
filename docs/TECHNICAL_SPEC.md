@@ -1,7 +1,7 @@
 # Technical Specification: Road Trip Photo Map
 
-**Version:** 2.4
-**Last Updated:** 2026-03-20 (Code Review Fixes: Route ambiguity, photo encoding, error handling, auth, rate limiting, XSS, build warnings)
+**Version:** 2.5
+**Last Updated:** 2026-03-20 (Fix listTripPhotos route to /api/post/)
 **Status:** Phase 8 - Azure Deployment (Code review issues resolved)
 
 ---
