@@ -743,6 +743,7 @@ Future phases will test:
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.6 | 2026-03-20 | Phase 4, Task 3: Added GET /api/geocode endpoint for reverse geocoding preview. Updated POST /api/trips/{secretToken}/photos to call IGeocodingService after upload. Photos with lat=0, lng=0 get PlaceName="Location not set" (AC2.9). Photos with valid coords get place name from Nominatim or "Unknown location" on failure. Registered geocoding service in Program.cs. 5 unit tests verify endpoint behavior and photo place name assignment. |
 | 1.5 | 2026-03-20 | Phase 4, Task 1: exifr library (45KB UMD) downloaded to wwwroot/lib/exifr/lite.umd.js. Created exifUtil.js wrapper with extractGps, extractTimestamp, extractAll methods for client-side EXIF extraction. Supports AC2.2 GPS coordinate extraction from uploaded photos. |
 | 1.4 | 2026-03-20 | Phase 3, Tasks 1-2: NuGet packages for image processing (SkiaSharp 3.119.2) and Azure Blob Storage (Azure.Storage.Blobs 12.27.0). IAuthStrategy interface and SecretTokenAuthStrategy implementation with DI registration. 6 unit tests verify secret token validation, error handling, and interface compliance. Pluggable auth design supports future strategy swapping without code changes. |
 | 1.3 | 2026-03-20 | Phase 2, Task 3: Landing page (index.html), trip creation form (create.html), mobile-first CSS (styles.css), and API client (api.js). All static files served from wwwroot with responsive design and copy-to-clipboard functionality. |

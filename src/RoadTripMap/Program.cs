@@ -26,6 +26,8 @@ if (!string.IsNullOrEmpty(storageConnectionString))
 
 builder.Services.AddScoped<IAuthStrategy, SecretTokenAuthStrategy>();
 builder.Services.AddScoped<IPhotoService, PhotoService>();
+builder.Services.AddHttpClient<NominatimGeocodingService>();
+builder.Services.AddScoped<IGeocodingService, NominatimGeocodingService>();
 
 var app = builder.Build();
 
@@ -36,6 +38,18 @@ app.UseDefaultFiles();
 app.UseStaticFiles();
 
 app.MapGet("/api/health", () => Results.Ok(new { status = "healthy" }));
+
+app.MapGet("/api/geocode", async (double? lat, double? lng, IGeocodingService geocodingService) =>
+{
+    // Validate lat/lng parameters
+    if (!lat.HasValue || !lng.HasValue)
+        return Results.BadRequest(new { error = "Invalid coordinates" });
+
+    // Call geocoding service
+    var placeName = await geocodingService.ReverseGeocodeAsync(lat.Value, lng.Value);
+
+    return Results.Ok(new { placeName });
+});
 
 app.MapGet("/create", () => Results.File("wwwroot/create.html", "text/html"));
 
@@ -79,7 +93,7 @@ app.MapPost("/api/trips", async (CreateTripRequest request, RoadTripDbContext db
 });
 
 // POST /api/trips/{secretToken}/photos — Upload photo
-app.MapPost("/api/trips/{secretToken}/photos", async (string secretToken, IFormFile file, double lat, double lng, string? caption, DateTime? takenAt, RoadTripDbContext db, IAuthStrategy authStrategy, IPhotoService photoService) =>
+app.MapPost("/api/trips/{secretToken}/photos", async (string secretToken, IFormFile file, double lat, double lng, string? caption, DateTime? takenAt, RoadTripDbContext db, IAuthStrategy authStrategy, IPhotoService photoService, IGeocodingService geocodingService) =>
 {
     // Look up trip by secret token
     var trip = await db.Trips.FirstOrDefaultAsync(t => t.SecretToken == secretToken);
@@ -108,7 +122,7 @@ app.MapPost("/api/trips/{secretToken}/photos", async (string secretToken, IFormF
         Longitude = lng,
         Caption = caption,
         TakenAt = takenAt ?? DateTime.UtcNow,
-        PlaceName = null, // Geocoding is Phase 4
+        PlaceName = null, // Will be set by geocoding
         BlobPath = "" // Placeholder, will be set after upload
     };
 
@@ -121,6 +135,20 @@ app.MapPost("/api/trips/{secretToken}/photos", async (string secretToken, IFormF
 
     // Update photo blob path
     photo.BlobPath = uploadResult.BlobPath;
+
+    // Reverse geocode location (AC2.3, AC2.9)
+    if (lat == 0 && lng == 0)
+    {
+        // No GPS data — set to "Location not set"
+        photo.PlaceName = "Location not set";
+    }
+    else
+    {
+        // Call geocoding service
+        var placeName = await geocodingService.ReverseGeocodeAsync(lat, lng);
+        photo.PlaceName = placeName ?? "Unknown location";
+    }
+
     await db.SaveChangesAsync();
 
     // Return response
