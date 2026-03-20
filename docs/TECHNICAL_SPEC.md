@@ -259,12 +259,28 @@ Future phases will add:
 
 ## 7. Minimal API Bootstrap
 
-**Program.cs** configures:
+**Program.cs** configures (Phase 3 additions):
 1. Registers `RoadTripDbContext` with connection string from config
-2. Maps health check endpoint: `GET /api/health`
-3. **Maps trip creation endpoint: `POST /api/trips`** (Phase 2, Task 2)
-4. Serves static files from `wwwroot/`
-5. Listens on port 5100 (avoid collision with Stock Analyzer on 5000)
+2. Registers `BlobServiceClient` via `Microsoft.Extensions.Azure` with `AzureStorage` connection string
+3. Registers `IAuthStrategy` → `SecretTokenAuthStrategy` (Phase 3, Task 2)
+4. Registers `IPhotoService` → `PhotoService` (Phase 3, Task 3)
+5. Maps health check endpoint: `GET /api/health`
+6. Maps trip creation endpoint: `POST /api/trips` (Phase 2, Task 2)
+7. Serves static files from `wwwroot/`
+8. Listens on port 5100 (avoid collision with Stock Analyzer on 5000)
+
+**appsettings.Development.json** (Phase 3 addition):
+```json
+{
+  "ConnectionStrings": {
+    "DefaultConnection": "Server=.\\SQLEXPRESS;Database=StockAnalyzer;Trusted_Connection=True;TrustServerCertificate=True",
+    "AzureStorage": "UseDevelopmentStorage=true"
+  }
+}
+```
+- `UseDevelopmentStorage=true` connects to Azurite (local Azure Storage emulator)
+- Install Azurite: `npm install -g azurite` or use VS Code extension
+- Start with: `azurite --silent --location ./azurite-data`
 
 ### 7.1 POST /api/trips — Create Trip
 

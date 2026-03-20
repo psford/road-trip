@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Azure;
 using RoadTripMap.Data;
 using RoadTripMap.Entities;
 using RoadTripMap.Helpers;
@@ -14,7 +15,17 @@ if (!string.IsNullOrEmpty(connectionString))
         options.UseSqlServer(connectionString));
 }
 
+var storageConnectionString = builder.Configuration.GetConnectionString("AzureStorage");
+if (!string.IsNullOrEmpty(storageConnectionString))
+{
+    builder.Services.AddAzureClients(clientBuilder =>
+    {
+        clientBuilder.AddBlobServiceClient(storageConnectionString);
+    });
+}
+
 builder.Services.AddScoped<IAuthStrategy, SecretTokenAuthStrategy>();
+builder.Services.AddScoped<IPhotoService, PhotoService>();
 
 var app = builder.Build();
 
