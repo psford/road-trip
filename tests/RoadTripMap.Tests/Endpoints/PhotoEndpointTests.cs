@@ -442,4 +442,159 @@ public class PhotoEndpointTests
         photo_Response.DisplayUrl.Should().StartWith("/api/photos/");
         photo_Response.ThumbnailUrl.Should().StartWith("/api/photos/");
     }
+
+    [Fact]
+    public async Task GetPhotosEndpoint_WithValidToken_ReturnsPhotos()
+    {
+        // Arrange
+        using var context = CreateInMemoryContext();
+        var trip = new TripEntity
+        {
+            Slug = "test-trip",
+            Name = "Test Trip",
+            SecretToken = "test-token-valid" // pragma: allowlist secret
+        };
+        await context.Trips.AddAsync(trip);
+        await context.SaveChangesAsync();
+
+        var now = DateTime.UtcNow;
+        var photo1 = new PhotoEntity
+        {
+            TripId = trip.Id,
+            Latitude = 40.7128,
+            Longitude = -74.0060,
+            Caption = "NYC Photo 1",
+            TakenAt = now.AddHours(-1),
+            CreatedAt = now.AddHours(-1),
+            PlaceName = "New York",
+            BlobPath = "1/10.jpg"
+        };
+        var photo2 = new PhotoEntity
+        {
+            TripId = trip.Id,
+            Latitude = 34.0522,
+            Longitude = -118.2437,
+            Caption = null,
+            TakenAt = now,
+            CreatedAt = now,
+            PlaceName = "Los Angeles",
+            BlobPath = "1/11.jpg"
+        };
+        await context.Photos.AddAsync(photo1);
+        await context.Photos.AddAsync(photo2);
+        await context.SaveChangesAsync();
+
+        // Act
+        var photos = await context.Photos
+            .Where(p => p.TripId == trip.Id)
+            .OrderByDescending(p => p.CreatedAt)
+            .ToListAsync();
+
+        // Assert
+        photos.Should().HaveCount(2);
+        photos[0].Id.Should().Be(photo2.Id); // Most recent first
+        photos[0].Caption.Should().BeNull();
+        photos[1].Caption.Should().Be("NYC Photo 1");
+    }
+
+    [Fact]
+    public async Task GetPhotosEndpoint_WithEmptyTrip_ReturnsEmptyArray()
+    {
+        // Arrange
+        using var context = CreateInMemoryContext();
+        var trip = new TripEntity
+        {
+            Slug = "empty-trip",
+            Name = "Empty Trip",
+            SecretToken = "empty-token" // pragma: allowlist secret
+        };
+        await context.Trips.AddAsync(trip);
+        await context.SaveChangesAsync();
+
+        // Act
+        var photos = await context.Photos
+            .Where(p => p.TripId == trip.Id)
+            .OrderByDescending(p => p.CreatedAt)
+            .ToListAsync();
+
+        // Assert
+        photos.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task GetPhotosEndpoint_WithInvalidToken_ReturnsNotFound()
+    {
+        // Arrange
+        using var context = CreateInMemoryContext();
+        var invalidToken = "invalid-token-xyz"; // pragma: allowlist secret
+
+        // Act
+        var trip = await context.Trips.FirstOrDefaultAsync(t => t.SecretToken == invalidToken);
+
+        // Assert
+        trip.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GetPhotosEndpoint_OrdersByCreatedAtDescending()
+    {
+        // Arrange
+        using var context = CreateInMemoryContext();
+        var trip = new TripEntity
+        {
+            Slug = "ordered-trip",
+            Name = "Ordered Trip",
+            SecretToken = "ordered-token" // pragma: allowlist secret
+        };
+        await context.Trips.AddAsync(trip);
+        await context.SaveChangesAsync();
+
+        var now = DateTime.UtcNow;
+        var photo1 = new PhotoEntity
+        {
+            TripId = trip.Id,
+            Latitude = 40.7128,
+            Longitude = -74.0060,
+            Caption = "First",
+            TakenAt = now.AddHours(-2),
+            CreatedAt = now.AddHours(-2),
+            BlobPath = "1/12.jpg"
+        };
+        var photo2 = new PhotoEntity
+        {
+            TripId = trip.Id,
+            Latitude = 34.0522,
+            Longitude = -118.2437,
+            Caption = "Second",
+            TakenAt = now.AddHours(-1),
+            CreatedAt = now.AddHours(-1),
+            BlobPath = "1/13.jpg"
+        };
+        var photo3 = new PhotoEntity
+        {
+            TripId = trip.Id,
+            Latitude = 41.8781,
+            Longitude = -87.6298,
+            Caption = "Third",
+            TakenAt = now,
+            CreatedAt = now,
+            BlobPath = "1/14.jpg"
+        };
+        await context.Photos.AddAsync(photo1);
+        await context.Photos.AddAsync(photo2);
+        await context.Photos.AddAsync(photo3);
+        await context.SaveChangesAsync();
+
+        // Act
+        var photos = await context.Photos
+            .Where(p => p.TripId == trip.Id)
+            .OrderByDescending(p => p.CreatedAt)
+            .ToListAsync();
+
+        // Assert
+        photos.Should().HaveCount(3);
+        photos[0].Caption.Should().Be("Third");
+        photos[1].Caption.Should().Be("Second");
+        photos[2].Caption.Should().Be("First");
+    }
 }

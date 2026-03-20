@@ -168,6 +168,35 @@ app.MapPost("/api/trips/{secretToken}/photos", async (string secretToken, IFormF
     return Results.Ok(photoResponse);
 });
 
+// GET /api/trips/{secretToken}/photos — Get photos for a trip
+app.MapGet("/api/trips/{secretToken}/photos", async (string secretToken, RoadTripDbContext db) =>
+{
+    // Look up trip by secret token
+    var trip = await db.Trips.FirstOrDefaultAsync(t => t.SecretToken == secretToken);
+    if (trip == null)
+        return Results.NotFound(new { error = "Trip not found" });
+
+    // Query photos, ordered by most recent first
+    var photos = await db.Photos
+        .Where(p => p.TripId == trip.Id)
+        .OrderByDescending(p => p.CreatedAt)
+        .Select(p => new PhotoResponse
+        {
+            Id = p.Id,
+            ThumbnailUrl = $"/api/photos/{trip.Id}/{p.Id}/thumb",
+            DisplayUrl = $"/api/photos/{trip.Id}/{p.Id}/display",
+            OriginalUrl = $"/api/photos/{trip.Id}/{p.Id}/original",
+            Lat = p.Latitude,
+            Lng = p.Longitude,
+            PlaceName = p.PlaceName ?? "",
+            Caption = p.Caption,
+            TakenAt = p.TakenAt
+        })
+        .ToListAsync();
+
+    return Results.Ok(photos);
+});
+
 // DELETE /api/trips/{secretToken}/photos/{id} — Delete photo
 app.MapDelete("/api/trips/{secretToken}/photos/{id:int}", async (string secretToken, int id, RoadTripDbContext db, IAuthStrategy authStrategy, IPhotoService photoService) =>
 {

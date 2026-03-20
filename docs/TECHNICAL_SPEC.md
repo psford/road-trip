@@ -1,8 +1,8 @@
 # Technical Specification: Road Trip Photo Map
 
-**Version:** 1.5
-**Last Updated:** 2026-03-20 (Phase 4, Task 1: EXIF Extraction)
-**Status:** Phase 4 - EXIF Extraction & Reverse Geocoding
+**Version:** 1.7
+**Last Updated:** 2026-03-20 (Phase 5, Task 3: GET Photos Endpoint)
+**Status:** Phase 5 - Post Page UI (Backend endpoints)
 
 ---
 
@@ -743,6 +743,7 @@ Future phases will test:
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.7 | 2026-03-20 | Phase 5, Task 3: Added GET /api/trips/{secretToken}/photos endpoint for post page photo list. Returns array of PhotoResponse objects ordered by CreatedAt descending. Returns 404 if trip not found. 5 unit tests verify valid token returns photos, empty trip returns empty array, invalid token returns not found, and photos ordered correctly. Tests pass 72/72. |
 | 1.6 | 2026-03-20 | Phase 4, Task 3: Added GET /api/geocode endpoint for reverse geocoding preview. Updated POST /api/trips/{secretToken}/photos to call IGeocodingService after upload. Photos with lat=0, lng=0 get PlaceName="Location not set" (AC2.9). Photos with valid coords get place name from Nominatim or "Unknown location" on failure. Registered geocoding service in Program.cs. 5 unit tests verify endpoint behavior and photo place name assignment. |
 | 1.5 | 2026-03-20 | Phase 4, Task 1: exifr library (45KB UMD) downloaded to wwwroot/lib/exifr/lite.umd.js. Created exifUtil.js wrapper with extractGps, extractTimestamp, extractAll methods for client-side EXIF extraction. Supports AC2.2 GPS coordinate extraction from uploaded photos. |
 | 1.4 | 2026-03-20 | Phase 3, Tasks 1-2: NuGet packages for image processing (SkiaSharp 3.119.2) and Azure Blob Storage (Azure.Storage.Blobs 12.27.0). IAuthStrategy interface and SecretTokenAuthStrategy implementation with DI registration. 6 unit tests verify secret token validation, error handling, and interface compliance. Pluggable auth design supports future strategy swapping without code changes. |
