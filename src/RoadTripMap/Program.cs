@@ -23,6 +23,8 @@ app.UseStaticFiles();
 
 app.MapGet("/api/health", () => Results.Ok(new { status = "healthy" }));
 
+app.MapGet("/create", () => Results.File("wwwroot/create.html", "text/html"));
+
 app.MapPost("/api/trips", async (CreateTripRequest request, RoadTripDbContext db) =>
 {
     // Validate trip name

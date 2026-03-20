@@ -1,7 +1,7 @@
 # Technical Specification: Road Trip Photo Map
 
-**Version:** 1.2
-**Last Updated:** 2026-03-20 (Phase 2, Task 2: POST /api/trips endpoint)
+**Version:** 1.3
+**Last Updated:** 2026-03-20 (Phase 2, Task 3: Homepage and create trip page)
 **Status:** Phase 2 - Trip Creation API
 
 ---
@@ -43,6 +43,12 @@ projects/road-trip/
 │       │   └── CreateTripResponse.cs
 │       ├── Migrations/              # EF Core migrations (generated)
 │       └── wwwroot/                 # Static files (HTML, JS, CSS)
+│           ├── index.html           # Landing page
+│           ├── create.html          # Trip creation form
+│           ├── css/
+│           │   └── styles.css       # Mobile-first responsive styles
+│           └── js/
+│               └── api.js           # API client
 ├── tests/
 │   └── RoadTripMap.Tests/           # xUnit test project
 └── docs/
@@ -286,10 +292,51 @@ Future phases will add:
 
 **Testing:** See `TripEndpointTests.cs` (7 tests covering validation, uniqueness, response format, no-auth requirement)
 
+### 7.2 GET /create — Trip Creation Form
+
+Maps to `wwwroot/create.html`. Serves HTML form for creating new trips.
+
+**Features:**
+- Mobile-first responsive design
+- Trip name input (required)
+- Description textarea (optional)
+- Client-side form submission to POST /api/trips
+- Error display and handling
+- Results section with copy-to-clipboard for URLs
+- "Create Another Trip" button for reusability
+
+### 7.3 Static Files
+
+**index.html** — Landing page
+- Introduction to Road Trip Map
+- Link to create trip form
+- How-it-works instructions
+
+**create.html** — Trip creation page
+- Form with trip name (required) and description (optional)
+- Form submission triggers POST /api/trips
+- Displays view URL, post URL, and slug
+- Copy-to-clipboard buttons for each URL
+- No reload needed; form resets for additional trips
+
+**css/styles.css** — Mobile-first responsive CSS
+- System font stack for native feel
+- Mobile breakpoints (768px tablet, 1024px desktop)
+- Color palette with primary, text, border, and message colors
+- Form styling (inputs, buttons, error/success messages)
+- Copy-button styling and hover states
+
+**js/api.js** — API client
+- Single `API.createTrip(name, description)` method
+- Handles JSON serialization/deserialization
+- Error handling and throwing
+
 Future phases will add:
 - Photo upload endpoint: `POST /api/trips/{secretToken}/photos`
 - Photo list endpoint: `GET /api/trips/{slug}/photos`
 - Reverse geocode endpoint: `GET /api/geocode`
+- Trip view page: GET /trips/{slug}
+- Photo upload page: GET /post/{token}
 
 ---
 
@@ -383,6 +430,7 @@ Future phases will test:
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.3 | 2026-03-20 | Phase 2, Task 3: Landing page (index.html), trip creation form (create.html), mobile-first CSS (styles.css), and API client (api.js). All static files served from wwwroot with responsive design and copy-to-clipboard functionality. |
 | 1.2 | 2026-03-20 | Phase 2, Task 2: POST /api/trips endpoint with validation, slug generation, token creation, and full test coverage (7 tests). |
 | 1.1 | 2026-03-20 | Phase 2, Task 1: SlugHelper utility class and trip creation DTOs (CreateTripRequest, CreateTripResponse) with comprehensive test coverage (15 tests). |
 | 1.0 | 2026-03-19 | Phase 1 infrastructure: project scaffold, entity model, EF Core context, initial migration. |

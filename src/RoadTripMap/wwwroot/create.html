@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Create a Road Trip - Road Trip Map</title>
+    <link rel="stylesheet" href="/css/styles.css">
+</head>
+<body>
+    <div class="container">
+        <nav class="nav">
+            <a href="/">← Back to Home</a>
+        </nav>
+
+        <h1>Create a Road Trip</h1>
+        <p>Start sharing your photos with a unique trip.</p>
+
+        <!-- Error message -->
+        <div id="errorMessage" class="message error hidden"></div>
+
+        <!-- Trip form -->
+        <div class="card">
+            <form id="createTripForm">
+                <div class="form-group">
+                    <label for="tripName">Trip Name *</label>
+                    <input
+                        type="text"
+                        id="tripName"
+                        name="name"
+                        placeholder="e.g., Cross Country 2026"
+                        required
+                        autocomplete="off"
+                    >
+                </div>
+
+                <div class="form-group">
+                    <label for="tripDescription">Description (optional)</label>
+                    <textarea
+                        id="tripDescription"
+                        name="description"
+                        placeholder="e.g., A summer road trip across the USA"
+                    ></textarea>
+                </div>
+
+                <button type="submit" class="button button-primary">Create Trip</button>
+            </form>
+        </div>
+
+        <!-- Results section (hidden by default) -->
+        <div id="results" class="results hidden">
+            <h2>Trip Created!</h2>
+            <p>Share these links with people to let them view and add photos to your trip.</p>
+
+            <div class="result-item">
+                <div class="result-label">View URL (public map)</div>
+                <div class="result-value">
+                    <span id="viewUrlValue"></span>
+                    <button class="button button-secondary copy-button" onclick="copyToClipboard('viewUrlValue')">
+                        Copy
+                    </button>
+                </div>
+            </div>
+
+            <div class="result-item">
+                <div class="result-label">Post URL (secret upload link)</div>
+                <div class="result-value">
+                    <span id="postUrlValue"></span>
+                    <button class="button button-secondary copy-button" onclick="copyToClipboard('postUrlValue')">
+                        Copy
+                    </button>
+                </div>
+            </div>
+
+            <div class="result-item">
+                <div class="result-label">Trip Slug</div>
+                <div class="result-value">
+                    <span id="slugValue"></span>
+                    <button class="button button-secondary copy-button" onclick="copyToClipboard('slugValue')">
+                        Copy
+                    </button>
+                </div>
+            </div>
+
+            <button class="button button-primary" onclick="createAnotherTrip()">Create Another Trip</button>
+        </div>
+    </div>
+
+    <script src="/js/api.js"></script>
+    <script>
+        /**
+         * Handle trip creation form submission
+         */
+        document.getElementById('createTripForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            // Clear previous errors
+            const errorEl = document.getElementById('errorMessage');
+            errorEl.classList.add('hidden');
+
+            // Get form values
+            const name = document.getElementById('tripName').value.trim();
+            const description = document.getElementById('tripDescription').value.trim();
+
+            try {
+                // Validate name
+                if (!name) {
+                    throw new Error('Trip name is required');
+                }
+
+                // Create trip via API
+                const result = await API.createTrip(name, description || null);
+
+                // Display results
+                document.getElementById('viewUrlValue').textContent = result.viewUrl;
+                document.getElementById('postUrlValue').textContent = result.postUrl;
+                document.getElementById('slugValue').textContent = result.slug;
+
+                // Show results section
+                document.getElementById('results').classList.remove('hidden');
+
+                // Hide form
+                document.getElementById('createTripForm').style.display = 'none';
+            } catch (error) {
+                // Show error message
+                errorEl.textContent = error.message || 'Failed to create trip';
+                errorEl.classList.remove('hidden');
+            }
+        });
+
+        /**
+         * Copy text to clipboard
+         * @param {string} elementId - ID of element containing text to copy
+         */
+        function copyToClipboard(elementId) {
+            const element = document.getElementById(elementId);
+            const text = element.textContent;
+
+            navigator.clipboard.writeText(text).then(() => {
+                // Show feedback
+                const button = event.target;
+                const originalText = button.textContent;
+                button.textContent = 'Copied!';
+                setTimeout(() => {
+                    button.textContent = originalText;
+                }, 2000);
+            }).catch((err) => {
+                console.error('Failed to copy:', err);
+                alert('Failed to copy to clipboard');
+            });
+        }
+
+        /**
+         * Reset form to create another trip
+         */
+        function createAnotherTrip() {
+            // Reset form
+            document.getElementById('createTripForm').reset();
+            document.getElementById('createTripForm').style.display = 'block';
+
+            // Hide results
+            document.getElementById('results').classList.add('hidden');
+
+            // Focus on name input
+            document.getElementById('tripName').focus();
+        }
+    </script>
+</body>
+</html>
