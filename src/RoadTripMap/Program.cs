@@ -168,4 +168,24 @@ app.MapDelete("/api/trips/{secretToken}/photos/{id:int}", async (string secretTo
     return Results.NoContent();
 });
 
+// GET /api/photos/{tripId}/{photoId}/{size} — Serve Photo
+app.MapGet("/api/photos/{tripId:int}/{photoId:int}/{size}", async (int tripId, int photoId, string size, RoadTripDbContext db, IPhotoService photoService) =>
+{
+    // Validate size parameter
+    var validSizes = new[] { "original", "display", "thumb" };
+    if (!validSizes.Contains(size))
+        return Results.BadRequest(new { error = "Invalid size. Must be one of: original, display, thumb" });
+
+    // Look up photo in database
+    var photo = await db.Photos.FirstOrDefaultAsync(p => p.TripId == tripId && p.Id == photoId);
+    if (photo == null)
+        return Results.NotFound(new { error = "Photo not found" });
+
+    // Get photo stream from blob storage
+    var stream = await photoService.GetPhotoAsync(tripId, photoId, size);
+
+    // Return as JPEG image
+    return Results.File(stream, "image/jpeg");
+});
+
 app.Run();

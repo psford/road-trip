@@ -410,6 +410,29 @@ Maps to `wwwroot/create.html`. Serves HTML form for creating new trips.
 - Removes `PhotoEntity` from DB
 - Persists changes
 
+### 7.6 GET /api/photos/{tripId}/{photoId}/{size} — Serve Photo (Phase 3, Task 6)
+
+**Route parameters:**
+- `tripId` (int): Trip ID
+- `photoId` (int): Photo ID
+- `size` (string): One of `original`, `display`, `thumb`
+
+**Validation:**
+- `size` is one of valid sizes → 400 if invalid
+- Photo exists with matching `tripId` and `photoId` → 404 if not
+
+**Response (200 OK):** JPEG image stream (Content-Type: image/jpeg)
+
+**Behavior:**
+- No auth required — photos are public
+- Looks up photo in DB to verify membership
+- Calls `IPhotoService.GetPhotoAsync()` to fetch from blob storage
+- Returns stream as image/jpeg (proxies through API, never exposes direct blob URLs per AC6.4)
+
+**Acceptance Criteria Verification:**
+- **AC2.5 (Original downloadable):** Original size served via `/api/photos/{tripId}/{photoId}/original`
+- **AC6.4 (No direct blob URLs):** All photo URLs follow `/api/photos/` pattern; endpoint validates existence before returning
+
 Future phases will add:
 - Photo list endpoint: `GET /api/trips/{slug}/photos`
 - Reverse geocode endpoint: `GET /api/geocode`

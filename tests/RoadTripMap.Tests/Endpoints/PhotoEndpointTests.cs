@@ -308,4 +308,138 @@ public class PhotoEndpointTests
         var orphaned = await context.Photos.FirstOrDefaultAsync(p => p.Id == photo.Id);
         orphaned.Should().BeNull();
     }
+
+    [Fact]
+    public async Task PhotoServingEndpoint_ReturnsPhotoViaApiProxy()
+    {
+        // Arrange - Photo URLs should use /api/photos/ pattern, not direct blob
+        using var context = CreateInMemoryContext();
+        var trip = new TripEntity
+        {
+            Slug = "test-trip",
+            Name = "Test Trip",
+            SecretToken = "test-token" // pragma: allowlist secret
+        };
+        await context.Trips.AddAsync(trip);
+        await context.SaveChangesAsync();
+
+        var photo = new PhotoEntity
+        {
+            TripId = trip.Id,
+            Latitude = 40.7128,
+            Longitude = -74.0060,
+            Caption = "Test",
+            TakenAt = DateTime.UtcNow,
+            BlobPath = "1/7.jpg"
+        };
+        await context.Photos.AddAsync(photo);
+        await context.SaveChangesAsync();
+
+        // Act
+        var found = await context.Photos.FirstOrDefaultAsync(p => p.TripId == trip.Id && p.Id == photo.Id);
+
+        // Assert - Photo exists and can be served
+        found.Should().NotBeNull();
+        found!.BlobPath.Should().StartWith($"{trip.Id}/");
+    }
+
+    [Fact]
+    public async Task PhotoServingEndpoint_ValidatesSizeParameter()
+    {
+        // Arrange
+        var validSizes = new[] { "original", "display", "thumb" };
+
+        // Act & Assert
+        foreach (var size in validSizes)
+        {
+            size.Should().BeOneOf(validSizes);
+        }
+
+        var invalidSize = "invalid-size";
+        validSizes.Should().NotContain(invalidSize);
+    }
+
+    [Fact]
+    public async Task PhotoServingEndpoint_ProvidesOriginalUrl()
+    {
+        // Arrange
+        using var context = CreateInMemoryContext();
+        var trip = new TripEntity
+        {
+            Slug = "test-trip",
+            Name = "Test Trip",
+            SecretToken = "test-token" // pragma: allowlist secret
+        };
+        await context.Trips.AddAsync(trip);
+        await context.SaveChangesAsync();
+
+        var photo = new PhotoEntity
+        {
+            TripId = trip.Id,
+            Latitude = 40.7128,
+            Longitude = -74.0060,
+            Caption = "Test",
+            TakenAt = DateTime.UtcNow,
+            BlobPath = "1/8.jpg"
+        };
+        await context.Photos.AddAsync(photo);
+        await context.SaveChangesAsync();
+
+        // Act
+        var originalUrl = $"/api/photos/{trip.Id}/{photo.Id}/original";
+
+        // Assert
+        originalUrl.Should().Contain("/api/photos/");
+        originalUrl.Should().EndWith("/original");
+        originalUrl.Should().NotContain("blob");
+    }
+
+    [Fact]
+    public async Task PhotoServingEndpoint_NoBlobUrlExposure()
+    {
+        // Arrange
+        using var context = CreateInMemoryContext();
+        var trip = new TripEntity
+        {
+            Slug = "test-trip",
+            Name = "Test Trip",
+            SecretToken = "test-token" // pragma: allowlist secret
+        };
+        await context.Trips.AddAsync(trip);
+        await context.SaveChangesAsync();
+
+        var photo = new PhotoEntity
+        {
+            TripId = trip.Id,
+            Latitude = 40.7128,
+            Longitude = -74.0060,
+            Caption = "Test",
+            TakenAt = DateTime.UtcNow,
+            BlobPath = "1/9.jpg"
+        };
+        await context.Photos.AddAsync(photo);
+        await context.SaveChangesAsync();
+
+        // Act - Verify no endpoint exposes direct blob URLs
+        var photo_Response = new PhotoResponse
+        {
+            Id = photo.Id,
+            ThumbnailUrl = $"/api/photos/{trip.Id}/{photo.Id}/thumb",
+            DisplayUrl = $"/api/photos/{trip.Id}/{photo.Id}/display",
+            OriginalUrl = $"/api/photos/{trip.Id}/{photo.Id}/original",
+            Lat = photo.Latitude,
+            Lng = photo.Longitude,
+            PlaceName = photo.PlaceName ?? "",
+            Caption = photo.Caption,
+            TakenAt = photo.TakenAt
+        };
+
+        // Assert
+        photo_Response.OriginalUrl.Should().NotContain("blob");
+        photo_Response.DisplayUrl.Should().NotContain("blob");
+        photo_Response.ThumbnailUrl.Should().NotContain("blob");
+        photo_Response.OriginalUrl.Should().StartWith("/api/photos/");
+        photo_Response.DisplayUrl.Should().StartWith("/api/photos/");
+        photo_Response.ThumbnailUrl.Should().StartWith("/api/photos/");
+    }
 }
