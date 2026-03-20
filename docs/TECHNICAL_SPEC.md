@@ -1,8 +1,8 @@
 # Technical Specification: Road Trip Photo Map
 
-**Version:** 2.0
-**Last Updated:** 2026-03-20 (Phase 6, Task 1: Public Trip and Photos Endpoints)
-**Status:** Phase 6 - Map View (Public endpoints and map frontend)
+**Version:** 2.1
+**Last Updated:** 2026-03-20 (Phase 7, Task 2: Security Headers Middleware)
+**Status:** Phase 7 - Privacy & Hardening (Crawler protection, rate limiting)
 
 ---
 
