@@ -55,27 +55,7 @@ app.MapGet("/create", () => Results.File("wwwroot/create.html", "text/html"));
 
 app.MapGet("/post/{secretToken}", () => Results.File("wwwroot/post.html", "text/html"));
 
-app.MapGet("/trips/{slug}", async (string slug, RoadTripDbContext db) =>
-{
-    // Find trip by slug where IsActive == true
-    var trip = await db.Trips.FirstOrDefaultAsync(t => t.Slug == slug && t.IsActive);
-    if (trip == null)
-        return Results.NotFound(new { error = "Trip not found" });
-
-    // Count photos
-    var photoCount = await db.Photos.CountAsync(p => p.TripId == trip.Id);
-
-    // Return TripResponse
-    var response = new TripResponse
-    {
-        Name = trip.Name,
-        Description = trip.Description,
-        PhotoCount = photoCount,
-        CreatedAt = trip.CreatedAt
-    };
-
-    return Results.Ok(response);
-});
+app.MapGet("/trips/{slug}", () => Results.File("wwwroot/trips.html", "text/html"));
 
 app.MapGet("/api/trips/{slug}", async (string slug, RoadTripDbContext db) =>
 {

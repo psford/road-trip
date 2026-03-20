@@ -91,4 +91,26 @@ const API = {
         }
         return response.json();
     },
+
+    /**
+     * Get public trip info by slug
+     * @param {string} slug - Trip slug
+     * @returns {Promise<{name, description, photoCount, createdAt}>}
+     */
+    async getTripInfo(slug) {
+        const response = await fetch(`${this.baseUrl}/trips/${slug}`);
+        if (!response.ok) throw new Error('Trip not found');
+        return response.json();
+    },
+
+    /**
+     * Get public trip photos by slug
+     * @param {string} slug - Trip slug
+     * @returns {Promise<PhotoResponse[]>}
+     */
+    async getTripPhotos(slug) {
+        const response = await fetch(`${this.baseUrl}/trips/${slug}/photos`);
+        if (!response.ok) throw new Error('Failed to load photos');
+        return response.json();
+    },
 };

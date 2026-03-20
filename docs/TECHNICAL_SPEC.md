@@ -549,6 +549,106 @@ Maps to `wwwroot/create.html`. Serves HTML form for creating new trips.
 
 **Design Note:** Chronological ordering enables native apps to render route lines without client-side sorting.
 
+### 7.10 GET /trips/{slug} — Public Trip Map View (Phase 6, Task 2)
+
+**Route parameters:**
+- `slug` (string): Trip URL slug (required)
+
+**Validation:**
+- No validation required — serves static HTML page
+
+**Response (200 OK):** trips.html static file with Content-Type: text/html
+
+**Features:**
+- Full-viewport Leaflet map with OpenStreetMap tiles
+- Trip name in fixed header at top
+- Photo pins at GPS coordinates with clickable popups
+- Popup contains display-quality image, place name, caption, timestamp, and download link
+- Route toggle button (fixed position bottom-right) shows/hides polyline connecting pins chronologically
+- Empty message overlay for trips with zero photos
+- Auto-fits bounds to show all pins with padding (max zoom 15)
+- Single photo: centered at zoom 13, no route button
+- Mobile-first responsive design
+
+**Leaflet CDN:**
+- CSS: `unpkg.com/leaflet@1.9.4/dist/leaflet.css` (SRI: `sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=`)
+- JS: `unpkg.com/leaflet@1.9.4/dist/leaflet.js` (SRI: `sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=`)
+- Tiles from OpenStreetMap via `tile.openstreetmap.org`
+
+**Covers:** AC3.1 (pins at GPS), AC3.2 (popup content), AC3.3 (route toggle), AC3.4 (auto-fit), AC3.5 (download link), AC3.6 (empty message), AC3.7 (single pin centered)
+
+### 7.11 mapService.js — Data Layer (Phase 6, Task 2)
+
+**Location:** `wwwroot/js/mapService.js`
+
+**Design:** Pure data/state module with zero DOM references, designed for native app reuse (iOS/Android could call identical methods).
+
+**API:**
+```javascript
+const MapService = {
+    async loadTrip(slug) {
+        // Loads trip metadata and photos via API calls
+        // Returns {trip, photos}
+    },
+    getRouteCoordinates(photos) {
+        // Transforms photos array into [lat, lng] coordinate pairs for Leaflet polyline
+        // Returns Array<[lat, lng]>
+    }
+};
+```
+
+**Implementation:**
+- `loadTrip()` parallelizes API.getTripInfo() and API.getTripPhotos() via Promise.all()
+- `getRouteCoordinates()` maps each photo to [lat, lng] for L.polyline() consumption
+- No Leaflet references; coordinates returned as plain arrays for portability
+
+### 7.12 mapUI.js — Leaflet UI Layer (Phase 6, Task 2)
+
+**Location:** `wwwroot/js/mapUI.js`
+
+**Design:** Web-specific Leaflet rendering layer. Native apps would replace with MapKit/Google Maps but can reuse MapService.
+
+**API:**
+```javascript
+const MapUI = {
+    async init(slug) {
+        // Main entry point — loads trip via MapService and renders map
+    },
+    renderMap(photos) {
+        // Initializes Leaflet, adds tiles, creates markers, auto-fits bounds
+    },
+    createPopupHtml(photo) {
+        // Generates HTML for marker popup (image, place, caption, timestamp, download)
+    },
+    setupRouteToggle(photos) {
+        // Creates polyline and wires up route toggle button
+    },
+    toggleRoute() {
+        // Shows/hides polyline; updates button text
+    },
+    showError(message) {
+        // Displays error message in overlay
+    }
+};
+```
+
+**Implementation Details:**
+- `init()` extracts slug from `window.location.pathname`, calls MapService.loadTrip(), updates DOM, calls renderMap()
+- `renderMap()` initializes L.map(), adds OpenStreetMap tiles, handles three cases:
+  - Zero photos: centers on USA (39.8°N, 98.6°W), zoom 4, shows empty message
+  - One photo: creates marker, centers on it, zoom 13, no route button
+  - Multiple photos: creates all markers, fitBounds() with padding, calls setupRouteToggle()
+- `createPopupHtml()` returns string with image, place name, caption, formatted date, and download link
+- `setupRouteToggle()` creates L.polyline() from MapService.getRouteCoordinates(), shows button, wires click handler
+- `toggleRoute()` adds/removes polyline from map, toggles button text between "Show Route" / "Hide Route"
+- All errors logged to console and displayed via showError()
+
+**Leaflet Setup:**
+- Map container: `<div id="map" class="map-container"></div>` (100vh height, 100% width)
+- Marker popups: max 280px width, images with border-radius, clickable links for downloads
+- Polyline: blue (#3388ff), weight 3px, opacity 0.8
+- Attribution: standard OpenStreetMap credit in map corner
+
 ---
 
 ## 8. Migration Strategy
@@ -934,6 +1034,7 @@ Future phases will test:
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 2.1 | 2026-03-20 | Phase 6, Task 2: Created map view frontend. MapService.js pure data layer (loadTrip, getRouteCoordinates) with zero DOM/Leaflet refs for native portability. MapUI.js Leaflet-specific rendering with marker popups, route toggle, auto-fit bounds. trips.html full-viewport map page with Leaflet CDN (SRI hashes). GET /trips/{slug} route serves trips.html. Features: photo pins at GPS coords, clickable popups with display image/place/caption/timestamp, route polyline toggle connecting pins chronologically, auto-fit bounds with padding, single-pin centering (zoom 13), empty message for zero photos. Covers AC3.1-AC3.7. Build succeeds. All 81 tests passing. |
 | 2.0 | 2026-03-20 | Phase 6, Task 1: Added public trip info and photos endpoints. Created TripResponse DTO. Implemented GET /api/trips/{slug} (public trip metadata with photo count). Implemented GET /api/trips/{slug}/photos (public photo array ordered by TakenAt ascending for route line). Both endpoints require no authentication (AC5.1). Empty photo array returned for trips with no photos (AC3.6). 9 unit tests verify behavior. All 81 tests passing. Covers AC3.1, AC3.6, AC5.1. |
 | 1.9 | 2026-03-20 | Phase 5, Task 2: Created post.html (mobile-first photo posting page) and postUI.js (DOM rendering layer). Features: file input with camera capture, EXIF preview, place name display, pin-drop fallback map for photos without GPS, optional caption input, photo list with delete buttons, toast notifications. Leaflet CDN for map component. Updated styles.css with post page component styles (photo grid, toast animations, responsive). Added GET /post/{secretToken} route in Program.cs. Covers AC2.2 (GPS display), AC2.3 (place name preview), AC2.4 (optional caption), AC2.9 (pin-drop fallback). Build succeeds. |
 | 1.8 | 2026-03-20 | Phase 5, Task 1: Created postService.js pure data/state module with zero DOM references. Implements extractPhotoMetadata() (EXIF + auto-geocoding), uploadPhoto() (FormData with optional caption/timestamp), deletePhoto(), and listPhotos(). Extended api.js with geocode(), uploadPhoto(), deletePhoto(), listTripPhotos() methods. All methods designed for native app reuse. Covers AC2.2 (GPS extraction), AC2.3 (place name resolution), AC2.4 (optional caption). |

@@ -1,7 +1,7 @@
 # Functional Specification: Road Trip Photo Map
 
-**Version:** 1.2
-**Last Updated:** 2026-03-20 (Phase 5, Task 2: Photo posting page with EXIF and pin-drop)
+**Version:** 1.3
+**Last Updated:** 2026-03-20 (Phase 6, Task 2: Public map view with Leaflet pins)
 **Author:** Claude (AI Assistant)
 **Status:** In Development
 **Audience:** Business Users, Product Owners, QA Testers
@@ -345,6 +345,7 @@ Map page (/trips/{slug})
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.3 | 2026-03-20 | Phase 6, Task 2: Public map view (trips.html) with Leaflet interactive map. Features: photo pins at GPS coordinates, clickable popups with display image, place name, caption, timestamp, and download link, route-line toggle connecting pins chronologically, auto-fit bounds with padding, single-photo centering (zoom 13), empty message for zero photos. Trip name displayed in fixed header. Responsive design for mobile/tablet/desktop. No authentication required. Functional requirements FR-003.1 through FR-003.10 satisfied. Covers AC3.1-AC3.7 (map view acceptance criteria). |
 | 1.2 | 2026-03-20 | Phase 5, Task 2: Photo posting page (post.html) with EXIF preview and pin-drop fallback. Features: camera capture input (capture="environment"), photo thumbnail preview, auto-resolved place name display, optional caption input, Leaflet pin-drop map for manual location (photos without GPS), photo list with thumbnails and delete buttons, toast notifications. Functional requirements FR-002.1 through FR-002.16 satisfied. |
 | 1.1 | 2026-03-20 | Phase 2, Task 3: Trip creation form implemented (create.html) with copy-to-clipboard for URLs, landing page (index.html), and mobile-first responsive design. Functional requirements FR-001.1 through FR-001.9 satisfied. |
 | 1.0 | 2026-03-19 | Initial functional spec inferred from design plan and implementation phases |
