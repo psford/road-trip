@@ -5,8 +5,8 @@ namespace RoadTripMap.Tests.Middleware;
 
 public class SecurityHeaderTests : IAsyncLifetime
 {
-    private WebApplicationFactory<Program> _factory;
-    private HttpClient _client;
+    private WebApplicationFactory<Program>? _factory;
+    private HttpClient? _client;
 
     public async Task InitializeAsync()
     {
@@ -26,7 +26,7 @@ public class SecurityHeaderTests : IAsyncLifetime
     public async Task GetHealth_ReturnsXRobotsTagHeader()
     {
         // Act
-        var response = await _client.GetAsync("/api/health");
+        var response = await _client!.GetAsync("/api/health");
 
         // Assert
         response.Headers.Should().Contain(h => h.Key == "X-Robots-Tag");
@@ -39,7 +39,7 @@ public class SecurityHeaderTests : IAsyncLifetime
     public async Task GetHealth_ReturnsAllSecurityHeaders()
     {
         // Act
-        var response = await _client.GetAsync("/api/health");
+        var response = await _client!.GetAsync("/api/health");
 
         // Assert
         response.Headers.Should().Contain(h => h.Key == "X-Content-Type-Options");
@@ -56,7 +56,7 @@ public class SecurityHeaderTests : IAsyncLifetime
     public async Task UnknownTripSlug_Returns404WithoutEnumeration()
     {
         // Act
-        var response = await _client.GetAsync("/api/trips/random-nonexistent-slug-12345");
+        var response = await _client!.GetAsync("/api/trips/random-nonexistent-slug-12345");
 
         // Assert
         response.StatusCode.Should().Be(System.Net.HttpStatusCode.NotFound);

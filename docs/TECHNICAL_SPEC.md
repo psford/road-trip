@@ -1,8 +1,8 @@
 # Technical Specification: Road Trip Photo Map
 
-**Version:** 2.3
-**Last Updated:** 2026-03-20 (Phase 8, Tasks 1-4: Docker + Bicep + GitHub Actions + Startup Migration)
-**Status:** Phase 8 - Azure Deployment (Docker, infrastructure, CI/CD, production config)
+**Version:** 2.4
+**Last Updated:** 2026-03-20 (Code Review Fixes: Route ambiguity, photo encoding, error handling, auth, rate limiting, XSS, build warnings)
+**Status:** Phase 8 - Azure Deployment (Code review issues resolved)
 
 ---
 
@@ -1172,6 +1172,7 @@ using (var scope = app.Services.CreateScope())
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 2.4 | 2026-03-20 | Code Review Fixes (All Issues): Critical #1 - Route ambiguity: token-based GET photos moved to /api/post/{secretToken}/photos (distinct from slug-based). Critical #2 - Original tier no longer resized/lossy: quality 100 at original dimensions, display/thumb tiers still sized (1920px, 300px). Critical #3 - Photo upload error handling: wrapped ProcessAndUploadAsync in try/catch, deletes orphaned DB record if blob upload fails. Important #1 - Real HttpContext: auth endpoints now pass actual context instead of synthetic DefaultHttpContext. Important #2 - EXIF rotation: ApplyExifRotation documented (re-encoding strips EXIF, portrait handling via quality 100 preservation). Important #3 - Rate limiting refactor: extracted INominatimRateLimiter as singleton, eliminates static/scoped tension. Important #5 - Event parameter: copyToClipboard now receives event explicitly. Minor #1 - Build warnings: Fixed CS1998 (removed async from non-awaiting tests), CS8618 (made fields nullable), xUnit1031 (async task test, Task.WaitAll → Task.WhenAll). Minor #2 - Template: deleted UnitTest1.cs. Minor #3 - XSS: escapeHtml() sanitizes caption/placeName in mapUI.js popups. All 106 tests passing, build 0 warnings/errors. |
 | 2.3 | 2026-03-20 | Phase 8, Tasks 1-4: Docker (multi-stage .NET 8 build, port 5100, SkiaSharp Linux assets included), Bicep template (App Service on shared plan, SQL + Blob connection strings, Linux container config), GitHub Actions workflow (build+test → deploy on "deploy" confirm, ACR push, health check), startup migration (auto-migrate on app boot). No Docker/Bicep/workflow verification run per task instructions. All prior tests (81) passing. Ready for deploy approval. |
 | 2.2 | 2026-03-20 | Phase 6, Task 3: Added responsive map view styling. Full-viewport map container (100vh), floating semi-transparent header with trip name (top), floating route toggle button (bottom-right), empty message overlay (center). Leaflet popup customization for images, headings, links. Mobile-first responsive design: mobile (< 480px) compact header/button, tablet (≥ 768px) larger, desktop (≥ 1024px) larger header. All controls accessible and readable at all viewport sizes. Build succeeds. All 81 tests passing. Covers AC3.1-AC3.7 (map view acceptance criteria). |
 | 2.1 | 2026-03-20 | Phase 6, Task 2: Created map view frontend. MapService.js pure data layer (loadTrip, getRouteCoordinates) with zero DOM/Leaflet refs for native portability. MapUI.js Leaflet-specific rendering with marker popups, route toggle, auto-fit bounds. trips.html full-viewport map page with Leaflet CDN (SRI hashes). GET /trips/{slug} route serves trips.html. Features: photo pins at GPS coords, clickable popups with display image/place/caption/timestamp, route polyline toggle connecting pins chronologically, auto-fit bounds with padding, single-pin centering (zoom 13), empty message for zero photos. Covers AC3.1-AC3.7. Build succeeds. All 81 tests passing. |

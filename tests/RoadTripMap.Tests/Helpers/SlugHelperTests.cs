@@ -68,7 +68,7 @@ public class SlugHelperTests
     public async Task GenerateUniqueSlugAsync_WithNonExistingSlug_ReturnsSameSlug()
     {
         // Arrange
-        var slugExists = async (string slug) => false; // Slug never exists
+        Func<string, Task<bool>> slugExists = (string slug) => Task.FromResult(false); // Slug never exists
 
         // Act
         var result = await SlugHelper.GenerateUniqueSlugAsync("My Road Trip", slugExists);
@@ -95,7 +95,7 @@ public class SlugHelperTests
     public async Task GenerateUniqueSlugAsync_WithEmptyBaseSlug_FallsBackToTrip()
     {
         // Arrange
-        async Task<bool> SlugExists(string slug) => false;
+        Task<bool> SlugExists(string slug) => Task.FromResult(false);
 
         // Act
         var result = await SlugHelper.GenerateUniqueSlugAsync("!@#$%", SlugExists);

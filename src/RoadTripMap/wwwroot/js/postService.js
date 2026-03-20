@@ -67,6 +67,10 @@ const PostService = {
      * @returns {Promise<PhotoResponse[]>}
      */
     async listPhotos(secretToken) {
-        return API.listTripPhotos(secretToken);
+        const response = await fetch(`/api/post/${secretToken}/photos`);
+        if (!response.ok) {
+            throw new Error('Failed to load photos');
+        }
+        return response.json();
     }
 };

@@ -11,6 +11,18 @@ const MapUI = {
     routeVisible: false,
 
     /**
+     * Escape HTML special characters to prevent XSS
+     * @param {string} text - Text to escape
+     * @returns {string} - Escaped text safe for HTML
+     */
+    escapeHtml(text) {
+        if (!text) return '';
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    },
+
+    /**
      * Initialize map view for a trip
      * @param {string} slug - Trip slug
      */
@@ -85,10 +97,12 @@ const MapUI = {
      */
     createPopupHtml(photo) {
         const date = new Date(photo.takenAt).toLocaleDateString();
+        const escapedPlaceName = this.escapeHtml(photo.placeName);
+        const escapedCaption = this.escapeHtml(photo.caption);
         return `<div style="max-width: 280px;">
             <img src="${photo.displayUrl}" style="width:100%;border-radius:4px;" loading="lazy">
-            <h4>${photo.placeName}</h4>
-            ${photo.caption ? `<p>${photo.caption}</p>` : ''}
+            <h4>${escapedPlaceName}</h4>
+            ${escapedCaption ? `<p>${escapedCaption}</p>` : ''}
             <small>${date}</small><br>
             <a href="${photo.originalUrl}" download>Download original</a>
         </div>`;

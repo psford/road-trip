@@ -56,7 +56,7 @@
                 <div class="result-label">View URL (public map)</div>
                 <div class="result-value">
                     <span id="viewUrlValue"></span>
-                    <button class="button button-secondary copy-button" onclick="copyToClipboard('viewUrlValue')">
+                    <button class="button button-secondary copy-button" onclick="copyToClipboard('viewUrlValue', event)">
                         Copy
                     </button>
                 </div>
@@ -66,7 +66,7 @@
                 <div class="result-label">Post URL (secret upload link)</div>
                 <div class="result-value">
                     <span id="postUrlValue"></span>
-                    <button class="button button-secondary copy-button" onclick="copyToClipboard('postUrlValue')">
+                    <button class="button button-secondary copy-button" onclick="copyToClipboard('postUrlValue', event)">
                         Copy
                     </button>
                 </div>
@@ -76,7 +76,7 @@
                 <div class="result-label">Trip Slug</div>
                 <div class="result-value">
                     <span id="slugValue"></span>
-                    <button class="button button-secondary copy-button" onclick="copyToClipboard('slugValue')">
+                    <button class="button button-secondary copy-button" onclick="copyToClipboard('slugValue', event)">
                         Copy
                     </button>
                 </div>
@@ -131,14 +131,15 @@
         /**
          * Copy text to clipboard
          * @param {string} elementId - ID of element containing text to copy
+         * @param {Event} evt - Click event from the button
          */
-        function copyToClipboard(elementId) {
+        function copyToClipboard(elementId, evt) {
             const element = document.getElementById(elementId);
             const text = element.textContent;
 
             navigator.clipboard.writeText(text).then(() => {
                 // Show feedback
-                const button = event.target;
+                const button = evt.target;
                 const originalText = button.textContent;
                 button.textContent = 'Copied!';
                 setTimeout(() => {

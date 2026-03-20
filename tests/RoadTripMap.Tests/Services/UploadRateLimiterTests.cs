@@ -112,7 +112,7 @@ public class UploadRateLimiterTests
     }
 
     [Fact]
-    public void IsAllowed_ThreadSafe_ConcurrentRequests()
+    public async Task IsAllowed_ThreadSafe_ConcurrentRequests()
     {
         // Arrange
         var limiter = new UploadRateLimiter();
@@ -129,7 +129,7 @@ public class UploadRateLimiterTests
                     Interlocked.Increment(ref allowedCount);
             }));
         }
-        Task.WaitAll(tasks.ToArray());
+        await Task.WhenAll(tasks);
 
         // Assert - Only first 20 should succeed
         allowedCount.Should().Be(20, "Thread-safe limiter should allow exactly 20 concurrent uploads");

@@ -24,6 +24,11 @@ public class GeocodingServiceTests
         return new MockHttpMessageHandler(displayName);
     }
 
+    private INominatimRateLimiter CreateMockRateLimiter()
+    {
+        return new NominatimRateLimiter();
+    }
+
     [Fact]
     public async Task ReverseGeocodeAsync_WithValidCoordinates_ReturnsPlaceName()
     {
@@ -31,7 +36,8 @@ public class GeocodingServiceTests
         using var context = CreateInMemoryContext();
         var httpHandler = CreateMockHttpHandler("Grand Canyon Village, Coconino County, Arizona, United States");
         var httpClient = new HttpClient(httpHandler);
-        var service = new NominatimGeocodingService(httpClient, context);
+        var rateLimiter = CreateMockRateLimiter();
+        var service = new NominatimGeocodingService(httpClient, context, rateLimiter);
 
         // Act
         var result = await service.ReverseGeocodeAsync(36.1069, -112.1129);
@@ -48,7 +54,8 @@ public class GeocodingServiceTests
         using var context = CreateInMemoryContext();
         var httpHandler = CreateMockHttpHandler("Test City, State, Country");
         var httpClient = new HttpClient(httpHandler);
-        var service = new NominatimGeocodingService(httpClient, context);
+        var rateLimiter = CreateMockRateLimiter();
+        var service = new NominatimGeocodingService(httpClient, context, rateLimiter);
 
         var lat = 36.1069;
         var lng = -112.1129;
@@ -87,7 +94,8 @@ public class GeocodingServiceTests
 
         var httpHandler = new MockHttpMessageHandler("Should Not Be Called");
         var httpClient = new HttpClient(httpHandler);
-        var service = new NominatimGeocodingService(httpClient, context);
+        var rateLimiter = CreateMockRateLimiter();
+        var service = new NominatimGeocodingService(httpClient, context, rateLimiter);
 
         // Act
         var result = await service.ReverseGeocodeAsync(36.1069, -112.1129);
@@ -104,7 +112,8 @@ public class GeocodingServiceTests
         using var context = CreateInMemoryContext();
         var httpHandler = CreateMockHttpHandler("New Test City, State, Country");
         var httpClient = new HttpClient(httpHandler);
-        var service = new NominatimGeocodingService(httpClient, context);
+        var rateLimiter = CreateMockRateLimiter();
+        var service = new NominatimGeocodingService(httpClient, context, rateLimiter);
 
         var lat = 40.7128;
         var lng = -74.0060;
@@ -126,7 +135,8 @@ public class GeocodingServiceTests
         using var context = CreateInMemoryContext();
         var httpHandler = new FailingHttpMessageHandler();
         var httpClient = new HttpClient(httpHandler);
-        var service = new NominatimGeocodingService(httpClient, context);
+        var rateLimiter = CreateMockRateLimiter();
+        var service = new NominatimGeocodingService(httpClient, context, rateLimiter);
 
         // Act
         var result = await service.ReverseGeocodeAsync(36.1069, -112.1129);
@@ -154,7 +164,8 @@ public class GeocodingServiceTests
         var complexName = "123 Main Street, 12345, New York City, New York, United States of America";
         var httpHandler = CreateMockHttpHandler(complexName);
         var httpClient = new HttpClient(httpHandler);
-        var service = new NominatimGeocodingService(httpClient, context);
+        var rateLimiter = CreateMockRateLimiter();
+        var service = new NominatimGeocodingService(httpClient, context, rateLimiter);
 
         // Act
         var result = await service.ReverseGeocodeAsync(40.7128, -74.0060);
@@ -172,7 +183,8 @@ public class GeocodingServiceTests
         using var context = CreateInMemoryContext();
         var httpHandler = CreateMockHttpHandler("Test Location");
         var httpClient = new HttpClient(httpHandler);
-        var service = new NominatimGeocodingService(httpClient, context);
+        var rateLimiter = CreateMockRateLimiter();
+        var service = new NominatimGeocodingService(httpClient, context, rateLimiter);
 
         // Act - Call with coordinates that round to same values
         var lat1 = 36.106;
@@ -202,7 +214,7 @@ public class MockHttpMessageHandler : HttpMessageHandler
         _displayName = displayName;
     }
 
-    protected override async Task<HttpResponseMessage> SendAsync(
+    protected override Task<HttpResponseMessage> SendAsync(
         HttpRequestMessage request, CancellationToken cancellationToken)
     {
         CallCount++;
@@ -217,10 +229,10 @@ public class MockHttpMessageHandler : HttpMessageHandler
             System.Text.Encoding.UTF8,
             "application/json");
 
-        return new HttpResponseMessage(HttpStatusCode.OK)
+        return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
         {
             Content = content
-        };
+        });
     }
 }
 

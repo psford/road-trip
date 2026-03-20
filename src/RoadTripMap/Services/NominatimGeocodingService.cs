@@ -7,17 +7,15 @@ namespace RoadTripMap.Services;
 
 public class NominatimGeocodingService : IGeocodingService
 {
-    private static readonly SemaphoreSlim RateLimitSemaphore = new(1, 1);
-    private static DateTime LastRequestTime = DateTime.MinValue;
-    private const int MinMillisecondsBetweenRequests = 1100;
-
     private readonly HttpClient _httpClient;
     private readonly RoadTripDbContext _context;
+    private readonly INominatimRateLimiter _rateLimiter;
 
-    public NominatimGeocodingService(HttpClient httpClient, RoadTripDbContext context)
+    public NominatimGeocodingService(HttpClient httpClient, RoadTripDbContext context, INominatimRateLimiter rateLimiter)
     {
         _httpClient = httpClient;
         _context = context;
+        _rateLimiter = rateLimiter;
         _httpClient.DefaultRequestHeaders.Add("User-Agent", "RoadTripMap/1.0");
     }
 
@@ -36,16 +34,10 @@ public class NominatimGeocodingService : IGeocodingService
             return cachedEntry.PlaceName;
         }
 
-        // Acquire semaphore for rate limiting
-        await RateLimitSemaphore.WaitAsync();
         try
         {
-            // Enforce minimum time between requests
-            var timeSinceLastRequest = DateTime.UtcNow - LastRequestTime;
-            if (timeSinceLastRequest.TotalMilliseconds < MinMillisecondsBetweenRequests)
-            {
-                await Task.Delay((int)(MinMillisecondsBetweenRequests - timeSinceLastRequest.TotalMilliseconds));
-            }
+            // Acquire rate limit permit (enforces minimum delay between requests)
+            await _rateLimiter.AcquireAsync();
 
             // Call Nominatim API
             string url = $"https://nominatim.openstreetmap.org/reverse?lat={latitude}&lon={longitude}&format=json";
@@ -55,8 +47,6 @@ public class NominatimGeocodingService : IGeocodingService
             {
                 return null;
             }
-
-            LastRequestTime = DateTime.UtcNow;
 
             var json = await response.Content.ReadAsStringAsync();
             using var doc = JsonDocument.Parse(json);
@@ -87,10 +77,6 @@ public class NominatimGeocodingService : IGeocodingService
         {
             // If Nominatim fails, don't block photo upload
             return null;
-        }
-        finally
-        {
-            RateLimitSemaphore.Release();
         }
     }
 

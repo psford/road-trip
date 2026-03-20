@@ -193,7 +193,7 @@ public class PhotoEndpointTests
     }
 
     [Fact]
-    public async Task PhotoResponse_ContainsAllRequiredFields()
+    public void PhotoResponse_ContainsAllRequiredFields()
     {
         // Arrange & Act
         var response = new PhotoResponse
@@ -344,7 +344,7 @@ public class PhotoEndpointTests
     }
 
     [Fact]
-    public async Task PhotoServingEndpoint_ValidatesSizeParameter()
+    public void PhotoServingEndpoint_ValidatesSizeParameter()
     {
         // Arrange
         var validSizes = new[] { "original", "display", "thumb" };

@@ -48,7 +48,7 @@ public class TripEndpointTests
     }
 
     [Fact]
-    public async Task CreateTrip_WithEmptyName_ShouldNotSucceed()
+    public void CreateTrip_WithEmptyName_ShouldNotSucceed()
     {
         // Arrange
         using var context = CreateInMemoryContext();
@@ -62,7 +62,7 @@ public class TripEndpointTests
     }
 
     [Fact]
-    public async Task CreateTrip_WithWhitespaceName_ShouldNotSucceed()
+    public void CreateTrip_WithWhitespaceName_ShouldNotSucceed()
     {
         // Arrange
         using var context = CreateInMemoryContext();
@@ -180,7 +180,7 @@ public class TripEndpointTests
     }
 
     [Fact]
-    public async Task CreateTrip_Response_ContainsViewUrlAndPostUrl()
+    public void CreateTrip_Response_ContainsViewUrlAndPostUrl()
     {
         // Arrange
         using var context = CreateInMemoryContext();

@@ -25,6 +25,7 @@ if (!string.IsNullOrEmpty(storageConnectionString))
 }
 
 builder.Services.AddSingleton<UploadRateLimiter>();
+builder.Services.AddSingleton<INominatimRateLimiter, NominatimRateLimiter>();
 builder.Services.AddScoped<IAuthStrategy, SecretTokenAuthStrategy>();
 builder.Services.AddScoped<IPhotoService, PhotoService>();
 builder.Services.AddHttpClient<NominatimGeocodingService>();
@@ -224,7 +225,7 @@ app.MapPost("/api/trips/{secretToken}/photos", async (string secretToken, IFormF
         return Results.NotFound(new { error = "Trip not found" });
 
     // Validate auth
-    var authResult = await authStrategy.ValidatePostAccess(new DefaultHttpContext { Request = { RouteValues = new() { { "secretToken", secretToken } } } }, trip);
+    var authResult = await authStrategy.ValidatePostAccess(context, trip);
     if (!authResult.IsAuthorized)
         return Results.Unauthorized();
 
@@ -262,47 +263,57 @@ app.MapPost("/api/trips/{secretToken}/photos", async (string secretToken, IFormF
     db.Photos.Add(photo);
     await db.SaveChangesAsync();
 
-    // Process and upload photo
-    using var fileStream = file.OpenReadStream();
-    var uploadResult = await photoService.ProcessAndUploadAsync(fileStream, trip.Id, photo.Id, file.FileName);
-
-    // Update photo blob path
-    photo.BlobPath = uploadResult.BlobPath;
-
-    // Reverse geocode location (AC2.3, AC2.9)
-    if (lat == 0 && lng == 0)
+    try
     {
-        // No GPS data — set to "Location not set"
-        photo.PlaceName = "Location not set";
+        // Process and upload photo
+        using var fileStream = file.OpenReadStream();
+        var uploadResult = await photoService.ProcessAndUploadAsync(fileStream, trip.Id, photo.Id, file.FileName);
+
+        // Update photo blob path
+        photo.BlobPath = uploadResult.BlobPath;
+
+        // Reverse geocode location (AC2.3, AC2.9)
+        if (lat == 0 && lng == 0)
+        {
+            // No GPS data — set to "Location not set"
+            photo.PlaceName = "Location not set";
+        }
+        else
+        {
+            // Call geocoding service
+            var placeName = await geocodingService.ReverseGeocodeAsync(lat, lng);
+            photo.PlaceName = placeName ?? "Unknown location";
+        }
+
+        await db.SaveChangesAsync();
+
+        // Return response
+        var photoResponse = new PhotoResponse
+        {
+            Id = photo.Id,
+            ThumbnailUrl = $"/api/photos/{trip.Id}/{photo.Id}/thumb",
+            DisplayUrl = $"/api/photos/{trip.Id}/{photo.Id}/display",
+            OriginalUrl = $"/api/photos/{trip.Id}/{photo.Id}/original",
+            Lat = photo.Latitude,
+            Lng = photo.Longitude,
+            PlaceName = photo.PlaceName ?? "",
+            Caption = photo.Caption,
+            TakenAt = photo.TakenAt
+        };
+
+        return Results.Ok(photoResponse);
     }
-    else
+    catch
     {
-        // Call geocoding service
-        var placeName = await geocodingService.ReverseGeocodeAsync(lat, lng);
-        photo.PlaceName = placeName ?? "Unknown location";
+        // If blob upload or subsequent processing fails, delete the orphaned DB record
+        db.Photos.Remove(photo);
+        await db.SaveChangesAsync();
+        throw;
     }
-
-    await db.SaveChangesAsync();
-
-    // Return response
-    var photoResponse = new PhotoResponse
-    {
-        Id = photo.Id,
-        ThumbnailUrl = $"/api/photos/{trip.Id}/{photo.Id}/thumb",
-        DisplayUrl = $"/api/photos/{trip.Id}/{photo.Id}/display",
-        OriginalUrl = $"/api/photos/{trip.Id}/{photo.Id}/original",
-        Lat = photo.Latitude,
-        Lng = photo.Longitude,
-        PlaceName = photo.PlaceName ?? "",
-        Caption = photo.Caption,
-        TakenAt = photo.TakenAt
-    };
-
-    return Results.Ok(photoResponse);
 });
 
-// GET /api/trips/{secretToken}/photos — Get photos for a trip
-app.MapGet("/api/trips/{secretToken}/photos", async (string secretToken, RoadTripDbContext db) =>
+// GET /api/post/{secretToken}/photos — Get photos for a trip (distinct from slug-based endpoint)
+app.MapGet("/api/post/{secretToken}/photos", async (string secretToken, RoadTripDbContext db) =>
 {
     // Look up trip by secret token
     var trip = await db.Trips.FirstOrDefaultAsync(t => t.SecretToken == secretToken);
@@ -331,7 +342,7 @@ app.MapGet("/api/trips/{secretToken}/photos", async (string secretToken, RoadTri
 });
 
 // DELETE /api/trips/{secretToken}/photos/{id} — Delete photo
-app.MapDelete("/api/trips/{secretToken}/photos/{id:int}", async (string secretToken, int id, RoadTripDbContext db, IAuthStrategy authStrategy, IPhotoService photoService) =>
+app.MapDelete("/api/trips/{secretToken}/photos/{id:int}", async (string secretToken, int id, RoadTripDbContext db, IAuthStrategy authStrategy, IPhotoService photoService, HttpContext context) =>
 {
     // Look up trip
     var trip = await db.Trips.FirstOrDefaultAsync(t => t.SecretToken == secretToken);
@@ -339,7 +350,7 @@ app.MapDelete("/api/trips/{secretToken}/photos/{id:int}", async (string secretTo
         return Results.NotFound(new { error = "Trip not found" });
 
     // Validate auth
-    var authResult = await authStrategy.ValidatePostAccess(new DefaultHttpContext { Request = { RouteValues = new() { { "secretToken", secretToken } } } }, trip);
+    var authResult = await authStrategy.ValidatePostAccess(context, trip);
     if (!authResult.IsAuthorized)
         return Results.Unauthorized();
 
