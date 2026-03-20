@@ -1,8 +1,8 @@
 # Technical Specification: Road Trip Photo Map
 
-**Version:** 1.4
-**Last Updated:** 2026-03-20 (Phase 3, Tasks 1-2: Auth Strategy)
-**Status:** Phase 3 - Auth & Photo Upload
+**Version:** 1.5
+**Last Updated:** 2026-03-20 (Phase 4, Task 1: EXIF Extraction)
+**Status:** Phase 4 - EXIF Extraction & Reverse Geocoding
 
 ---
 
@@ -41,14 +41,25 @@ projects/road-trip/
 │       ├── Models/                  # DTO models
 │       │   ├── CreateTripRequest.cs
 │       │   └── CreateTripResponse.cs
+│       ├── Services/                # Domain services (Phase 3+)
+│       │   ├── IAuthStrategy.cs
+│       │   ├── SecretTokenAuthStrategy.cs
+│       │   ├── IPhotoService.cs
+│       │   ├── PhotoService.cs
+│       │   ├── IGeocodingService.cs (Phase 4)
+│       │   └── NominatimGeocodingService.cs (Phase 4)
 │       ├── Migrations/              # EF Core migrations (generated)
 │       └── wwwroot/                 # Static files (HTML, JS, CSS)
 │           ├── index.html           # Landing page
 │           ├── create.html          # Trip creation form
 │           ├── css/
 │           │   └── styles.css       # Mobile-first responsive styles
-│           └── js/
-│               └── api.js           # API client
+│           ├── js/
+│           │   ├── api.js           # API client
+│           │   └── exifUtil.js      # EXIF extraction wrapper (Phase 4)
+│           └── lib/
+│               └── exifr/           # EXIF parsing library (Phase 4)
+│                   └── lite.umd.js
 ├── tests/
 │   └── RoadTripMap.Tests/           # xUnit test project
 └── docs/
@@ -252,8 +263,13 @@ Located in `Helpers/SlugHelper.cs`, provides URL slug generation with uniqueness
 | `Azure.Storage.Blobs` | 12.27.0 | Azure Blob Storage SDK |
 | `Microsoft.Extensions.Azure` | 1.13.1 | Azure DI extensions |
 
-Future phases will add:
-- `exifr` — Client-side EXIF (JavaScript)
+### 6.4 Phase 4 Dependencies (EXIF Extraction & Reverse Geocoding)
+
+| Package | Version | Purpose |
+|---------|---------|---------|
+| `exifr` | Latest (via CDN) | Client-side EXIF extraction (JavaScript) |
+
+Exifr is downloaded locally to `wwwroot/lib/exifr/lite.umd.js` (45KB) and wrapped by `exifUtil.js`.
 
 ---
 
@@ -433,9 +449,29 @@ Maps to `wwwroot/create.html`. Serves HTML form for creating new trips.
 - **AC2.5 (Original downloadable):** Original size served via `/api/photos/{tripId}/{photoId}/original`
 - **AC6.4 (No direct blob URLs):** All photo URLs follow `/api/photos/` pattern; endpoint validates existence before returning
 
+### 7.7 GET /api/geocode?lat={lat}&lng={lng} — Reverse Geocode (Phase 4, Task 3)
+
+**Query parameters:**
+- `lat` (double, required): Latitude
+- `lng` (double, required): Longitude
+
+**Validation:**
+- Both parameters must be valid floating-point numbers → 400 Bad Request if parsing fails
+
+**Response (200 OK):**
+```json
+{
+  "placeName": "Grand Canyon Village, Arizona, USA"
+}
+```
+
+**Behavior:**
+- Calls `IGeocodingService.ReverseGeocodeAsync(lat, lng)`
+- Returns place name (may be null if Nominatim fails, but endpoint still returns 200)
+- Used by photo upload page (Phase 5) to show location preview before confirming upload
+
 Future phases will add:
 - Photo list endpoint: `GET /api/trips/{slug}/photos`
-- Reverse geocode endpoint: `GET /api/geocode`
 - Trip view page: GET /trips/{slug}
 - Photo upload page: GET /post/{token}
 
@@ -555,6 +591,43 @@ private static SKImageInfo CalculateResizedDimensions(int origWidth, int origHei
 - Valid size acceptance
 - Invalid size rejection
 
+### 9.3 IGeocodingService & NominatimGeocodingService (Phase 4, Task 2)
+
+Client-side GPS extraction and server-side place name resolution via OpenStreetMap Nominatim API.
+
+**IGeocodingService** (Services/IGeocodingService.cs):
+```csharp
+public interface IGeocodingService
+{
+    Task<string?> ReverseGeocodeAsync(double latitude, double longitude);
+}
+```
+
+**NominatimGeocodingService** (Services/NominatimGeocodingService.cs):
+- **Constructor:** Injects `HttpClient` (registered via `AddHttpClient<NominatimGeocodingService>()`) and `RoadTripDbContext`
+- Sets `User-Agent: RoadTripMap/1.0` on HttpClient default request headers
+- Static `SemaphoreSlim(1, 1)` enforces Nominatim rate limit (1 request/sec max)
+
+**ReverseGeocodeAsync implementation:**
+1. Round lat/lng to 2 decimal places (~1.1km grid at equator) for cache key
+2. Query `GeoCache` table: `db.GeoCache.FirstOrDefaultAsync(g => g.LatRounded == latRounded && g.LngRounded == lngRounded)`
+3. If found → return `cachedEntry.PlaceName`
+4. If not found → acquire `SemaphoreSlim`, wait 1100ms (Nominatim 1 req/sec policy)
+5. Call `GET https://nominatim.openstreetmap.org/reverse?lat={lat}&lon={lng}&format=json`
+6. Parse JSON response, extract `display_name`
+7. Simplify: split by comma, take first 2-3 meaningful components (skip house numbers, postcodes)
+8. Insert `GeoCacheEntity` with rounded coords and simplified place name
+9. Return place name
+10. On HTTP failure: return `null` (don't block photo upload if Nominatim is down)
+
+**Testing:** Unit tests verify:
+- Correct place names returned for known coordinates (mock Nominatim JSON)
+- Cache hits prevent HTTP requests
+- Cache misses trigger HTTP calls and create `GeoCacheEntity`
+- Rate limiting via SemaphoreSlim prevents concurrent calls
+- Nominatim failures return null without throwing
+- Interface compliance
+
 ---
 
 ## 10. Security Considerations (Phase 3)
@@ -585,9 +658,42 @@ ASP.NET Core project created with `--no-https` because Azure App Service termina
 - Photos are NOT accessible via direct blob URLs (AC6.4)
 - All photo access through `GET /api/photos/{tripId}/{photoId}/{size}` endpoint (API proxy)
 
+### 9.4 Client-Side EXIF Extraction (Phase 4, Task 1)
+
+**exifr Library:**
+- Downloaded from CDN to `wwwroot/lib/exifr/lite.umd.js` (45KB, UMD bundle)
+- Supports in-browser JPEG metadata extraction without server dependency
+
+**exifUtil.js Wrapper** (`wwwroot/js/exifUtil.js`):
+```javascript
+const ExifUtil = {
+    async extractGps(file) {
+        const gps = await exifr.gps(file);
+        if (!gps) return null;
+        return { latitude: gps.latitude, longitude: gps.longitude };
+    },
+    async extractTimestamp(file) {
+        const data = await exifr.parse(file, ['DateTimeOriginal']);
+        return data?.DateTimeOriginal || null;
+    },
+    async extractAll(file) {
+        const gps = await this.extractGps(file);
+        const timestamp = await this.extractTimestamp(file);
+        return { gps, timestamp };
+    }
+};
+```
+
+**Usage (Phase 5, post page):**
+- `ExifUtil.extractGps(File)` → `{latitude, longitude}` or `null`
+- `ExifUtil.extractTimestamp(File)` → `Date` object or `null`
+- `ExifUtil.extractAll(File)` → `{gps: {...}, timestamp: Date}`
+
+**AC2.2 Verification:** GPS coordinates extracted client-side are sent with photo upload and stored in `PhotoEntity.Latitude` and `PhotoEntity.Longitude`.
+
 ---
 
-## 9. Deployment
+## 8. Deployment
 
 ### 10.1 Build & Publish
 
@@ -636,6 +742,7 @@ Future phases will test:
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.5 | 2026-03-20 | Phase 4, Task 1: exifr library (45KB UMD) downloaded to wwwroot/lib/exifr/lite.umd.js. Created exifUtil.js wrapper with extractGps, extractTimestamp, extractAll methods for client-side EXIF extraction. Supports AC2.2 GPS coordinate extraction from uploaded photos. |
 | 1.4 | 2026-03-20 | Phase 3, Tasks 1-2: NuGet packages for image processing (SkiaSharp 3.119.2) and Azure Blob Storage (Azure.Storage.Blobs 12.27.0). IAuthStrategy interface and SecretTokenAuthStrategy implementation with DI registration. 6 unit tests verify secret token validation, error handling, and interface compliance. Pluggable auth design supports future strategy swapping without code changes. |
 | 1.3 | 2026-03-20 | Phase 2, Task 3: Landing page (index.html), trip creation form (create.html), mobile-first CSS (styles.css), and API client (api.js). All static files served from wwwroot with responsive design and copy-to-clipboard functionality. |
 | 1.2 | 2026-03-20 | Phase 2, Task 2: POST /api/trips endpoint with validation, slug generation, token creation, and full test coverage (7 tests). |
