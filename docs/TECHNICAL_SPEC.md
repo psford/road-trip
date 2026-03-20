@@ -47,7 +47,8 @@ projects/road-trip/
 │       │   ├── IPhotoService.cs
 │       │   ├── PhotoService.cs
 │       │   ├── IGeocodingService.cs (Phase 4)
-│       │   └── NominatimGeocodingService.cs (Phase 4)
+│       │   ├── NominatimGeocodingService.cs (Phase 4)
+│       │   └── UploadRateLimiter.cs (Phase 7) — IP-based rate limiter (20/hr)
 │       ├── Migrations/              # EF Core migrations (generated)
 │       └── wwwroot/                 # Static files (HTML, JS, CSS)
 │           ├── index.html           # Landing page

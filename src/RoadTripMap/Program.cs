@@ -24,6 +24,7 @@ if (!string.IsNullOrEmpty(storageConnectionString))
     });
 }
 
+builder.Services.AddSingleton<UploadRateLimiter>();
 builder.Services.AddScoped<IAuthStrategy, SecretTokenAuthStrategy>();
 builder.Services.AddScoped<IPhotoService, PhotoService>();
 builder.Services.AddHttpClient<NominatimGeocodingService>();
@@ -158,8 +159,13 @@ app.MapPost("/api/trips", async (CreateTripRequest request, RoadTripDbContext db
 });
 
 // POST /api/trips/{secretToken}/photos — Upload photo
-app.MapPost("/api/trips/{secretToken}/photos", async (string secretToken, IFormFile file, double lat, double lng, string? caption, DateTime? takenAt, RoadTripDbContext db, IAuthStrategy authStrategy, IPhotoService photoService, IGeocodingService geocodingService) =>
+app.MapPost("/api/trips/{secretToken}/photos", async (string secretToken, IFormFile file, double lat, double lng, string? caption, DateTime? takenAt, RoadTripDbContext db, IAuthStrategy authStrategy, IPhotoService photoService, IGeocodingService geocodingService, UploadRateLimiter rateLimiter, HttpContext context) =>
 {
+    // Check rate limit by IP address
+    var ip = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+    if (!rateLimiter.IsAllowed(ip))
+        return Results.StatusCode(429);
+
     // Look up trip by secret token
     var trip = await db.Trips.FirstOrDefaultAsync(t => t.SecretToken == secretToken);
     if (trip == null)
