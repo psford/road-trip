@@ -31,4 +31,64 @@ const API = {
 
         return response.json();
     },
+
+    /**
+     * Reverse geocode coordinates to place name
+     * @param {number} lat - Latitude
+     * @param {number} lng - Longitude
+     * @returns {Promise<{placeName}>}
+     */
+    async geocode(lat, lng) {
+        const response = await fetch(`${this.baseUrl}/geocode?lat=${lat}&lng=${lng}`);
+        if (!response.ok) {
+            throw new Error('Failed to geocode coordinates');
+        }
+        return response.json();
+    },
+
+    /**
+     * Upload photo to trip
+     * @param {string} secretToken - Trip secret token
+     * @param {FormData} formData - Photo file and metadata
+     * @returns {Promise<PhotoResponse>}
+     */
+    async uploadPhoto(secretToken, formData) {
+        const response = await fetch(`${this.baseUrl}/trips/${secretToken}/photos`, {
+            method: 'POST',
+            body: formData
+        });
+        if (!response.ok) {
+            const err = await response.json();
+            throw new Error(err.error || 'Failed to upload photo');
+        }
+        return response.json();
+    },
+
+    /**
+     * Delete photo from trip
+     * @param {string} secretToken - Trip secret token
+     * @param {number} photoId - Photo ID
+     * @returns {Promise<void>}
+     */
+    async deletePhoto(secretToken, photoId) {
+        const response = await fetch(`${this.baseUrl}/trips/${secretToken}/photos/${photoId}`, {
+            method: 'DELETE'
+        });
+        if (!response.ok) {
+            throw new Error('Failed to delete photo');
+        }
+    },
+
+    /**
+     * List all photos for a trip
+     * @param {string} secretToken - Trip secret token
+     * @returns {Promise<PhotoResponse[]>}
+     */
+    async listTripPhotos(secretToken) {
+        const response = await fetch(`${this.baseUrl}/trips/${secretToken}/photos`);
+        if (!response.ok) {
+            throw new Error('Failed to load photos');
+        }
+        return response.json();
+    },
 };

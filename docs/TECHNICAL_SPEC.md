@@ -692,6 +692,54 @@ const ExifUtil = {
 
 **AC2.2 Verification:** GPS coordinates extracted client-side are sent with photo upload and stored in `PhotoEntity.Latitude` and `PhotoEntity.Longitude`.
 
+### 9.5 PostService: Photo Posting Workflow (Phase 5, Task 1)
+
+Pure data/state module with zero DOM references. All business logic designed for reuse in native iOS/Android apps.
+
+**postService.js** (wwwroot/js/postService.js):
+```javascript
+const PostService = {
+    async extractPhotoMetadata(file) {
+        // Extracts GPS + timestamp from EXIF, geocodes to place name
+        // Returns {gps: {latitude, longitude} | null, timestamp: Date | null, placeName: string | null}
+    },
+    async uploadPhoto(secretToken, file, lat, lng, caption, takenAt) {
+        // FormData upload with optional caption and timestamp
+        // Returns PhotoResponse
+    },
+    async deletePhoto(secretToken, photoId) {
+        // Deletes photo from trip
+    },
+    async listPhotos(secretToken) {
+        // Returns array of PhotoResponse objects
+    }
+};
+```
+
+**API Client Extensions** (wwwroot/js/api.js):
+- `API.geocode(lat, lng)` — GET /api/geocode, returns `{placeName}`
+- `API.uploadPhoto(secretToken, formData)` — POST /api/trips/{secretToken}/photos
+- `API.deletePhoto(secretToken, photoId)` — DELETE /api/trips/{secretToken}/photos/{photoId}
+- `API.listTripPhotos(secretToken)` — GET /api/trips/{secretToken}/photos (new, Task 3)
+
+**Design Principle:**
+- **PostService:** Business logic only (data extraction, API calls, state transformation)
+- **postUI.js (Phase 5, Task 2):** DOM rendering only (HTML generation, event binding)
+- No circular dependencies; PostService can be used by postUI.js, native apps, or other frontend contexts
+
+**AC2.2 Coverage:**
+- `extractPhotoMetadata()` calls `ExifUtil.extractAll()` to get GPS from EXIF
+- `uploadPhoto()` sends lat/lng with photo to backend
+- Backend stores in PhotoEntity.Latitude, PhotoEntity.Longitude
+
+**AC2.3 Coverage:**
+- `extractPhotoMetadata()` auto-geocodes via `API.geocode()` after EXIF extraction
+- Returns `placeName` for UI preview before confirming upload
+
+**AC2.4 Coverage:**
+- `uploadPhoto()` accepts optional `caption` parameter
+- If caption is falsy, FormData does not append it (backend allows null)
+
 ---
 
 ## 8. Deployment
@@ -743,6 +791,7 @@ Future phases will test:
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.8 | 2026-03-20 | Phase 5, Task 1: Created postService.js pure data/state module with zero DOM references. Implements extractPhotoMetadata() (EXIF + auto-geocoding), uploadPhoto() (FormData with optional caption/timestamp), deletePhoto(), and listPhotos(). Extended api.js with geocode(), uploadPhoto(), deletePhoto(), listTripPhotos() methods. All methods designed for native app reuse. Covers AC2.2 (GPS extraction), AC2.3 (place name resolution), AC2.4 (optional caption). |
 | 1.7 | 2026-03-20 | Phase 5, Task 3: Added GET /api/trips/{secretToken}/photos endpoint for post page photo list. Returns array of PhotoResponse objects ordered by CreatedAt descending. Returns 404 if trip not found. 5 unit tests verify valid token returns photos, empty trip returns empty array, invalid token returns not found, and photos ordered correctly. Tests pass 72/72. |
 | 1.6 | 2026-03-20 | Phase 4, Task 3: Added GET /api/geocode endpoint for reverse geocoding preview. Updated POST /api/trips/{secretToken}/photos to call IGeocodingService after upload. Photos with lat=0, lng=0 get PlaceName="Location not set" (AC2.9). Photos with valid coords get place name from Nominatim or "Unknown location" on failure. Registered geocoding service in Program.cs. 5 unit tests verify endpoint behavior and photo place name assignment. |
 | 1.5 | 2026-03-20 | Phase 4, Task 1: exifr library (45KB UMD) downloaded to wwwroot/lib/exifr/lite.umd.js. Created exifUtil.js wrapper with extractGps, extractTimestamp, extractAll methods for client-side EXIF extraction. Supports AC2.2 GPS coordinate extraction from uploaded photos. |
