@@ -1,0 +1,4 @@
+User-agent: *
+Disallow: /post/
+Disallow: /trips/
+Disallow: /api/

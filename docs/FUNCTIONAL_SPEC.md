@@ -1,7 +1,7 @@
 # Functional Specification: Road Trip Photo Map
 
-**Version:** 1.3
-**Last Updated:** 2026-03-20 (Phase 6, Task 2: Public map view with Leaflet pins)
+**Version:** 1.4
+**Last Updated:** 2026-03-20 (Phase 7, Task 1: Privacy hardening with robots.txt and noindex meta tags)
 **Author:** Claude (AI Assistant)
 **Status:** In Development
 **Audience:** Business Users, Product Owners, QA Testers
