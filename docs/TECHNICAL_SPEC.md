@@ -1,8 +1,8 @@
 # Technical Specification: Road Trip Photo Map
 
-**Version:** 2.2
-**Last Updated:** 2026-03-20 (Phase 7, Task 4: Input Validation & Global Error Handling)
-**Status:** Phase 7 - Privacy & Hardening (Crawler protection, rate limiting, validation, error handling)
+**Version:** 2.3
+**Last Updated:** 2026-03-20 (Phase 8, Tasks 1-4: Docker + Bicep + GitHub Actions + Startup Migration)
+**Status:** Phase 8 - Azure Deployment (Docker, infrastructure, CI/CD, production config)
 
 ---
 
@@ -1060,10 +1060,104 @@ Future phases will test:
 
 ---
 
-## 12. Version History
+## 12. Deployment Infrastructure (Phase 8)
+
+### 12.1 Docker Configuration
+
+**Dockerfile** (`projects/road-trip/Dockerfile`):
+- Multi-stage build: SDK 8.0 for compilation → runtime 8.0 for execution
+- Restores, builds, and publishes in Release configuration
+- Runtime image exposes port 5100
+- Sets `ASPNETCORE_URLS=http://+:5100`
+- Entrypoint: `dotnet RoadTripMap.dll`
+
+**Build & Run Locally:**
+```bash
+docker build -t roadtripmap:local .
+docker run -p 5100:5100 roadtripmap:local
+```
+
+**.dockerignore** — Excludes test projects, markdown docs, build artifacts to keep image lean.
+
+### 12.2 Azure Infrastructure (Bicep)
+
+**main.bicep** (`projects/road-trip/infrastructure/azure/main.bicep`):
+- Creates single App Service (`app-roadtripmap-prod`) on existing App Service Plan
+- References shared resources:
+  - App Service Plan: `asp-stockanalyzer` (existing, via resource ID parameter)
+  - SQL Server: shared `StockAnalyzer` database (connection string via parameter)
+  - Blob Storage: shared account (connection string via parameter)
+- Configures App Service settings:
+  - `ASPNETCORE_ENVIRONMENT` = `Production`
+  - `WEBSITES_PORT` = `5100`
+  - Connection strings injected at deployment time
+  - Linux container image from ACR
+  - `alwaysOn: true` for production reliability
+
+**parameters.json** (`projects/road-trip/infrastructure/azure/parameters.json`):
+- Placeholder template for deployment parameters
+- Actual values supplied at deploy time via command line or parameter file
+- Includes: appServicePlanResourceId, sqlConnectionString, storageConnectionString, environment
+
+### 12.3 GitHub Actions CI/CD Workflow
+
+**.github/workflows/roadtrip-deploy.yml**:
+- **Build & Test Stage:**
+  - Checkout, setup .NET 8
+  - Restore, build, test on `ubuntu-latest`
+  - Requires tests passing before deploying
+
+- **Deploy Stage:**
+  - Requires explicit `confirm == "deploy"` input from workflow dispatch
+  - Environment protection: `environment: production` (requires approval in GitHub)
+  - Login to Azure via OIDC
+  - Build Docker image, tag with commit SHA + latest
+  - Push to ACR: `acrstockanalyzerer34ug.azurecr.io`
+  - Update App Service container image
+  - Wait 30s for startup, then health check (5 attempts, 15s apart)
+  - Rollback on failed health check (non-zero exit)
+
+**Invocation:**
+```bash
+gh workflow run roadtrip-deploy.yml -f confirm=deploy
+```
+
+### 12.4 Production Startup & Migration
+
+**Program.cs** updates for Phase 8, Task 4:
+```csharp
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<RoadTripDbContext>();
+    var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+    try
+    {
+        db.Database.Migrate();
+        logger.LogInformation("Database migration completed successfully");
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "Database migration failed");
+        throw;
+    }
+}
+```
+
+**Behavior:**
+- Runs BEFORE `app.MapStaticFiles()` so migrations complete before handling requests
+- Applies all pending migrations in order (idempotent; re-running same migration is no-op)
+- Creates `roadtrip` schema and tables on first deployment
+- Subsequent deployments without new migrations skip EF Core versioning checks
+- Logs results; propagates exceptions to prevent startup if migration fails
+- Covers AC3 (trips), AC4 (photos), AC5 (geocache)
+
+---
+
+## 13. Version History
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 2.3 | 2026-03-20 | Phase 8, Tasks 1-4: Docker (multi-stage .NET 8 build, port 5100, SkiaSharp Linux assets included), Bicep template (App Service on shared plan, SQL + Blob connection strings, Linux container config), GitHub Actions workflow (build+test → deploy on "deploy" confirm, ACR push, health check), startup migration (auto-migrate on app boot). No Docker/Bicep/workflow verification run per task instructions. All prior tests (81) passing. Ready for deploy approval. |
 | 2.2 | 2026-03-20 | Phase 6, Task 3: Added responsive map view styling. Full-viewport map container (100vh), floating semi-transparent header with trip name (top), floating route toggle button (bottom-right), empty message overlay (center). Leaflet popup customization for images, headings, links. Mobile-first responsive design: mobile (< 480px) compact header/button, tablet (≥ 768px) larger, desktop (≥ 1024px) larger header. All controls accessible and readable at all viewport sizes. Build succeeds. All 81 tests passing. Covers AC3.1-AC3.7 (map view acceptance criteria). |
 | 2.1 | 2026-03-20 | Phase 6, Task 2: Created map view frontend. MapService.js pure data layer (loadTrip, getRouteCoordinates) with zero DOM/Leaflet refs for native portability. MapUI.js Leaflet-specific rendering with marker popups, route toggle, auto-fit bounds. trips.html full-viewport map page with Leaflet CDN (SRI hashes). GET /trips/{slug} route serves trips.html. Features: photo pins at GPS coords, clickable popups with display image/place/caption/timestamp, route polyline toggle connecting pins chronologically, auto-fit bounds with padding, single-pin centering (zoom 13), empty message for zero photos. Covers AC3.1-AC3.7. Build succeeds. All 81 tests passing. |
 | 2.0 | 2026-03-20 | Phase 6, Task 1: Added public trip info and photos endpoints. Created TripResponse DTO. Implemented GET /api/trips/{slug} (public trip metadata with photo count). Implemented GET /api/trips/{slug}/photos (public photo array ordered by TakenAt ascending for route line). Both endpoints require no authentication (AC5.1). Empty photo array returned for trips with no photos (AC3.6). 9 unit tests verify behavior. All 81 tests passing. Covers AC3.1, AC3.6, AC5.1. |
