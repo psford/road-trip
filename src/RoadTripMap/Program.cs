@@ -53,6 +53,8 @@ app.MapGet("/api/geocode", async (double? lat, double? lng, IGeocodingService ge
 
 app.MapGet("/create", () => Results.File("wwwroot/create.html", "text/html"));
 
+app.MapGet("/post/{secretToken}", () => Results.File("wwwroot/post.html", "text/html"));
+
 app.MapPost("/api/trips", async (CreateTripRequest request, RoadTripDbContext db) =>
 {
     // Validate trip name

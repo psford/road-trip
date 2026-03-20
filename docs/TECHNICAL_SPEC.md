@@ -740,6 +740,75 @@ const PostService = {
 - `uploadPhoto()` accepts optional `caption` parameter
 - If caption is falsy, FormData does not append it (backend allows null)
 
+### 9.6 PostUI: Photo Posting User Interface (Phase 5, Task 2)
+
+Mobile-first DOM rendering layer with all business logic delegated to PostService.
+
+**post.html** (wwwroot/post.html):
+- **Header:** Trip name and description (loaded from page context)
+- **Add Photo Button:** Large, prominent button that triggers hidden file input with `capture="environment"` for mobile camera
+- **File Input:** `<input type="file" accept="image/*" capture="environment">` — opens camera on mobile, file picker on desktop
+- **Preview Section (hidden until photo selected):**
+  - Photo thumbnail via `URL.createObjectURL()`
+  - Place name display (auto-resolved or "Tap map to set location")
+  - Pin-drop fallback map (only shown for photos without GPS EXIF)
+  - Optional caption input (optional field)
+  - Post and Cancel buttons
+- **Posted Photos List:** Thumbnails sorted most-recent-first with caption and place name
+- **Toast Container:** Fixed position for success/error notifications (3-second auto-dismiss)
+- **Leaflet CDN:** `unpkg.com/leaflet@1.9.4/dist/leaflet.{css,js}` with SRI hashes for pin-drop map
+
+**postUI.js** (wwwroot/js/postUI.js):
+- `init(secretToken)` — Wires up event listeners, loads photo list
+- `onFileSelected(file)` — Called when file input changes
+  - If EXIF GPS present: show full preview directly
+  - If no GPS: show pin-drop map for manual location selection
+- `showPreview(file, metadata)` — Renders preview section with thumbnail, place name, caption input
+- `showPinDropMap(file, metadata)` — Renders map-based location picker
+  - Initializes Leaflet map centered on USA
+  - Click handler: places marker, geocodes location, updates place name
+  - Marker persists until next photo selected
+- `onPostConfirm()` — Calls PostService.uploadPhoto(), shows toast, refreshes list
+- `loadPhotoList()` — Fetches photos via PostService.listPhotos()
+- `createPhotoElement(photo)` — Renders photo card with thumbnail, place, caption, delete button
+- `showToast(message, type)` — Displays floating notification with auto-dismiss animation
+
+**CSS Styles** (wwwroot/css/styles.css):
+- `.add-photo-button` — Full-width prominent button
+- `.photo-thumbnail` — 100% width, max 400px height, aspect-fit
+- `.place-name-display` — Light gray background, "no-gps" variant in error red
+- `#pinDropMap` — 300px height, 1px border, responsive
+- `.caption-input` — Full-width textarea-like input with focus state
+- `.photo-grid` — CSS Grid, `minmax(150px, 1fr)` columns, auto-fill
+- `.photo-item-*` — Card styling with hover delete button
+- `.toast` — Fixed position, slide-in animation, 3-second auto-dismiss
+- Responsive: tablets adjust grid to `minmax(180px, 1fr)`, desktop adjusts toast width
+
+**Map Initialization (Leaflet):**
+- Called on first pin-drop photo selection
+- Sets map bounds to USA center (39.8°N, 98.6°W) at zoom 4
+- OpenStreetMap tiles from `tile.openstreetmap.org` (attribution included)
+- Click handler creates marker and geocodes via `API.geocode()`
+- Marker removed when new photo selected (not persisted between photos)
+
+**AC2.2 Verification:**
+- GPS coordinates from EXIF shown in preview before confirming upload
+- Sent to backend via PostService.uploadPhoto()
+
+**AC2.3 Verification:**
+- Place name auto-resolved from coordinates and displayed in preview section before confirming
+
+**AC2.4 Verification:**
+- Caption input is optional (form submits without value)
+- Photos post successfully with caption or without
+
+**AC2.9 Verification (Pin-Drop Fallback):**
+- Screenshots or edited photos (no GPS EXIF) trigger `showPinDropMap()`
+- Small Leaflet map displayed with instruction "Tap map to set your photo location"
+- User tap creates marker and geocodes location
+- Place name resolved and displayed
+- Post succeeds with manual coordinates
+
 ---
 
 ## 8. Deployment
@@ -791,6 +860,7 @@ Future phases will test:
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.9 | 2026-03-20 | Phase 5, Task 2: Created post.html (mobile-first photo posting page) and postUI.js (DOM rendering layer). Features: file input with camera capture, EXIF preview, place name display, pin-drop fallback map for photos without GPS, optional caption input, photo list with delete buttons, toast notifications. Leaflet CDN for map component. Updated styles.css with post page component styles (photo grid, toast animations, responsive). Added GET /post/{secretToken} route in Program.cs. Covers AC2.2 (GPS display), AC2.3 (place name preview), AC2.4 (optional caption), AC2.9 (pin-drop fallback). Build succeeds. |
 | 1.8 | 2026-03-20 | Phase 5, Task 1: Created postService.js pure data/state module with zero DOM references. Implements extractPhotoMetadata() (EXIF + auto-geocoding), uploadPhoto() (FormData with optional caption/timestamp), deletePhoto(), and listPhotos(). Extended api.js with geocode(), uploadPhoto(), deletePhoto(), listTripPhotos() methods. All methods designed for native app reuse. Covers AC2.2 (GPS extraction), AC2.3 (place name resolution), AC2.4 (optional caption). |
 | 1.7 | 2026-03-20 | Phase 5, Task 3: Added GET /api/trips/{secretToken}/photos endpoint for post page photo list. Returns array of PhotoResponse objects ordered by CreatedAt descending. Returns 404 if trip not found. 5 unit tests verify valid token returns photos, empty trip returns empty array, invalid token returns not found, and photos ordered correctly. Tests pass 72/72. |
 | 1.6 | 2026-03-20 | Phase 4, Task 3: Added GET /api/geocode endpoint for reverse geocoding preview. Updated POST /api/trips/{secretToken}/photos to call IGeocodingService after upload. Photos with lat=0, lng=0 get PlaceName="Location not set" (AC2.9). Photos with valid coords get place name from Nominatim or "Unknown location" on failure. Registered geocoding service in Program.cs. 5 unit tests verify endpoint behavior and photo place name assignment. |

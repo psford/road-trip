@@ -271,3 +271,249 @@ textarea {
     font-size: 2rem;
   }
 }
+
+/* Post Page Styles (Phase 5) */
+
+#fileInput {
+  display: none;
+}
+
+.add-photo-button {
+  width: 100%;
+  padding: var(--space-lg);
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+/* Photo Preview Section */
+.preview-section {
+  display: none;
+}
+
+.preview-section.visible {
+  display: block;
+}
+
+.photo-thumbnail {
+  width: 100%;
+  max-height: 400px;
+  object-fit: cover;
+  border-radius: var(--radius);
+  margin-bottom: var(--space-md);
+}
+
+.place-name-display {
+  font-size: 0.95rem;
+  color: var(--color-text-light);
+  margin-bottom: var(--space-md);
+  padding: var(--space-sm);
+  background-color: #f5f5f5;
+  border-radius: var(--radius);
+}
+
+.place-name-display.no-gps {
+  color: var(--color-error);
+  background-color: var(--color-error-bg);
+}
+
+/* Pin-drop Map */
+#pinDropMap {
+  width: 100%;
+  height: 300px;
+  margin-bottom: var(--space-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+}
+
+.map-section {
+  display: none;
+}
+
+.map-section.visible {
+  display: block;
+}
+
+.map-instruction {
+  font-size: 0.9rem;
+  color: var(--color-text-light);
+  margin-bottom: var(--space-md);
+  padding: var(--space-sm);
+  background-color: #f5f5f5;
+  border-radius: var(--radius);
+}
+
+/* Caption Input */
+.caption-input {
+  width: 100%;
+  padding: var(--space-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  font-family: inherit;
+  font-size: inherit;
+  color: var(--color-text);
+  background-color: var(--color-bg);
+  margin-bottom: var(--space-md);
+}
+
+.caption-input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(0, 102, 204, 0.1);
+}
+
+/* Post Button Group */
+.post-button-group {
+  display: flex;
+  gap: var(--space-sm);
+}
+
+.post-button-group button {
+  flex: 1;
+}
+
+.post-button-group .button-primary {
+  flex: 2;
+}
+
+/* Photo List */
+.photo-list {
+  margin-top: var(--space-lg);
+}
+
+.photo-list.empty {
+  display: none;
+}
+
+.photo-list h3 {
+  font-size: 1.2rem;
+  margin-bottom: var(--space-md);
+  margin-top: 0;
+}
+
+.photo-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: var(--space-sm);
+}
+
+.photo-item {
+  position: relative;
+  background-color: white;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.photo-item-image {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+}
+
+.photo-item-details {
+  padding: var(--space-xs);
+  font-size: 0.75rem;
+  line-height: 1.3;
+}
+
+.photo-item-place {
+  color: var(--color-text-light);
+  font-weight: 500;
+}
+
+.photo-item-caption {
+  color: var(--color-text);
+  margin-top: var(--space-xs);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.photo-item-delete {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  padding: 4px 8px;
+  background-color: rgba(211, 47, 47, 0.9);
+  color: white;
+  border: none;
+  border-radius: 2px;
+  font-size: 0.7rem;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.photo-item:hover .photo-item-delete {
+  opacity: 1;
+}
+
+/* Toast Notifications */
+.toast-container {
+  position: fixed;
+  bottom: var(--space-md);
+  right: var(--space-md);
+  max-width: 300px;
+  z-index: 1000;
+}
+
+.toast {
+  padding: var(--space-md);
+  border-radius: var(--radius);
+  margin-bottom: var(--space-sm);
+  animation: slideInRight 0.3s ease;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.toast.success {
+  background-color: var(--color-success-bg);
+  color: var(--color-success);
+  border: 1px solid var(--color-success);
+}
+
+.toast.error {
+  background-color: var(--color-error-bg);
+  color: var(--color-error);
+  border: 1px solid var(--color-error);
+}
+
+@keyframes slideInRight {
+  from {
+    transform: translateX(400px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes slideOutRight {
+  from {
+    transform: translateX(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateX(400px);
+    opacity: 0;
+  }
+}
+
+.toast.dismissing {
+  animation: slideOutRight 0.3s ease;
+}
+
+/* Responsive adjustments for post page */
+@media (min-width: 768px) {
+  .photo-grid {
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  }
+}
+
+@media (min-width: 1024px) {
+  .toast-container {
+    max-width: 400px;
+  }
+}

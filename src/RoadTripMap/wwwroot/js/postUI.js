@@ -1,0 +1,323 @@
+/**
+ * Post UI - DOM-specific rendering layer
+ * All business logic delegates to PostService.
+ * Handles the UI rendering and event binding for the photo posting page.
+ */
+
+const PostUI = {
+    secretToken: null,
+    map: null,
+    marker: null,
+    currentFile: null,
+    currentMetadata: null,
+    currentLat: null,
+    currentLng: null,
+
+    init(secretToken) {
+        this.secretToken = secretToken;
+
+        // Wire up event listeners
+        document.getElementById('addPhotoButton').addEventListener('click', () => {
+            document.getElementById('fileInput').click();
+        });
+
+        document.getElementById('fileInput').addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                this.onFileSelected(e.target.files[0]);
+            }
+        });
+
+        document.getElementById('cancelButton').addEventListener('click', () => {
+            this.hidePreview();
+        });
+
+        document.getElementById('postButton').addEventListener('click', () => {
+            this.onPostConfirm();
+        });
+
+        // Load existing photos
+        this.loadPhotoList();
+    },
+
+    async onFileSelected(file) {
+        try {
+            // Extract metadata (EXIF + geocoding)
+            const metadata = await PostService.extractPhotoMetadata(file);
+            this.currentFile = file;
+            this.currentMetadata = metadata;
+
+            if (metadata.gps) {
+                // Has GPS data - show preview directly
+                this.currentLat = metadata.gps.latitude;
+                this.currentLng = metadata.gps.longitude;
+                this.showPreview(file, metadata);
+            } else {
+                // No GPS - show pin-drop map for manual location
+                this.showPinDropMap(file, metadata);
+            }
+        } catch (err) {
+            console.error('Error selecting photo:', err);
+            this.showToast('Error processing photo: ' + err.message, 'error');
+        }
+    },
+
+    showPreview(file, metadata) {
+        // Show thumbnail
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            document.getElementById('photoThumbnail').src = e.target.result;
+        };
+        reader.readAsDataURL(file);
+
+        // Show place name
+        const placeNameEl = document.getElementById('placeNameDisplay');
+        if (metadata.gps) {
+            placeNameEl.textContent = metadata.placeName || 'Resolving location...';
+            placeNameEl.classList.remove('no-gps');
+        } else {
+            placeNameEl.textContent = 'Tap map to set location';
+            placeNameEl.classList.add('no-gps');
+        }
+
+        // Hide map section
+        document.getElementById('mapSection').classList.remove('visible');
+
+        // Clear caption input
+        document.getElementById('captionInput').value = '';
+
+        // Show preview section
+        document.getElementById('previewSection').classList.add('visible');
+        document.getElementById('fileInput').value = '';
+    },
+
+    showPinDropMap(file, metadata) {
+        // Show thumbnail
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            document.getElementById('photoThumbnail').src = e.target.result;
+        };
+        reader.readAsDataURL(file);
+
+        // Show place name
+        const placeNameEl = document.getElementById('placeNameDisplay');
+        placeNameEl.textContent = 'Tap map to set location';
+        placeNameEl.classList.add('no-gps');
+
+        // Show map section
+        document.getElementById('mapSection').classList.add('visible');
+
+        // Initialize map if not already done
+        if (!this.map) {
+            this.initializePinDropMap();
+        }
+
+        // Center map on default location (USA center)
+        this.map.setView([39.8283, -98.5795], 4);
+        if (this.marker) {
+            this.map.removeLayer(this.marker);
+        }
+
+        // Clear caption input
+        document.getElementById('captionInput').value = '';
+
+        // Show preview section
+        document.getElementById('previewSection').classList.add('visible');
+        document.getElementById('fileInput').value = '';
+    },
+
+    initializePinDropMap() {
+        // Create map
+        this.map = L.map('pinDropMap').setView([39.8283, -98.5795], 4);
+
+        // Add tile layer
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap contributors',
+            maxZoom: 19,
+        }).addTo(this.map);
+
+        // Handle map clicks for marker placement
+        this.map.on('click', async (e) => {
+            const { lat, lng } = e.latlng;
+            this.currentLat = lat;
+            this.currentLng = lng;
+
+            // Remove old marker
+            if (this.marker) {
+                this.map.removeLayer(this.marker);
+            }
+
+            // Add new marker
+            this.marker = L.marker([lat, lng]).addTo(this.map);
+
+            // Geocode the location
+            try {
+                const result = await API.geocode(lat, lng);
+                const placeNameEl = document.getElementById('placeNameDisplay');
+                placeNameEl.textContent = result.placeName || 'Location set';
+                placeNameEl.classList.remove('no-gps');
+                this.currentMetadata.placeName = result.placeName;
+            } catch (err) {
+                console.warn('Failed to geocode:', err);
+                const placeNameEl = document.getElementById('placeNameDisplay');
+                placeNameEl.textContent = 'Location set';
+                placeNameEl.classList.remove('no-gps');
+            }
+        });
+    },
+
+    hidePreview() {
+        document.getElementById('previewSection').classList.remove('visible');
+        document.getElementById('mapSection').classList.remove('visible');
+        this.currentFile = null;
+        this.currentMetadata = null;
+        this.currentLat = null;
+        this.currentLng = null;
+        this.marker = null;
+    },
+
+    async onPostConfirm() {
+        if (!this.currentFile || this.currentLat === null || this.currentLng === null) {
+            this.showToast('Please select a location', 'error');
+            return;
+        }
+
+        const caption = document.getElementById('captionInput').value.trim() || null;
+        const takenAt = this.currentMetadata?.timestamp || null;
+
+        try {
+            // Disable button
+            document.getElementById('postButton').disabled = true;
+
+            // Upload photo
+            const result = await PostService.uploadPhoto(
+                this.secretToken,
+                this.currentFile,
+                this.currentLat,
+                this.currentLng,
+                caption,
+                takenAt
+            );
+
+            this.showToast('Photo posted!', 'success');
+            this.hidePreview();
+            await this.refreshPhotoList();
+        } catch (err) {
+            console.error('Error posting photo:', err);
+            this.showToast(err.message || 'Failed to post photo', 'error');
+        } finally {
+            document.getElementById('postButton').disabled = false;
+        }
+    },
+
+    async refreshPhotoList() {
+        await this.loadPhotoList();
+    },
+
+    async loadPhotoList() {
+        try {
+            const photos = await PostService.listPhotos(this.secretToken);
+
+            const photoList = document.getElementById('photoList');
+            const photoGrid = document.getElementById('photoGrid');
+
+            if (photos.length === 0) {
+                photoList.classList.add('empty');
+                photoGrid.innerHTML = '';
+                return;
+            }
+
+            photoList.classList.remove('empty');
+            photoGrid.innerHTML = '';
+
+            // Render photos most recent first
+            photos.forEach(photo => {
+                const photoEl = this.createPhotoElement(photo);
+                photoGrid.appendChild(photoEl);
+            });
+        } catch (err) {
+            console.error('Error loading photos:', err);
+            this.showToast('Failed to load photos', 'error');
+        }
+    },
+
+    createPhotoElement(photo) {
+        const div = document.createElement('div');
+        div.className = 'photo-item';
+
+        const img = document.createElement('img');
+        img.className = 'photo-item-image';
+        img.src = photo.thumbnailUrl;
+        img.alt = photo.caption || 'Photo';
+
+        const details = document.createElement('div');
+        details.className = 'photo-item-details';
+
+        const place = document.createElement('div');
+        place.className = 'photo-item-place';
+        place.textContent = photo.placeName || 'Unknown location';
+
+        if (photo.caption) {
+            const caption = document.createElement('div');
+            caption.className = 'photo-item-caption';
+            caption.textContent = photo.caption;
+            details.appendChild(place);
+            details.appendChild(caption);
+        } else {
+            details.appendChild(place);
+        }
+
+        const deleteBtn = document.createElement('button');
+        deleteBtn.className = 'photo-item-delete';
+        deleteBtn.textContent = '✕';
+        deleteBtn.addEventListener('click', async () => {
+            if (confirm('Delete this photo?')) {
+                try {
+                    await PostService.deletePhoto(this.secretToken, photo.id);
+                    this.showToast('Photo deleted', 'success');
+                    await this.refreshPhotoList();
+                } catch (err) {
+                    this.showToast('Failed to delete photo', 'error');
+                }
+            }
+        });
+
+        div.appendChild(img);
+        div.appendChild(details);
+        div.appendChild(deleteBtn);
+
+        return div;
+    },
+
+    showToast(message, type) {
+        const container = document.getElementById('toastContainer');
+
+        const toast = document.createElement('div');
+        toast.className = `toast ${type}`;
+        toast.textContent = message;
+
+        container.appendChild(toast);
+
+        // Auto-dismiss after 3 seconds
+        setTimeout(() => {
+            toast.classList.add('dismissing');
+            setTimeout(() => {
+                toast.remove();
+            }, 300);
+        }, 3000);
+    }
+};
+
+// Initialize when page loads
+document.addEventListener('DOMContentLoaded', () => {
+    // Extract secret token from URL
+    const pathParts = window.location.pathname.split('/');
+    const secretToken = pathParts[pathParts.length - 1];
+
+    if (!secretToken || secretToken === 'post') { // pragma: allowlist secret
+        document.getElementById('errorMessage').textContent = 'Invalid trip URL';
+        document.getElementById('errorMessage').classList.remove('hidden');
+        return;
+    }
+
+    PostUI.init(secretToken);
+});
