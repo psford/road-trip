@@ -3,6 +3,7 @@ using RoadTripMap.Data;
 using RoadTripMap.Entities;
 using RoadTripMap.Helpers;
 using RoadTripMap.Models;
+using RoadTripMap.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -12,6 +13,8 @@ if (!string.IsNullOrEmpty(connectionString))
     builder.Services.AddDbContext<RoadTripDbContext>(options =>
         options.UseSqlServer(connectionString));
 }
+
+builder.Services.AddScoped<IAuthStrategy, SecretTokenAuthStrategy>();
 
 var app = builder.Build();
 

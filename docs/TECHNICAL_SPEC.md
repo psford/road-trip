@@ -1,8 +1,8 @@
 # Technical Specification: Road Trip Photo Map
 
-**Version:** 1.3
-**Last Updated:** 2026-03-20 (Phase 2, Task 3: Homepage and create trip page)
-**Status:** Phase 2 - Trip Creation API
+**Version:** 1.4
+**Last Updated:** 2026-03-20 (Phase 3, Tasks 1-2: Auth Strategy)
+**Status:** Phase 3 - Auth & Photo Upload
 
 ---
 
@@ -243,10 +243,17 @@ Located in `Helpers/SlugHelper.cs`, provides URL slug generation with uniqueness
 | `FluentAssertions` | 6.12.2 | Assertion fluency |
 | `Microsoft.EntityFrameworkCore.InMemory` | 8.0.23 | In-memory DB for testing |
 
+### 6.3 Phase 3 Dependencies (Photo Upload & Auth)
+
+| Package | Version | Purpose |
+|---------|---------|---------|
+| `SkiaSharp` | 3.119.2 | Image resizing and EXIF stripping |
+| `SkiaSharp.NativeAssets.Linux.NoDependencies` | 3.119.2 | Linux native assets for SkiaSharp |
+| `Azure.Storage.Blobs` | 12.27.0 | Azure Blob Storage SDK |
+| `Microsoft.Extensions.Azure` | 1.13.1 | Azure DI extensions |
+
 Future phases will add:
-- `SkiaSharp` — Image resizing
 - `exifr` — Client-side EXIF (JavaScript)
-- Azure Storage SDK
 
 ---
 
@@ -363,21 +370,78 @@ Applied automatically on app startup via `DbContext.Database.Migrate()` call in 
 
 ---
 
-## 9. Security Considerations (Phase 2)
+## 9. Services (Phase 3)
 
-### 8.1 Authorization
+### 9.1 IAuthStrategy & SecretTokenAuthStrategy
 
-Currently placeholder — no authorization logic. Future phases (Phase 3) will implement:
-- **Secret Token Auth:** POST requests with `secret-token` query param or header
-- **Pluggable Strategy:** DI-based `IAuthorizationStrategy` allows swapping secret tokens for PIN codes or OAuth later
+Pluggable authentication interface for validating POST access via secret token.
 
-### 8.2 HTTPS & TLS
+**IAuthStrategy** (Services/IAuthStrategy.cs):
+```csharp
+public interface IAuthStrategy
+{
+    Task<AuthResult> ValidatePostAccess(HttpContext context, TripEntity trip);
+}
+
+public record AuthResult(bool IsAuthorized, string? DeniedReason = null);
+```
+
+**SecretTokenAuthStrategy** (Services/SecretTokenAuthStrategy.cs):
+- Extracts `secretToken` from route values via `HttpContext.GetRouteValue("secretToken")`
+- Compares against `trip.SecretToken`
+- Returns `AuthResult(true)` on match; `AuthResult(false, "Invalid or missing secret token")` on mismatch
+
+**DI Registration** (Program.cs):
+```csharp
+builder.Services.AddScoped<IAuthStrategy, SecretTokenAuthStrategy>();
+```
+
+**Testing:** 6 unit tests verify:
+- Matching token → authorized
+- Mismatched token → unauthorized with reason
+- Missing token → unauthorized
+- Empty token → unauthorized
+- Interface implementation
+- AuthResult type correctness
+
+**Design (AC6.1, AC5.2, AC2.6):**
+- Auth strategy is DI-injected and swappable without endpoint code changes
+- Secret token is the only credential (no passwords, accounts, headers)
+- Invalid tokens return 401 Unauthorized
+
+### 9.2 IPhotoService & PhotoService (Phase 3, Task 3)
+
+Image processing and Azure Blob Storage integration (not yet implemented in Task 2).
+
+---
+
+## 10. Security Considerations (Phase 3)
+
+### 10.1 Authorization
+
+**Phase 3 Implementation:**
+- **IAuthStrategy:** Pluggable interface via DI (AC6.1)
+- **SecretTokenAuthStrategy:** Validates `{secretToken}` route parameter against `Trip.SecretToken` (AC5.2, AC2.6)
+- **Future swapping:** PIN codes, OAuth, or other strategies without endpoint changes
+
+### 10.2 HTTPS & TLS
 
 ASP.NET Core project created with `--no-https` because Azure App Service terminates TLS. Ensure `X-Forwarded-Proto` header is trusted in production.
 
-### 8.3 EXIF Stripping
+### 10.3 EXIF Stripping (Phase 3, Task 3)
 
-Not yet implemented — Phase 2 (Photo Upload) will strip EXIF from stored tiers via SkiaSharp.
+**Implementation via SkiaSharp:**
+- Decode JPEG with `SKBitmap.Decode(stream)` (reads pixels)
+- Re-encode with `SKBitmap.Encode()` as fresh JPEG (no metadata)
+- Creates three tiers: original, display, thumbnail
+- All tiers have EXIF stripped (AC6.3)
+
+### 10.4 Blob Storage Security (Phase 3, Task 6)
+
+**Private Blob Storage:**
+- Azure Blob container `road-trip-photos` created with `PublicAccessType.None`
+- Photos are NOT accessible via direct blob URLs (AC6.4)
+- All photo access through `GET /api/photos/{tripId}/{photoId}/{size}` endpoint (API proxy)
 
 ---
 
@@ -430,6 +494,7 @@ Future phases will test:
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.4 | 2026-03-20 | Phase 3, Tasks 1-2: NuGet packages for image processing (SkiaSharp 3.119.2) and Azure Blob Storage (Azure.Storage.Blobs 12.27.0). IAuthStrategy interface and SecretTokenAuthStrategy implementation with DI registration. 6 unit tests verify secret token validation, error handling, and interface compliance. Pluggable auth design supports future strategy swapping without code changes. |
 | 1.3 | 2026-03-20 | Phase 2, Task 3: Landing page (index.html), trip creation form (create.html), mobile-first CSS (styles.css), and API client (api.js). All static files served from wwwroot with responsive design and copy-to-clipboard functionality. |
 | 1.2 | 2026-03-20 | Phase 2, Task 2: POST /api/trips endpoint with validation, slug generation, token creation, and full test coverage (7 tests). |
 | 1.1 | 2026-03-20 | Phase 2, Task 1: SlugHelper utility class and trip creation DTOs (CreateTripRequest, CreateTripResponse) with comprehensive test coverage (15 tests). |
