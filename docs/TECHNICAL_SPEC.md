@@ -1,8 +1,8 @@
 # Technical Specification: Road Trip Photo Map
 
-**Version:** 1.7
-**Last Updated:** 2026-03-20 (Phase 5, Task 3: GET Photos Endpoint)
-**Status:** Phase 5 - Post Page UI (Backend endpoints)
+**Version:** 2.0
+**Last Updated:** 2026-03-20 (Phase 6, Task 1: Public Trip and Photos Endpoints)
+**Status:** Phase 6 - Map View (Public endpoints and map frontend)
 
 ---
 
@@ -233,6 +233,12 @@ Located in `Helpers/SlugHelper.cs`, provides URL slug generation with uniqueness
 - `SecretToken` (string): UUID v4 for secret link authorization
 - `ViewUrl` (string): Public viewing URL (e.g., `/trips/my-slug`)
 - `PostUrl` (string): Secret posting URL (e.g., `/post/token-uuid`)
+
+**TripResponse** (Models/TripResponse.cs) — Phase 6, Task 1
+- `Name` (string, required): Trip name
+- `Description` (string, nullable): Trip description
+- `PhotoCount` (int, required): Number of photos uploaded to trip
+- `CreatedAt` (DateTime, required): When trip was created
 
 ---
 
@@ -470,10 +476,78 @@ Maps to `wwwroot/create.html`. Serves HTML form for creating new trips.
 - Returns place name (may be null if Nominatim fails, but endpoint still returns 200)
 - Used by photo upload page (Phase 5) to show location preview before confirming upload
 
-Future phases will add:
-- Photo list endpoint: `GET /api/trips/{slug}/photos`
-- Trip view page: GET /trips/{slug}
-- Photo upload page: GET /post/{token}
+### 7.8 GET /api/trips/{slug} — Get Trip Info (Phase 6, Task 1)
+
+**Route parameters:**
+- `slug` (string): Trip URL slug (required)
+
+**Validation:**
+- Trip with matching slug exists and `IsActive == true` → 404 if not found
+
+**Response (200 OK):**
+```json
+{
+  "name": "California Coast",
+  "description": "Scenic drive down PCH",
+  "photoCount": 42,
+  "createdAt": "2026-03-20T12:00:00Z"
+}
+```
+
+**Behavior:**
+- No authentication required (public endpoint, AC5.1)
+- Returns trip metadata for map view header
+- `PhotoCount` counted from database (not cached)
+- Covers AC3.1, AC3.6, AC5.1
+
+**Testing:** 9 unit tests verify:
+- Valid slug returns trip data with accurate photo count
+- Invalid slug returns 404
+- Inactive trips return 404
+- No auth required
+- Photo count is accurate for empty, single, and multi-photo trips
+
+### 7.9 GET /api/trips/{slug}/photos — Get Trip Photos (Phase 6, Task 1)
+
+**Route parameters:**
+- `slug` (string): Trip URL slug (required)
+
+**Validation:**
+- Trip with matching slug exists and `IsActive == true` → 404 if not found
+
+**Response (200 OK):** Array of PhotoResponse objects ordered by `TakenAt` ascending (chronological):
+```json
+[
+  {
+    "id": 1,
+    "thumbnailUrl": "/api/photos/1/1/thumb",
+    "displayUrl": "/api/photos/1/1/display",
+    "originalUrl": "/api/photos/1/1/original",
+    "lat": 40.7128,
+    "lng": -74.0060,
+    "placeName": "New York, NY, USA",
+    "caption": "Times Square",
+    "takenAt": "2026-01-01T09:00:00Z"
+  }
+]
+```
+
+**Behavior:**
+- No authentication required (public endpoint, AC5.1)
+- Returns empty array `[]` for trips with zero photos (AC3.6)
+- Photos ordered by `TakenAt` ascending for route line rendering (AC3.3)
+- All photo URLs follow `/api/photos/` pattern (proxied, no direct blob URLs)
+- Covers AC3.1, AC3.6, AC5.1
+
+**Testing:** 9 unit tests verify:
+- Valid slug returns photos in chronological order (TakenAt ascending)
+- Zero photos returns empty array (not 404)
+- Invalid slug returns 404
+- Inactive trips return 404
+- No auth required
+- Photo count, coordinates, and metadata accuracy
+
+**Design Note:** Chronological ordering enables native apps to render route lines without client-side sorting.
 
 ---
 
@@ -860,6 +934,7 @@ Future phases will test:
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 2.0 | 2026-03-20 | Phase 6, Task 1: Added public trip info and photos endpoints. Created TripResponse DTO. Implemented GET /api/trips/{slug} (public trip metadata with photo count). Implemented GET /api/trips/{slug}/photos (public photo array ordered by TakenAt ascending for route line). Both endpoints require no authentication (AC5.1). Empty photo array returned for trips with no photos (AC3.6). 9 unit tests verify behavior. All 81 tests passing. Covers AC3.1, AC3.6, AC5.1. |
 | 1.9 | 2026-03-20 | Phase 5, Task 2: Created post.html (mobile-first photo posting page) and postUI.js (DOM rendering layer). Features: file input with camera capture, EXIF preview, place name display, pin-drop fallback map for photos without GPS, optional caption input, photo list with delete buttons, toast notifications. Leaflet CDN for map component. Updated styles.css with post page component styles (photo grid, toast animations, responsive). Added GET /post/{secretToken} route in Program.cs. Covers AC2.2 (GPS display), AC2.3 (place name preview), AC2.4 (optional caption), AC2.9 (pin-drop fallback). Build succeeds. |
 | 1.8 | 2026-03-20 | Phase 5, Task 1: Created postService.js pure data/state module with zero DOM references. Implements extractPhotoMetadata() (EXIF + auto-geocoding), uploadPhoto() (FormData with optional caption/timestamp), deletePhoto(), and listPhotos(). Extended api.js with geocode(), uploadPhoto(), deletePhoto(), listTripPhotos() methods. All methods designed for native app reuse. Covers AC2.2 (GPS extraction), AC2.3 (place name resolution), AC2.4 (optional caption). |
 | 1.7 | 2026-03-20 | Phase 5, Task 3: Added GET /api/trips/{secretToken}/photos endpoint for post page photo list. Returns array of PhotoResponse objects ordered by CreatedAt descending. Returns 404 if trip not found. 5 unit tests verify valid token returns photos, empty trip returns empty array, invalid token returns not found, and photos ordered correctly. Tests pass 72/72. |

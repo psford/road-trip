@@ -55,6 +55,79 @@ app.MapGet("/create", () => Results.File("wwwroot/create.html", "text/html"));
 
 app.MapGet("/post/{secretToken}", () => Results.File("wwwroot/post.html", "text/html"));
 
+app.MapGet("/trips/{slug}", async (string slug, RoadTripDbContext db) =>
+{
+    // Find trip by slug where IsActive == true
+    var trip = await db.Trips.FirstOrDefaultAsync(t => t.Slug == slug && t.IsActive);
+    if (trip == null)
+        return Results.NotFound(new { error = "Trip not found" });
+
+    // Count photos
+    var photoCount = await db.Photos.CountAsync(p => p.TripId == trip.Id);
+
+    // Return TripResponse
+    var response = new TripResponse
+    {
+        Name = trip.Name,
+        Description = trip.Description,
+        PhotoCount = photoCount,
+        CreatedAt = trip.CreatedAt
+    };
+
+    return Results.Ok(response);
+});
+
+app.MapGet("/api/trips/{slug}", async (string slug, RoadTripDbContext db) =>
+{
+    // Find trip by slug where IsActive == true
+    var trip = await db.Trips.FirstOrDefaultAsync(t => t.Slug == slug && t.IsActive);
+    if (trip == null)
+        return Results.NotFound(new { error = "Trip not found" });
+
+    // Count photos
+    var photoCount = await db.Photos.CountAsync(p => p.TripId == trip.Id);
+
+    // Return TripResponse
+    var response = new TripResponse
+    {
+        Name = trip.Name,
+        Description = trip.Description,
+        PhotoCount = photoCount,
+        CreatedAt = trip.CreatedAt
+    };
+
+    return Results.Ok(response);
+});
+
+app.MapGet("/api/trips/{slug}/photos", async (string slug, RoadTripDbContext db) =>
+{
+    // Find trip by slug where IsActive == true
+    var trip = await db.Trips.FirstOrDefaultAsync(t => t.Slug == slug && t.IsActive);
+    if (trip == null)
+        return Results.NotFound(new { error = "Trip not found" });
+
+    // Query photos ordered by TakenAt ascending (chronological for route line)
+    var photos = await db.Photos
+        .Where(p => p.TripId == trip.Id)
+        .OrderBy(p => p.TakenAt)
+        .Select(p => new PhotoResponse
+        {
+            Id = p.Id,
+            ThumbnailUrl = $"/api/photos/{trip.Id}/{p.Id}/thumb",
+            DisplayUrl = $"/api/photos/{trip.Id}/{p.Id}/display",
+            OriginalUrl = $"/api/photos/{trip.Id}/{p.Id}/original",
+            Lat = p.Latitude,
+            Lng = p.Longitude,
+            PlaceName = p.PlaceName ?? "",
+            Caption = p.Caption,
+            TakenAt = p.TakenAt
+        })
+        .ToListAsync();
+
+    // Return empty array if no photos
+    return Results.Ok(photos);
+});
+
 app.MapPost("/api/trips", async (CreateTripRequest request, RoadTripDbContext db) =>
 {
     // Validate trip name
