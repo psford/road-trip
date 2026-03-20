@@ -35,6 +35,23 @@ var app = builder.Build();
 // CORS not needed for Phase 1 — frontend served same-origin.
 // If native apps need cross-origin API access later, add CORS policy here.
 
+// Global exception handler middleware (returns 500 with generic error message, no stack trace)
+app.Use(async (context, next) =>
+{
+    try
+    {
+        await next();
+    }
+    catch (Exception ex)
+    {
+        var logger = context.RequestServices.GetRequiredService<ILogger<Program>>();
+        logger.LogError(ex, "Unhandled exception on {Method} {Path}",
+            context.Request.Method, context.Request.Path);
+        context.Response.StatusCode = 500;
+        await context.Response.WriteAsJsonAsync(new { error = "An unexpected error occurred" });
+    }
+});
+
 // Security headers middleware (belt-and-suspenders with robots.txt and meta tags)
 app.Use(async (context, next) =>
 {
@@ -56,6 +73,12 @@ app.MapGet("/api/geocode", async (double? lat, double? lng, IGeocodingService ge
     if (!lat.HasValue || !lng.HasValue)
         return Results.BadRequest(new { error = "Invalid coordinates" });
 
+    // Validate coordinate ranges
+    if (lat < -90 || lat > 90)
+        return Results.BadRequest(new { error = "Invalid coordinates: latitude must be between -90 and 90" });
+    if (lng < -180 || lng > 180)
+        return Results.BadRequest(new { error = "Invalid coordinates: longitude must be between -180 and 180" });
+
     // Call geocoding service
     var placeName = await geocodingService.ReverseGeocodeAsync(lat.Value, lng.Value);
 
@@ -70,6 +93,10 @@ app.MapGet("/trips/{slug}", () => Results.File("wwwroot/trips.html", "text/html"
 
 app.MapGet("/api/trips/{slug}", async (string slug, RoadTripDbContext db) =>
 {
+    // Validate slug format and length
+    if (string.IsNullOrWhiteSpace(slug) || !System.Text.RegularExpressions.Regex.IsMatch(slug, @"^[a-z0-9-]+$") || slug.Length > 200)
+        return Results.BadRequest(new { error = "Invalid slug format" });
+
     // Find trip by slug where IsActive == true
     var trip = await db.Trips.FirstOrDefaultAsync(t => t.Slug == slug && t.IsActive);
     if (trip == null)
@@ -92,6 +119,10 @@ app.MapGet("/api/trips/{slug}", async (string slug, RoadTripDbContext db) =>
 
 app.MapGet("/api/trips/{slug}/photos", async (string slug, RoadTripDbContext db) =>
 {
+    // Validate slug format and length
+    if (string.IsNullOrWhiteSpace(slug) || !System.Text.RegularExpressions.Regex.IsMatch(slug, @"^[a-z0-9-]+$") || slug.Length > 200)
+        return Results.BadRequest(new { error = "Invalid slug format" });
+
     // Find trip by slug where IsActive == true
     var trip = await db.Trips.FirstOrDefaultAsync(t => t.Slug == slug && t.IsActive);
     if (trip == null)
@@ -124,6 +155,10 @@ app.MapPost("/api/trips", async (CreateTripRequest request, RoadTripDbContext db
     // Validate trip name
     if (string.IsNullOrWhiteSpace(request.Name))
         return Results.BadRequest(new { error = "Trip name is required" });
+
+    // Validate trip name length
+    if (request.Name.Length > 500)
+        return Results.BadRequest(new { error = "Trip name must not exceed 500 characters" });
 
     // Generate unique slug
     var slug = await SlugHelper.GenerateUniqueSlugAsync(
@@ -184,6 +219,16 @@ app.MapPost("/api/trips/{secretToken}/photos", async (string secretToken, IFormF
     const long maxFileSize = 15_728_640;
     if (file.Length > maxFileSize)
         return Results.BadRequest(new { error = "File must not exceed 15MB" });
+
+    // Validate coordinates
+    if (lat < -90 || lat > 90)
+        return Results.BadRequest(new { error = "Invalid coordinates: latitude must be between -90 and 90" });
+    if (lng < -180 || lng > 180)
+        return Results.BadRequest(new { error = "Invalid coordinates: longitude must be between -180 and 180" });
+
+    // Validate caption length if provided
+    if (!string.IsNullOrEmpty(caption) && caption.Length > 1000)
+        return Results.BadRequest(new { error = "Caption must not exceed 1000 characters" });
 
     // Create photo entity
     var photo = new RoadTripMap.Entities.PhotoEntity

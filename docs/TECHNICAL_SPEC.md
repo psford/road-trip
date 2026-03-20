@@ -1,8 +1,8 @@
 # Technical Specification: Road Trip Photo Map
 
-**Version:** 2.1
-**Last Updated:** 2026-03-20 (Phase 7, Task 2: Security Headers Middleware)
-**Status:** Phase 7 - Privacy & Hardening (Crawler protection, rate limiting)
+**Version:** 2.2
+**Last Updated:** 2026-03-20 (Phase 7, Task 4: Input Validation & Global Error Handling)
+**Status:** Phase 7 - Privacy & Hardening (Crawler protection, rate limiting, validation, error handling)
 
 ---
 
