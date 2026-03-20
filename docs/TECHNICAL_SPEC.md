@@ -354,8 +354,63 @@ Maps to `wwwroot/create.html`. Serves HTML form for creating new trips.
 - Handles JSON serialization/deserialization
 - Error handling and throwing
 
+### 7.4 POST /api/trips/{secretToken}/photos — Upload Photo (Phase 3, Task 5)
+
+**Request:** multipart/form-data
+- `file` (IFormFile, required): Image file
+- `lat` (double, required): Latitude
+- `lng` (double, required): Longitude
+- `caption` (string, optional): User caption
+- `takenAt` (DateTime, optional): When photo was taken (defaults to UtcNow)
+
+**Validation:**
+- `secretToken` matches trip's token via `IAuthStrategy.ValidatePostAccess()` → 401 if invalid
+- File content type starts with `image/` → 400 if not
+- File size ≤ 15MB (15,728,640 bytes) → 400 if exceeded
+- Trip exists → 404 if not
+
+**Response (200 OK):**
+```json
+{
+  "id": 42,
+  "thumbnailUrl": "/api/photos/1/42/thumb",
+  "displayUrl": "/api/photos/1/42/display",
+  "originalUrl": "/api/photos/1/42/original",
+  "lat": 40.7128,
+  "lng": -74.0060,
+  "placeName": "",
+  "caption": "NYC Skyline",
+  "takenAt": "2026-03-20T12:34:56Z"
+}
+```
+
+**Behavior:**
+- Creates `PhotoEntity` with `BlobPath = ""`
+- Saves to DB to get auto-increment Id
+- Calls `IPhotoService.ProcessAndUploadAsync()` (creates three tiers, returns `BlobPath`)
+- Updates photo's `BlobPath` and persists
+- Returns `PhotoResponse` with `/api/photos/` URLs (not direct blob URLs, per AC6.4)
+
+### 7.5 DELETE /api/trips/{secretToken}/photos/{id} — Delete Photo (Phase 3, Task 5)
+
+**Route parameters:**
+- `secretToken`: Trip's secret token
+- `id` (int): Photo ID
+
+**Validation:**
+- `secretToken` matches trip token → 401 if invalid
+- Trip exists → 404 if not
+- Photo exists and belongs to trip → 404 if not
+
+**Response (204 No Content)**
+
+**Behavior:**
+- Validates auth via `IAuthStrategy.ValidatePostAccess()`
+- Calls `IPhotoService.DeletePhotoAsync()` (deletes all three blob tiers)
+- Removes `PhotoEntity` from DB
+- Persists changes
+
 Future phases will add:
-- Photo upload endpoint: `POST /api/trips/{secretToken}/photos`
 - Photo list endpoint: `GET /api/trips/{slug}/photos`
 - Reverse geocode endpoint: `GET /api/geocode`
 - Trip view page: GET /trips/{slug}

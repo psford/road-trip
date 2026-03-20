@@ -78,4 +78,94 @@ app.MapPost("/api/trips", async (CreateTripRequest request, RoadTripDbContext db
     return Results.Ok(response);
 });
 
+// POST /api/trips/{secretToken}/photos — Upload photo
+app.MapPost("/api/trips/{secretToken}/photos", async (string secretToken, IFormFile file, double lat, double lng, string? caption, DateTime? takenAt, RoadTripDbContext db, IAuthStrategy authStrategy, IPhotoService photoService) =>
+{
+    // Look up trip by secret token
+    var trip = await db.Trips.FirstOrDefaultAsync(t => t.SecretToken == secretToken);
+    if (trip == null)
+        return Results.NotFound(new { error = "Trip not found" });
+
+    // Validate auth
+    var authResult = await authStrategy.ValidatePostAccess(new DefaultHttpContext { Request = { RouteValues = new() { { "secretToken", secretToken } } } }, trip);
+    if (!authResult.IsAuthorized)
+        return Results.Unauthorized();
+
+    // Validate file content type
+    if (!file.ContentType.StartsWith("image/"))
+        return Results.BadRequest(new { error = "File must be an image" });
+
+    // Validate file size (15MB = 15,728,640 bytes)
+    const long maxFileSize = 15_728_640;
+    if (file.Length > maxFileSize)
+        return Results.BadRequest(new { error = "File must not exceed 15MB" });
+
+    // Create photo entity
+    var photo = new RoadTripMap.Entities.PhotoEntity
+    {
+        TripId = trip.Id,
+        Latitude = lat,
+        Longitude = lng,
+        Caption = caption,
+        TakenAt = takenAt ?? DateTime.UtcNow,
+        PlaceName = null, // Geocoding is Phase 4
+        BlobPath = "" // Placeholder, will be set after upload
+    };
+
+    db.Photos.Add(photo);
+    await db.SaveChangesAsync();
+
+    // Process and upload photo
+    using var fileStream = file.OpenReadStream();
+    var uploadResult = await photoService.ProcessAndUploadAsync(fileStream, trip.Id, photo.Id, file.FileName);
+
+    // Update photo blob path
+    photo.BlobPath = uploadResult.BlobPath;
+    await db.SaveChangesAsync();
+
+    // Return response
+    var photoResponse = new PhotoResponse
+    {
+        Id = photo.Id,
+        ThumbnailUrl = $"/api/photos/{trip.Id}/{photo.Id}/thumb",
+        DisplayUrl = $"/api/photos/{trip.Id}/{photo.Id}/display",
+        OriginalUrl = $"/api/photos/{trip.Id}/{photo.Id}/original",
+        Lat = photo.Latitude,
+        Lng = photo.Longitude,
+        PlaceName = photo.PlaceName ?? "",
+        Caption = photo.Caption,
+        TakenAt = photo.TakenAt
+    };
+
+    return Results.Ok(photoResponse);
+});
+
+// DELETE /api/trips/{secretToken}/photos/{id} — Delete photo
+app.MapDelete("/api/trips/{secretToken}/photos/{id:int}", async (string secretToken, int id, RoadTripDbContext db, IAuthStrategy authStrategy, IPhotoService photoService) =>
+{
+    // Look up trip
+    var trip = await db.Trips.FirstOrDefaultAsync(t => t.SecretToken == secretToken);
+    if (trip == null)
+        return Results.NotFound(new { error = "Trip not found" });
+
+    // Validate auth
+    var authResult = await authStrategy.ValidatePostAccess(new DefaultHttpContext { Request = { RouteValues = new() { { "secretToken", secretToken } } } }, trip);
+    if (!authResult.IsAuthorized)
+        return Results.Unauthorized();
+
+    // Find photo
+    var photo = await db.Photos.FirstOrDefaultAsync(p => p.Id == id && p.TripId == trip.Id);
+    if (photo == null)
+        return Results.NotFound(new { error = "Photo not found" });
+
+    // Delete from blob storage
+    await photoService.DeletePhotoAsync(trip.Id, photo.Id, photo.BlobPath);
+
+    // Delete from database
+    db.Photos.Remove(photo);
+    await db.SaveChangesAsync();
+
+    return Results.NoContent();
+});
+
 app.Run();
