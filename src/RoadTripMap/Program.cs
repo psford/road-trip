@@ -32,6 +32,23 @@ builder.Services.AddScoped<IGeocodingService, NominatimGeocodingService>();
 
 var app = builder.Build();
 
+// Apply pending migrations on startup (production environment)
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<RoadTripDbContext>();
+    var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+    try
+    {
+        db.Database.Migrate();
+        logger.LogInformation("Database migration completed successfully");
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "Database migration failed");
+        throw;
+    }
+}
+
 // CORS not needed for Phase 1 — frontend served same-origin.
 // If native apps need cross-origin API access later, add CORS policy here.
 

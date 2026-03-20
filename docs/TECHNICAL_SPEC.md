@@ -1062,7 +1062,22 @@ Future phases will test:
 
 ## 12. Deployment Infrastructure (Phase 8)
 
-### 12.1 Docker Configuration
+### 12.1 Startup Migration
+
+**Program.cs**:
+Located in `projects/road-trip/src/RoadTripMap/Program.cs`, the startup migration block runs immediately after `var app = builder.Build();`:
+- Creates a service scope to resolve `RoadTripDbContext`
+- Calls `db.Database.Migrate()` to apply pending EF Core migrations
+- Logs success message; propagates exceptions on failure
+- Prevents application startup if migration fails
+- Subsequent deployments without new migrations are idempotent (EF Core tracks applied migrations in `__EFMigrationsHistory` table)
+
+**Behavior:**
+- On first deployment, creates `roadtrip` schema and all tables (Trips, Photos, GeoCache)
+- On subsequent deployments, checks `__EFMigrationsHistory` and applies only new migrations
+- If migration fails, application shuts down (prevents silent failures with incomplete schema)
+
+### 12.2 Docker Configuration
 
 **Dockerfile** (`projects/road-trip/Dockerfile`):
 - Multi-stage build: SDK 8.0 for compilation → runtime 8.0 for execution
