@@ -409,9 +409,57 @@ builder.Services.AddScoped<IAuthStrategy, SecretTokenAuthStrategy>();
 - Secret token is the only credential (no passwords, accounts, headers)
 - Invalid tokens return 401 Unauthorized
 
-### 9.2 IPhotoService & PhotoService (Phase 3, Task 3)
+### 9.2 IPhotoService & PhotoService (Phase 3, Tasks 3-4)
 
-Image processing and Azure Blob Storage integration (not yet implemented in Task 2).
+Image processing pipeline using SkiaSharp with three-tier Azure Blob Storage uploads.
+
+**IPhotoService** (Services/IPhotoService.cs):
+```csharp
+public interface IPhotoService
+{
+    Task<PhotoUploadResult> ProcessAndUploadAsync(Stream imageStream, int tripId, int photoId, string originalFileName);
+    Task<Stream> GetPhotoAsync(int tripId, int photoId, string size);
+    Task DeletePhotoAsync(int tripId, int photoId, string blobPath);
+}
+
+public record PhotoUploadResult(string BlobPath);
+```
+
+**PhotoService** (Services/PhotoService.cs):
+- **ProcessAndUploadAsync:**
+  1. Decode image via `SKBitmap.Decode(stream)` (reads pixel data)
+  2. Check `SKBitmap.Origin` for EXIF rotation and apply if needed
+  3. Upload three tiers: original, display, thumbnail
+  4. **Original:** Re-encode as JPEG quality 95, no resize → blob path `{tripId}/{photoId}.jpg`
+  5. **Display:** Resize to max 1920px width (aspect ratio preserved), JPEG quality 85 → `{tripId}/{photoId}_display.jpg`
+  6. **Thumbnail:** Resize to max 300px width, JPEG quality 75 → `{tripId}/{photoId}_thumb.jpg`
+  7. All re-encoding via `SKBitmap.Encode()` creates fresh pixel data, stripping EXIF by design (AC6.3)
+
+- **GetPhotoAsync:**
+  - Validates size is one of: `original`, `display`, `thumb`
+  - Maps size to blob path suffix (empty, `_display`, `_thumb`)
+  - Downloads and returns stream
+
+- **DeletePhotoAsync:**
+  - Deletes all three tiers by blob path
+
+**Aspect-Ratio-Preserving Resize:**
+```csharp
+private static SKImageInfo CalculateResizedDimensions(int origWidth, int origHeight, int maxWidth)
+{
+    if (origWidth <= maxWidth) return new SKImageInfo(origWidth, origHeight);
+    var ratio = (float)maxWidth / origWidth;
+    return new SKImageInfo(maxWidth, (int)(origHeight * ratio));
+}
+```
+
+**Testing:** 14 unit tests verify:
+- Interface implementation
+- Image decode/encode round-trip
+- Aspect ratio preservation
+- EXIF stripping via re-encoding
+- Valid size acceptance
+- Invalid size rejection
 
 ---
 
