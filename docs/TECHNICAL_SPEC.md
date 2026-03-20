@@ -620,13 +620,14 @@ public interface IGeocodingService
 9. Return place name
 10. On HTTP failure: return `null` (don't block photo upload if Nominatim is down)
 
-**Testing:** Unit tests verify:
+**Testing:** 8 unit tests verify:
 - Correct place names returned for known coordinates (mock Nominatim JSON)
 - Cache hits prevent HTTP requests
 - Cache misses trigger HTTP calls and create `GeoCacheEntity`
 - Rate limiting via SemaphoreSlim prevents concurrent calls
 - Nominatim failures return null without throwing
 - Interface compliance
+- Coordinate rounding for consistent cache keys
 
 ---
 
