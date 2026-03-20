@@ -649,6 +649,35 @@ const MapUI = {
 - Polyline: blue (#3388ff), weight 3px, opacity 0.8
 - Attribution: standard OpenStreetMap credit in map corner
 
+### 7.13 Map View Styling (Phase 6, Task 3)
+
+**Location:** `wwwroot/css/styles.css` (section "Map View Styles")
+
+**Full-Viewport Design:**
+- `.map-container`: 100% width, 100vh height (fills entire viewport)
+- `body.map-page`: padding 0, overflow hidden (for full-bleed map)
+
+**Floating Controls (Fixed Position):**
+- `.map-header`: Fixed top, full width, semi-transparent white bg, blur effect, trip name in 1.2rem bold
+- `.map-control`: Fixed bottom-right, white bg with blue border, hover fills with blue, active scales 0.98
+- `.map-empty`: Fixed center, semi-transparent overlay with "No photos yet" message
+
+**Responsive Breakpoints:**
+- **Mobile (< 480px):** Map header 1rem font, control bottom-20px right-8px, smaller padding
+- **Tablet (≥ 768px):** Map header 1.3rem font, control bottom-40px right-20px
+- **Desktop (≥ 1024px):** Map header 1.5rem font
+
+**Leaflet Popup Customization:**
+- `.leaflet-popup-content-wrapper`: white bg, small border-radius, subtle shadow
+- Images, headings, text, links all styled for readability in popup context
+- Max 280px width enforced by HTML inline styles
+
+**Design Principles:**
+- Mobile-first responsive design (scales up, never down)
+- Full-viewport map with overlaid controls (header at top, button at bottom-right)
+- Semi-transparent backgrounds with blur effects for readability over map
+- Native-like feel with system font stack and smooth transitions
+
 ---
 
 ## 8. Migration Strategy
@@ -1034,6 +1063,7 @@ Future phases will test:
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 2.2 | 2026-03-20 | Phase 6, Task 3: Added responsive map view styling. Full-viewport map container (100vh), floating semi-transparent header with trip name (top), floating route toggle button (bottom-right), empty message overlay (center). Leaflet popup customization for images, headings, links. Mobile-first responsive design: mobile (< 480px) compact header/button, tablet (≥ 768px) larger, desktop (≥ 1024px) larger header. All controls accessible and readable at all viewport sizes. Build succeeds. All 81 tests passing. Covers AC3.1-AC3.7 (map view acceptance criteria). |
 | 2.1 | 2026-03-20 | Phase 6, Task 2: Created map view frontend. MapService.js pure data layer (loadTrip, getRouteCoordinates) with zero DOM/Leaflet refs for native portability. MapUI.js Leaflet-specific rendering with marker popups, route toggle, auto-fit bounds. trips.html full-viewport map page with Leaflet CDN (SRI hashes). GET /trips/{slug} route serves trips.html. Features: photo pins at GPS coords, clickable popups with display image/place/caption/timestamp, route polyline toggle connecting pins chronologically, auto-fit bounds with padding, single-pin centering (zoom 13), empty message for zero photos. Covers AC3.1-AC3.7. Build succeeds. All 81 tests passing. |
 | 2.0 | 2026-03-20 | Phase 6, Task 1: Added public trip info and photos endpoints. Created TripResponse DTO. Implemented GET /api/trips/{slug} (public trip metadata with photo count). Implemented GET /api/trips/{slug}/photos (public photo array ordered by TakenAt ascending for route line). Both endpoints require no authentication (AC5.1). Empty photo array returned for trips with no photos (AC3.6). 9 unit tests verify behavior. All 81 tests passing. Covers AC3.1, AC3.6, AC5.1. |
 | 1.9 | 2026-03-20 | Phase 5, Task 2: Created post.html (mobile-first photo posting page) and postUI.js (DOM rendering layer). Features: file input with camera capture, EXIF preview, place name display, pin-drop fallback map for photos without GPS, optional caption input, photo list with delete buttons, toast notifications. Leaflet CDN for map component. Updated styles.css with post page component styles (photo grid, toast animations, responsive). Added GET /post/{secretToken} route in Program.cs. Covers AC2.2 (GPS display), AC2.3 (place name preview), AC2.4 (optional caption), AC2.9 (pin-drop fallback). Build succeeds. |
