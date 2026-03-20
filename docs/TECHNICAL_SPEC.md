@@ -1,8 +1,8 @@
 # Technical Specification: Road Trip Photo Map
 
-**Version:** 1.0
-**Last Updated:** 2026-03-20 (Task 5: Program.cs configured with EF Core, static files, health endpoint)
-**Status:** Phase 1 - Infrastructure
+**Version:** 1.1
+**Last Updated:** 2026-03-20 (Phase 2, Task 1: SlugHelper and trip creation DTOs)
+**Status:** Phase 2 - Trip Creation API
 
 ---
 
@@ -36,6 +36,11 @@ projects/road-trip/
 │       ├── Data/                    # EF Core context and factories
 │       │   ├── RoadTripDbContext.cs
 │       │   └── DesignTimeDbContextFactory.cs
+│       ├── Helpers/                 # Utility functions
+│       │   └── SlugHelper.cs        # URL slug generation and uniqueness
+│       ├── Models/                  # DTO models
+│       │   ├── CreateTripRequest.cs
+│       │   └── CreateTripResponse.cs
 │       ├── Migrations/              # EF Core migrations (generated)
 │       └── wwwroot/                 # Static files (HTML, JS, CSS)
 ├── tests/
@@ -173,16 +178,57 @@ Set via App Service configuration variable `DefaultConnection` (not committed in
 
 ---
 
-## 5. NuGet Packages
+## 5. Helpers and Models
 
-### 5.1 Core Dependencies
+### 5.1 SlugHelper
+
+Located in `Helpers/SlugHelper.cs`, provides URL slug generation with uniqueness checking.
+
+**Methods:**
+- `GenerateSlug(string name)` — Converts human-readable names to URL-friendly slugs
+  - Lowercases input
+  - Replaces non-alphanumeric characters with hyphens
+  - Collapses multiple consecutive hyphens
+  - Trims leading/trailing hyphens
+  - Truncates to max 80 characters
+  - Uses source-generated regex for performance
+
+- `GenerateUniqueSlugAsync(string name, Func<string, Task<bool>> slugExists)` — Ensures slug uniqueness
+  - Calls `GenerateSlug` to get base slug
+  - Falls back to `"trip"` if base slug is empty
+  - Checks uniqueness via callback function
+  - Appends `-2`, `-3`, etc. if conflicts detected
+
+**Testing:** Full test coverage in `Tests/Helpers/SlugHelperTests.cs` (15 tests):
+- Basic slug generation (lowercase, special chars, hyphens)
+- Truncation of long names
+- Uniqueness handling with counters
+- Edge cases (empty strings, special chars only, whitespace)
+
+### 5.2 DTOs
+
+**CreateTripRequest** (Models/CreateTripRequest.cs)
+- `Name` (string, required): Trip name
+- `Description` (string, nullable): Optional trip description
+
+**CreateTripResponse** (Models/CreateTripResponse.cs)
+- `Slug` (string): URL-friendly identifier
+- `SecretToken` (string): UUID v4 for secret link authorization
+- `ViewUrl` (string): Public viewing URL (e.g., `/trips/my-slug`)
+- `PostUrl` (string): Secret posting URL (e.g., `/post/token-uuid`)
+
+---
+
+## 6. NuGet Packages
+
+### 6.1 Core Dependencies
 
 | Package | Version | Purpose |
 |---------|---------|---------|
 | `Microsoft.EntityFrameworkCore.SqlServer` | 8.0.23 | SQL Server provider for EF Core |
 | `Microsoft.EntityFrameworkCore.Design` | 8.0.23 | EF Core tools (migrations) |
 
-### 5.2 Testing Dependencies (Phase 1)
+### 6.2 Testing Dependencies (Phase 2)
 
 | Package | Version | Purpose |
 |---------|---------|---------|
@@ -198,7 +244,7 @@ Future phases will add:
 
 ---
 
-## 6. Minimal API Bootstrap
+## 7. Minimal API Bootstrap
 
 **Program.cs** currently:
 1. Registers `RoadTripDbContext` with connection string from config
@@ -214,9 +260,9 @@ Future phases will add:
 
 ---
 
-## 7. Migration Strategy
+## 8. Migration Strategy
 
-### 7.1 Creating Migrations
+### 8.1 Creating Migrations
 
 ```bash
 cd projects/road-trip/src/RoadTripMap
@@ -225,7 +271,7 @@ dotnet ef migrations add <MigrationName>
 
 Migrations are stored in `Migrations/` folder and tracked in Git.
 
-### 7.2 Applying Migrations
+### 8.2 Applying Migrations
 
 **Local (SQL Express):**
 ```bash
@@ -237,7 +283,7 @@ Applied automatically on app startup via `DbContext.Database.Migrate()` call in 
 
 ---
 
-## 8. Security Considerations (Phase 1)
+## 9. Security Considerations (Phase 2)
 
 ### 8.1 Authorization
 
@@ -257,7 +303,7 @@ Not yet implemented — Phase 2 (Photo Upload) will strip EXIF from stored tiers
 
 ## 9. Deployment
 
-### 9.1 Build & Publish
+### 10.1 Build & Publish
 
 ```bash
 cd projects/road-trip
@@ -266,41 +312,43 @@ dotnet publish -c Release -o ./publish
 
 Outputs to `publish/` folder for Docker or direct deployment.
 
-### 9.2 App Service Configuration
+### 10.2 App Service Configuration
 
 Must set via Azure Portal or Bicep:
 - `ConnectionStrings:DefaultConnection` = Azure SQL connection string
 
-### 9.3 Shared Database Note
+### 10.3 Shared Database Note
 
 Road Trip and Stock Analyzer share the `StockAnalyzer` Azure SQL database. Migrations are run independently but operate on the same SQL instance. The `roadtrip` schema isolation prevents table name conflicts.
 
 ---
 
-## 10. Testing Strategy (Phase 1)
+## 11. Testing Strategy (Phase 2)
 
-### 10.1 Test Project Setup
+### 11.1 Test Project Setup
 
 **RoadTripMap.Tests** (xUnit) with:
 - In-memory EF Core context for unit tests
 - Moq for service mocking
 - FluentAssertions for readable assertions
 
-### 10.2 Test Scope (Phase 1)
+### 11.2 Test Scope (Phase 2)
 
-- Entity model validation (nullable fields, required fields)
-- DbContext configuration (schema, indices, constraints)
-- Migration smoke test (verify migrations apply cleanly)
+- SlugHelper utility functions (15 tests covering generation, uniqueness, truncation, edge cases)
+- Trip creation DTOs (structure, required fields)
+- API endpoints (integration tests) — coming in Task 2
+- Homepage static files — coming in Task 3
 
 Future phases will test:
-- API endpoints (integration tests)
-- Photo processing pipeline
+- Photo upload pipeline
 - Authorization logic
+- Photo processing and EXIF stripping
 
 ---
 
-## 11. Version History
+## 12. Version History
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.1 | 2026-03-20 | Phase 2, Task 1: SlugHelper utility class and trip creation DTOs (CreateTripRequest, CreateTripResponse) with comprehensive test coverage. |
 | 1.0 | 2026-03-19 | Phase 1 infrastructure: project scaffold, entity model, EF Core context, initial migration. |
