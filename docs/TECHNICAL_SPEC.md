@@ -1,7 +1,7 @@
 # Technical Specification: Road Trip Photo Map
 
-**Version:** 1.1
-**Last Updated:** 2026-03-20 (Phase 2, Task 1: SlugHelper and trip creation DTOs)
+**Version:** 1.2
+**Last Updated:** 2026-03-20 (Phase 2, Task 2: POST /api/trips endpoint)
 **Status:** Phase 2 - Trip Creation API
 
 ---
@@ -246,14 +246,47 @@ Future phases will add:
 
 ## 7. Minimal API Bootstrap
 
-**Program.cs** currently:
+**Program.cs** configures:
 1. Registers `RoadTripDbContext` with connection string from config
-2. Maps a health check endpoint: `GET /api/health`
-3. Serves static files from `wwwroot/`
-4. Listens on port 5100 (avoid collision with Stock Analyzer on 5000)
+2. Maps health check endpoint: `GET /api/health`
+3. **Maps trip creation endpoint: `POST /api/trips`** (Phase 2, Task 2)
+4. Serves static files from `wwwroot/`
+5. Listens on port 5100 (avoid collision with Stock Analyzer on 5000)
+
+### 7.1 POST /api/trips — Create Trip
+
+**Request:**
+```json
+{
+  "name": "Cross Country 2026",
+  "description": "Optional trip description"
+}
+```
+
+**Validation:**
+- `name` is required and must not be empty or whitespace (400 Bad Request if invalid)
+
+**Response (200 OK):**
+```json
+{
+  "slug": "cross-country-2026",
+  "secretToken": "550e8400-e29b-41d4-a716-446655440000",
+  "viewUrl": "/trips/cross-country-2026",
+  "postUrl": "/post/550e8400-e29b-41d4-a716-446655440000"
+}
+```  <!-- pragma: allowlist secret -->
+
+**Behavior:**
+- Generates URL-friendly slug via `SlugHelper.GenerateUniqueSlugAsync`
+- Generates secret token as Guid.NewGuid().ToString()
+- Checks slug uniqueness in database
+- Creates `TripEntity` and persists to DB
+- Returns all four response fields
+- No authentication required
+
+**Testing:** See `TripEndpointTests.cs` (7 tests covering validation, uniqueness, response format, no-auth requirement)
 
 Future phases will add:
-- Trip creation endpoint: `POST /api/trips`
 - Photo upload endpoint: `POST /api/trips/{secretToken}/photos`
 - Photo list endpoint: `GET /api/trips/{slug}/photos`
 - Reverse geocode endpoint: `GET /api/geocode`
@@ -350,5 +383,6 @@ Future phases will test:
 
 | Version | Date | Changes |
 |---------|------|---------|
-| 1.1 | 2026-03-20 | Phase 2, Task 1: SlugHelper utility class and trip creation DTOs (CreateTripRequest, CreateTripResponse) with comprehensive test coverage. |
+| 1.2 | 2026-03-20 | Phase 2, Task 2: POST /api/trips endpoint with validation, slug generation, token creation, and full test coverage (7 tests). |
+| 1.1 | 2026-03-20 | Phase 2, Task 1: SlugHelper utility class and trip creation DTOs (CreateTripRequest, CreateTripResponse) with comprehensive test coverage (15 tests). |
 | 1.0 | 2026-03-19 | Phase 1 infrastructure: project scaffold, entity model, EF Core context, initial migration. |
