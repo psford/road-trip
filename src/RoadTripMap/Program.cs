@@ -8,7 +8,10 @@ using RoadTripMap.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
-var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+// WSL_SQL_CONNECTION: TCP connection string for WSL2 development (from .env).
+// Falls back to appsettings ConnectionStrings:DefaultConnection for Windows/production.
+var connectionString = Environment.GetEnvironmentVariable("WSL_SQL_CONNECTION")
+    ?? builder.Configuration.GetConnectionString("DefaultConnection");
 if (!string.IsNullOrEmpty(connectionString))
 {
     builder.Services.AddDbContext<RoadTripDbContext>(options =>
