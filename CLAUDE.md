@@ -1,6 +1,6 @@
 # Road Trip Photo Map
 
-Last verified: 2026-03-20
+Last verified: 2026-03-21
 
 ## Purpose
 
@@ -32,7 +32,7 @@ Mobile-first road trip photo sharing app. Users create a trip, get a secret link
   - Geocoding via Nominatim with 1req/sec rate limit and DB cache
   - Upload rate limited to 20/hr per IP
   - Migrations auto-apply on startup
-- **Expects**: `ConnectionStrings__DefaultConnection` (SQL), `ConnectionStrings__AzureStorage` (Blob)
+- **Expects**: `ConnectionStrings__DefaultConnection` (SQL), `ConnectionStrings__AzureStorage` (Blob), optionally `WSL_SQL_CONNECTION` (overrides SQL in WSL2), `SA_DESIGN_CONNECTION` (EF Core migrations in WSL2)
 
 ## Dependencies
 
