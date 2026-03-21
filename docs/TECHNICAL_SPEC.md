@@ -1,6 +1,6 @@
 # Technical Specification: Road Trip Photo Map
 
-**Version:** 2.6
+**Version:** 2.7
 **Last Updated:** 2026-03-21 (DesignTimeDbContextFactory TCP support for WSL2)
 **Status:** Phase 8 - Azure Deployment (Code review issues resolved)
 
