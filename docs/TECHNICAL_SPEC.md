@@ -1,7 +1,7 @@
 # Technical Specification: Road Trip Photo Map
 
-**Version:** 2.5
-**Last Updated:** 2026-03-20 (Fix listTripPhotos route to /api/post/)
+**Version:** 2.6
+**Last Updated:** 2026-03-21 (DesignTimeDbContextFactory TCP support for WSL2)
 **Status:** Phase 8 - Azure Deployment (Code review issues resolved)
 
 ---
@@ -192,7 +192,19 @@ Set via App Service configuration variable `DefaultConnection` (not committed in
 - Three DbSets: `Trips`, `Photos`, `GeoCache`
 - Fluent API configuration in `OnModelCreating`
 
-**DesignTimeDbContextFactory** provides connection string to `dotnet ef` CLI for migrations (uses local SQL Express).
+**DesignTimeDbContextFactory** provides connection string to `dotnet ef` CLI for migrations. It supports both Windows development (local named pipes) and WSL2 development (TCP over network):
+
+1. **Windows Development (Default):**
+   - Checks environment variable: `RT_DESIGN_CONNECTION`
+   - Falls back to: `Server=.\SQLEXPRESS;Database=StockAnalyzer;Trusted_Connection=True;TrustServerCertificate=True`
+
+2. **WSL2 Development (TCP):**
+   - Set `RT_DESIGN_CONNECTION` before running migrations:
+     ```bash
+     export RT_DESIGN_CONNECTION="Server=127.0.0.1,1433;Database=StockAnalyzer;User Id=wsl_claude_admin;Password=<password>;TrustServerCertificate=True;"
+     dotnet ef migrations list
+     ```
+   - Enables migrations from WSL2 to Windows SQL Express over TCP/IP
 
 ---
 
