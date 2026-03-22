@@ -39,9 +39,9 @@ jobs:
       - run: |
           az webapp config container set \
             --name app-roadtripmap-prod \
-            --resource-group rg-stockanalyzer-prod \
+            --resource-group rg-roadtripmap-prod \
             --container-image-name acrstockanalyzerer34ug.azurecr.io/roadtripmap:${{ github.sha }}
-          az webapp restart --name app-roadtripmap-prod --resource-group rg-stockanalyzer-prod
+          az webapp restart --name app-roadtripmap-prod --resource-group rg-roadtripmap-prod
       - run: |
           sleep 30
           for i in $(seq 1 5); do
