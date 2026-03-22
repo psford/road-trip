@@ -1,7 +1,7 @@
 # Technical Specification: Road Trip Photo Map
 
 **Version:** 2.8
-**Last Updated:** 2026-03-21 (Two-token access control: separate upload and view links)
+**Last Updated:** 2026-03-22 (Repo split: standalone Road Trip repository)
 **Status:** Phase 8 - Azure Deployment (Code review issues resolved)
 
 ---
@@ -10,18 +10,18 @@
 
 **Stack:** ASP.NET Core 8.0 Minimal API + EF Core 8.0.23 + Azure SQL + Azure Blob Storage + Leaflet.js
 
-**Deployment:** Azure App Service (Linux) → Azure SQL (shared `StockAnalyzer` database in `roadtrip` schema)
+**Deployment:** Azure App Service (Linux) → Azure SQL (currently shared; Phase 4 will add dedicated SQL instance)
 
 **Frontend:** Vanilla HTML/JS/CSS served as static files from `wwwroot/`
 
-**Database:** Shared with Stock Analyzer on `StockAnalyzer` database; Road Trip tables isolated in `roadtrip` schema
+**Database:** Currently shares Azure SQL server via `roadtrip` schema. Phase 4 of repo-split will provision a dedicated SQL instance for Road Trip. All schema changes use EF Core migrations only.
 
 ---
 
 ## 2. Project Structure
 
 ```
-projects/road-trip/
+
 ├── RoadTripMap.sln                 # Solution file
 ├── src/
 │   └── RoadTripMap/
@@ -702,7 +702,7 @@ const MapUI = {
 ### 8.1 Creating Migrations
 
 ```bash
-cd projects/road-trip/src/RoadTripMap
+cd src/RoadTripMap
 dotnet ef migrations add <MigrationName>
 ```
 
@@ -1036,7 +1036,6 @@ Mobile-first DOM rendering layer with all business logic delegated to PostServic
 ### 10.1 Build & Publish
 
 ```bash
-cd projects/road-trip
 dotnet publish -c Release -o ./publish
 ```
 
@@ -1081,7 +1080,7 @@ Future phases will test:
 ### 12.1 Startup Migration
 
 **Program.cs**:
-Located in `projects/road-trip/src/RoadTripMap/Program.cs`, the startup migration block runs immediately after `var app = builder.Build();`:
+Located in `src/RoadTripMap/Program.cs`, the startup migration block runs immediately after `var app = builder.Build();`:
 - Creates a service scope to resolve `RoadTripDbContext`
 - Calls `db.Database.Migrate()` to apply pending EF Core migrations
 - Logs success message; propagates exceptions on failure
@@ -1095,7 +1094,7 @@ Located in `projects/road-trip/src/RoadTripMap/Program.cs`, the startup migratio
 
 ### 12.2 Docker Configuration
 
-**Dockerfile** (`projects/road-trip/Dockerfile`):
+**Dockerfile** (`Dockerfile`):
 - Multi-stage build: SDK 8.0 for compilation → runtime 8.0 for execution
 - Restores, builds, and publishes in Release configuration
 - Runtime image exposes port 5100
@@ -1112,7 +1111,7 @@ docker run -p 5100:5100 roadtripmap:local
 
 ### 12.2 Azure Infrastructure (Bicep)
 
-**main.bicep** (`projects/road-trip/infrastructure/azure/main.bicep`):
+**main.bicep** (`infrastructure/azure/main.bicep`):
 - Creates single App Service (`app-roadtripmap-prod`) on existing App Service Plan
 - References shared resources:
   - App Service Plan: `asp-stockanalyzer` (existing, via resource ID parameter)
@@ -1125,7 +1124,7 @@ docker run -p 5100:5100 roadtripmap:local
   - Linux container image from ACR
   - `alwaysOn: true` for production reliability
 
-**parameters.json** (`projects/road-trip/infrastructure/azure/parameters.json`):
+**parameters.json** (`infrastructure/azure/parameters.json`):
 - Placeholder template for deployment parameters
 - Actual values supplied at deploy time via command line or parameter file
 - Includes: appServicePlanResourceId, sqlConnectionString, storageConnectionString, environment
