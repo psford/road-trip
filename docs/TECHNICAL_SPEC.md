@@ -10,11 +10,11 @@
 
 **Stack:** ASP.NET Core 8.0 Minimal API + EF Core 8.0.23 + Azure SQL + Azure Blob Storage + Leaflet.js
 
-**Deployment:** Azure App Service (Linux) → Azure SQL (currently shared; Phase 4 will add dedicated SQL instance)
+**Deployment:** Azure App Service (Linux B1) → Dedicated Azure SQL instance (Basic tier, 5 DTU) + Azure Blob Storage (shared)
 
 **Frontend:** Vanilla HTML/JS/CSS served as static files from `wwwroot/`
 
-**Database:** Currently shares Azure SQL server via `roadtrip` schema. Phase 4 of repo-split will provision a dedicated SQL instance for Road Trip. All schema changes use EF Core migrations only.
+**Database:** Road Trip operates on its own dedicated Azure SQL server instance (not shared with Stock Analyzer). All data uses the `roadtrip` schema. All schema changes use EF Core migrations only.
 
 ---
 
@@ -181,7 +181,7 @@ CREATE TABLE roadtrip.GeoCache (
 
 **Development (SQL Express):**
 ```
-Server=.\SQLEXPRESS;Database=StockAnalyzer;Trusted_Connection=True;TrustServerCertificate=True
+Server=.\SQLEXPRESS;Database=RoadTripMap;Trusted_Connection=True;TrustServerCertificate=True
 ```
 
 **Production (Azure SQL):**
@@ -198,12 +198,12 @@ Set via App Service configuration variable `DefaultConnection` (not committed in
 
 1. **Windows Development (Default):**
    - Checks environment variable: `RT_DESIGN_CONNECTION`
-   - Falls back to: `Server=.\SQLEXPRESS;Database=StockAnalyzer;Trusted_Connection=True;TrustServerCertificate=True`
+   - Falls back to: `Server=.\SQLEXPRESS;Database=RoadTripMap;Trusted_Connection=True;TrustServerCertificate=True`
 
 2. **WSL2 Development (TCP):**
    - Set `RT_DESIGN_CONNECTION` before running migrations:
      ```bash
-     export RT_DESIGN_CONNECTION="Server=127.0.0.1,1433;Database=StockAnalyzer;User Id=wsl_claude_admin;Password=<password>;TrustServerCertificate=True;"
+     export RT_DESIGN_CONNECTION="Server=127.0.0.1,1433;Database=RoadTripMap;User Id=wsl_claude_admin;Password=<password>;TrustServerCertificate=True;"
      dotnet ef migrations list
      ```
    - Enables migrations from WSL2 to Windows SQL Express over TCP/IP
@@ -310,7 +310,7 @@ Exifr is downloaded locally to `wwwroot/lib/exifr/lite.umd.js` (45KB) and wrappe
 ```json
 {
   "ConnectionStrings": {
-    "DefaultConnection": "Server=.\\SQLEXPRESS;Database=StockAnalyzer;Trusted_Connection=True;TrustServerCertificate=True",
+    "DefaultConnection": "Server=.\\SQLEXPRESS;Database=RoadTripMap;Trusted_Connection=True;TrustServerCertificate=True",
     "AzureStorage": "UseDevelopmentStorage=true"
   }
 }
@@ -1046,9 +1046,16 @@ Outputs to `publish/` folder for Docker or direct deployment.
 Must set via Azure Portal or Bicep:
 - `ConnectionStrings:DefaultConnection` = Azure SQL connection string
 
-### 8.3 Shared Database Note
+### 8.3 Dedicated Infrastructure (Phase 4 - Repo Split)
 
-Road Trip and Stock Analyzer share the `StockAnalyzer` Azure SQL database. Migrations are run independently but operate on the same SQL instance. The `roadtrip` schema isolation prevents table name conflicts.
+Road Trip operates on **dedicated Azure infrastructure** (not shared with Stock Analyzer):
+- **SQL Server:** `sql-roadtripmap-prod` (standalone instance)
+- **SQL Database:** `roadtripmap-db` (Basic tier, 5 DTU)
+- **App Service Plan:** `asp-roadtripmap-prod` (Linux B1)
+- **App Service:** `app-roadtripmap-prod` (port 5100, always-on)
+- **Blob Storage:** Shared via connection string parameter (ACR: `acrstockanalyzerer34ug`)
+
+Migrations run independently against the Road Trip database only. The `roadtrip` schema is used within the Road Trip database (no isolation needed, as the database itself is dedicated).
 
 ---
 
@@ -1112,12 +1119,16 @@ docker run -p 5100:5100 roadtripmap:local
 ### 12.2 Azure Infrastructure (Bicep)
 
 **main.bicep** (`infrastructure/azure/main.bicep`):
-- Creates single App Service (`app-roadtripmap-prod`) on existing App Service Plan
-- References shared resources:
-  - App Service Plan: `asp-stockanalyzer` (existing, via resource ID parameter)
-  - SQL Server: shared `StockAnalyzer` database (connection string via parameter)
-  - Blob Storage: shared account (connection string via parameter)
-- Configures App Service settings:
+- **SQL Server:** `sql-roadtripmap-prod` (standalone, admin login via `@secure()` parameter)
+- **SQL Database:** `roadtripmap-db` (Basic tier, 5 DTU, max size 2 GB)
+- **Firewall Rule:** Allows Azure services (`0.0.0.0` → `0.0.0.0`)
+- **App Service Plan:** `asp-roadtripmap-prod` (Linux, B1 Basic, `reserved: true`)
+- **App Service:** `app-roadtripmap-prod` (references own ASP)
+  - Docker image: `acrstockanalyzerer34ug.azurecr.io/roadtripmap:latest`
+  - Connection string: Constructed from SQL outputs (not parameter-injected)
+  - Blob Storage: Injected as parameter (shared account)
+- **Outputs:** `sqlServerFqdn`, `sqlDatabaseName`, `webAppUrl`
+- **Configures App Service settings:**
   - `ASPNETCORE_ENVIRONMENT` = `Production`
   - `WEBSITES_PORT` = `5100`
   - Connection strings injected at deployment time
