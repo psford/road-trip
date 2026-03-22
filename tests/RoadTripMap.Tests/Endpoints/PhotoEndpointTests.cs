@@ -27,7 +27,8 @@ public class PhotoEndpointTests
         {
             Slug = "test-trip",
             Name = "Test Trip",
-            SecretToken = "test-token" // pragma: allowlist secret
+            SecretToken = "test-token", // pragma: allowlist secret
+            ViewToken = Guid.NewGuid().ToString()
         };
         await context.Trips.AddAsync(trip);
         await context.SaveChangesAsync();
@@ -60,7 +61,8 @@ public class PhotoEndpointTests
         {
             Slug = "test-trip",
             Name = "Test Trip",
-            SecretToken = "test-token" // pragma: allowlist secret
+            SecretToken = "test-token", // pragma: allowlist secret
+            ViewToken = Guid.NewGuid().ToString()
         };
         await context.Trips.AddAsync(trip);
         await context.SaveChangesAsync();
@@ -93,7 +95,8 @@ public class PhotoEndpointTests
         {
             Slug = "test-trip",
             Name = "Test Trip",
-            SecretToken = "test-token" // pragma: allowlist secret
+            SecretToken = "test-token", // pragma: allowlist secret
+            ViewToken = Guid.NewGuid().ToString()
         };
         await context.Trips.AddAsync(trip);
         await context.SaveChangesAsync();
@@ -128,7 +131,8 @@ public class PhotoEndpointTests
         {
             Slug = "test-trip",
             Name = "Test Trip",
-            SecretToken = "test-token" // pragma: allowlist secret
+            SecretToken = "test-token", // pragma: allowlist secret
+            ViewToken = Guid.NewGuid().ToString()
         };
         await context.Trips.AddAsync(trip);
         await context.SaveChangesAsync();
@@ -149,7 +153,8 @@ public class PhotoEndpointTests
         {
             Slug = "test-trip",
             Name = "Test Trip",
-            SecretToken = "test-token" // pragma: allowlist secret
+            SecretToken = "test-token", // pragma: allowlist secret
+            ViewToken = Guid.NewGuid().ToString()
         };
         await context.Trips.AddAsync(trip);
         await context.SaveChangesAsync();
@@ -248,7 +253,8 @@ public class PhotoEndpointTests
         {
             Slug = "test-trip",
             Name = "Test Trip",
-            SecretToken = "test-token" // pragma: allowlist secret
+            SecretToken = "test-token", // pragma: allowlist secret
+            ViewToken = Guid.NewGuid().ToString()
         };
         await context.Trips.AddAsync(trip);
         await context.SaveChangesAsync();
@@ -283,7 +289,8 @@ public class PhotoEndpointTests
         {
             Slug = "test-trip",
             Name = "Test Trip",
-            SecretToken = "test-token" // pragma: allowlist secret
+            SecretToken = "test-token", // pragma: allowlist secret
+            ViewToken = Guid.NewGuid().ToString()
         };
         await context.Trips.AddAsync(trip);
         await context.SaveChangesAsync();
@@ -318,7 +325,8 @@ public class PhotoEndpointTests
         {
             Slug = "test-trip",
             Name = "Test Trip",
-            SecretToken = "test-token" // pragma: allowlist secret
+            SecretToken = "test-token", // pragma: allowlist secret
+            ViewToken = Guid.NewGuid().ToString()
         };
         await context.Trips.AddAsync(trip);
         await context.SaveChangesAsync();
@@ -368,7 +376,8 @@ public class PhotoEndpointTests
         {
             Slug = "test-trip",
             Name = "Test Trip",
-            SecretToken = "test-token" // pragma: allowlist secret
+            SecretToken = "test-token", // pragma: allowlist secret
+            ViewToken = Guid.NewGuid().ToString()
         };
         await context.Trips.AddAsync(trip);
         await context.SaveChangesAsync();
@@ -403,7 +412,8 @@ public class PhotoEndpointTests
         {
             Slug = "test-trip",
             Name = "Test Trip",
-            SecretToken = "test-token" // pragma: allowlist secret
+            SecretToken = "test-token", // pragma: allowlist secret
+            ViewToken = Guid.NewGuid().ToString()
         };
         await context.Trips.AddAsync(trip);
         await context.SaveChangesAsync();
@@ -452,7 +462,8 @@ public class PhotoEndpointTests
         {
             Slug = "test-trip",
             Name = "Test Trip",
-            SecretToken = "test-token-valid" // pragma: allowlist secret
+            SecretToken = "test-token-valid", // pragma: allowlist secret
+            ViewToken = Guid.NewGuid().ToString()
         };
         await context.Trips.AddAsync(trip);
         await context.SaveChangesAsync();
@@ -506,7 +517,8 @@ public class PhotoEndpointTests
         {
             Slug = "empty-trip",
             Name = "Empty Trip",
-            SecretToken = "empty-token" // pragma: allowlist secret
+            SecretToken = "empty-token", // pragma: allowlist secret
+            ViewToken = Guid.NewGuid().ToString()
         };
         await context.Trips.AddAsync(trip);
         await context.SaveChangesAsync();
@@ -544,7 +556,8 @@ public class PhotoEndpointTests
         {
             Slug = "ordered-trip",
             Name = "Ordered Trip",
-            SecretToken = "ordered-token" // pragma: allowlist secret
+            SecretToken = "ordered-token", // pragma: allowlist secret
+            ViewToken = Guid.NewGuid().ToString()
         };
         await context.Trips.AddAsync(trip);
         await context.SaveChangesAsync();

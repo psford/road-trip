@@ -8,6 +8,10 @@ const PostUI = {
     secretToken: null,
     map: null,
     marker: null,
+    photoMap: null,
+    photoMapMarkers: [],
+    routeLayer: null,
+    routeVisible: false,
     currentFile: null,
     currentMetadata: null,
     currentLat: null,
@@ -35,8 +39,22 @@ const PostUI = {
             this.onPostConfirm();
         });
 
-        // Load existing photos
+        // Load trip info and existing photos
+        this.loadTripInfo();
         this.loadPhotoList();
+    },
+
+    async loadTripInfo() {
+        try {
+            const trip = await API.getTripInfoBySecret(this.secretToken);
+            document.getElementById('tripName').textContent = trip.name;
+            if (trip.description) {
+                document.getElementById('tripDescription').textContent = trip.description;
+            }
+        } catch (err) {
+            console.error('Failed to load trip info:', err);
+            document.getElementById('tripName').textContent = 'Trip';
+        }
     },
 
     async onFileSelected(file) {
@@ -123,6 +141,11 @@ const PostUI = {
         // Show preview section
         document.getElementById('previewSection').classList.add('visible');
         document.getElementById('fileInput').value = '';
+
+        // Leaflet needs a size recalc after container becomes visible
+        setTimeout(() => {
+            if (this.map) this.map.invalidateSize();
+        }, 100);
     },
 
     initializePinDropMap() {
@@ -223,6 +246,7 @@ const PostUI = {
             if (photos.length === 0) {
                 photoList.classList.add('empty');
                 photoGrid.innerHTML = '';
+                this.hidePhotoMap();
                 return;
             }
 
@@ -234,10 +258,131 @@ const PostUI = {
                 const photoEl = this.createPhotoElement(photo);
                 photoGrid.appendChild(photoEl);
             });
+
+            // Render photo map
+            this.renderPhotoMap(photos);
         } catch (err) {
             console.error('Error loading photos:', err);
             this.showToast('Failed to load photos', 'error');
         }
+    },
+
+    escapeHtml(text) {
+        if (!text) return '';
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    },
+
+    renderPhotoMap(photos) {
+        const section = document.getElementById('photoMapSection');
+        section.classList.add('visible');
+
+        // Clear existing markers
+        this.photoMapMarkers.forEach(m => m.remove());
+        this.photoMapMarkers = [];
+        if (this.routeLayer) {
+            this.routeLayer.remove();
+            this.routeLayer = null;
+            this.routeVisible = false;
+        }
+
+        // Initialize map if not done
+        if (!this.photoMap) {
+            this.photoMap = L.map('photoMap');
+            L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                maxZoom: 19,
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            }).addTo(this.photoMap);
+        }
+
+        // Add markers with delete-capable popups
+        photos.forEach(photo => {
+            const marker = L.marker([photo.lat, photo.lng]);
+            const date = new Date(photo.takenAt).toLocaleDateString();
+            const escapedPlace = this.escapeHtml(photo.placeName);
+            const escapedCaption = this.escapeHtml(photo.caption);
+
+            const popupHtml = `<div class="photo-popup">
+                <img src="${photo.displayUrl}" class="photo-popup-img" loading="lazy">
+                <div class="photo-popup-info">
+                    <div class="photo-popup-place">${escapedPlace}</div>
+                    ${escapedCaption ? `<div class="photo-popup-caption">${escapedCaption}</div>` : ''}
+                    <div class="photo-popup-date">${date}</div>
+                    <button class="photo-popup-delete" data-photo-id="${photo.id}">Delete Photo</button>
+                </div>
+            </div>`;
+
+            marker.bindPopup(popupHtml, {
+                autoPan: true,
+                autoPanPaddingTopLeft: L.point(10, 20),
+                autoPanPaddingBottomRight: L.point(10, 20),
+                autoPanAnimation: true
+            });
+            marker.on('popupopen', () => {
+                const btn = document.querySelector(`.photo-popup-delete[data-photo-id="${photo.id}"]`);
+                if (btn) {
+                    btn.addEventListener('click', () => this.onDeleteFromMap(photo.id));
+                }
+            });
+            marker.addTo(this.photoMap);
+            this.photoMapMarkers.push(marker);
+        });
+
+        // Fit bounds
+        if (photos.length === 1) {
+            this.photoMap.setView([photos[0].lat, photos[0].lng], 13);
+        } else {
+            const group = new L.featureGroup(this.photoMapMarkers);
+            this.photoMap.fitBounds(group.getBounds(), { padding: [50, 50], maxZoom: 15 });
+            this.setupRouteToggle(photos);
+        }
+
+        // Recalculate map size
+        setTimeout(() => this.photoMap.invalidateSize(), 100);
+    },
+
+    setupRouteToggle(photos) {
+        const coords = photos.map(p => [p.lat, p.lng]);
+        this.routeLayer = L.polyline(coords, { color: '#3388ff', weight: 3, opacity: 0.8 });
+
+        const btn = document.getElementById('routeToggle');
+        if (btn) {
+            btn.style.display = 'block';
+            btn.textContent = 'Show Route';
+            btn.onclick = () => this.toggleRoute();
+        }
+    },
+
+    toggleRoute() {
+        const btn = document.getElementById('routeToggle');
+        if (this.routeVisible) {
+            this.photoMap.removeLayer(this.routeLayer);
+            if (btn) btn.textContent = 'Show Route';
+        } else {
+            this.routeLayer.addTo(this.photoMap);
+            if (btn) btn.textContent = 'Hide Route';
+        }
+        this.routeVisible = !this.routeVisible;
+    },
+
+    async onDeleteFromMap(photoId) {
+        if (!confirm('Delete this photo?')) return;
+        try {
+            await PostService.deletePhoto(this.secretToken, photoId);
+            this.photoMap.closePopup();
+            this.showToast('Photo deleted', 'success');
+            await this.refreshPhotoList();
+        } catch (err) {
+            this.showToast('Failed to delete photo', 'error');
+        }
+    },
+
+    hidePhotoMap() {
+        const section = document.getElementById('photoMapSection');
+        section.classList.remove('visible');
+        const btn = document.getElementById('routeToggle');
+        if (btn) btn.style.display = 'none';
     },
 
     createPhotoElement(photo) {

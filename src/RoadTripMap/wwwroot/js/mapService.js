@@ -7,13 +7,13 @@
 const MapService = {
     /**
      * Load trip and photos from API
-     * @param {string} slug - Trip slug
+     * @param {string} viewToken - Trip view token
      * @returns {Promise<{trip, photos}>}
      */
-    async loadTrip(slug) {
+    async loadTrip(viewToken) {
         const [trip, photos] = await Promise.all([
-            API.getTripInfo(slug),
-            API.getTripPhotos(slug)
+            API.getTripInfo(viewToken),
+            API.getTripPhotos(viewToken)
         ]);
         return { trip, photos };
     },

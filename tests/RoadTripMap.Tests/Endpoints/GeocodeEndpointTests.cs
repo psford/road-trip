@@ -56,7 +56,8 @@ public class GeocodeEndpointTests
         {
             Slug = "test-trip",
             Name = "Test Trip",
-            SecretToken = Guid.NewGuid().ToString()
+            SecretToken = Guid.NewGuid().ToString(),
+            ViewToken = Guid.NewGuid().ToString()
         };
         context.Trips.Add(trip);
         await context.SaveChangesAsync();
@@ -92,7 +93,8 @@ public class GeocodeEndpointTests
         {
             Slug = "test-trip",
             Name = "Test Trip",
-            SecretToken = Guid.NewGuid().ToString()
+            SecretToken = Guid.NewGuid().ToString(),
+            ViewToken = Guid.NewGuid().ToString()
         };
         context.Trips.Add(trip);
         await context.SaveChangesAsync();
@@ -128,7 +130,8 @@ public class GeocodeEndpointTests
         {
             Slug = "test-trip",
             Name = "Test Trip",
-            SecretToken = Guid.NewGuid().ToString()
+            SecretToken = Guid.NewGuid().ToString(),
+            ViewToken = Guid.NewGuid().ToString()
         };
         context.Trips.Add(trip);
         await context.SaveChangesAsync();

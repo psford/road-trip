@@ -19,7 +19,8 @@ public class SecretTokenAuthStrategyTests
             Id = 1,
             Slug = "test-trip",
             Name = "Test Trip",
-            SecretToken = secretToken
+            SecretToken = secretToken,
+            ViewToken = Guid.NewGuid().ToString()
         };
 
         var httpContext = new DefaultHttpContext();
@@ -44,7 +45,8 @@ public class SecretTokenAuthStrategyTests
             Id = 1,
             Slug = "test-trip",
             Name = "Test Trip",
-            SecretToken = correctToken
+            SecretToken = correctToken,
+            ViewToken = Guid.NewGuid().ToString()
         };
 
         var httpContext = new DefaultHttpContext();
@@ -67,7 +69,8 @@ public class SecretTokenAuthStrategyTests
             Id = 1,
             Slug = "test-trip",
             Name = "Test Trip",
-            SecretToken = "some-token" // pragma: allowlist secret
+            SecretToken = "some-token", // pragma: allowlist secret
+            ViewToken = Guid.NewGuid().ToString()
         };
 
         var httpContext = new DefaultHttpContext();
@@ -98,7 +101,8 @@ public class SecretTokenAuthStrategyTests
             Id = 1,
             Slug = "test-trip",
             Name = "Test Trip",
-            SecretToken = secretToken
+            SecretToken = secretToken,
+            ViewToken = Guid.NewGuid().ToString()
         };
 
         var httpContext = new DefaultHttpContext();
@@ -120,7 +124,8 @@ public class SecretTokenAuthStrategyTests
             Id = 1,
             Slug = "test-trip",
             Name = "Test Trip",
-            SecretToken = "some-token" // pragma: allowlist secret
+            SecretToken = "some-token", // pragma: allowlist secret
+            ViewToken = Guid.NewGuid().ToString()
         };
 
         var httpContext = new DefaultHttpContext();

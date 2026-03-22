@@ -93,23 +93,34 @@ const API = {
     },
 
     /**
-     * Get public trip info by slug
-     * @param {string} slug - Trip slug
+     * Get trip info by secret token (for post page)
+     * @param {string} secretToken - Trip secret token
      * @returns {Promise<{name, description, photoCount, createdAt}>}
      */
-    async getTripInfo(slug) {
-        const response = await fetch(`${this.baseUrl}/trips/${slug}`);
+    async getTripInfoBySecret(secretToken) {
+        const response = await fetch(`${this.baseUrl}/post/${secretToken}`);
         if (!response.ok) throw new Error('Trip not found');
         return response.json();
     },
 
     /**
-     * Get public trip photos by slug
-     * @param {string} slug - Trip slug
+     * Get trip info by view token
+     * @param {string} viewToken - Trip view token
+     * @returns {Promise<{name, description, photoCount, createdAt}>}
+     */
+    async getTripInfo(viewToken) {
+        const response = await fetch(`${this.baseUrl}/trips/view/${viewToken}`);
+        if (!response.ok) throw new Error('Trip not found');
+        return response.json();
+    },
+
+    /**
+     * Get trip photos by view token
+     * @param {string} viewToken - Trip view token
      * @returns {Promise<PhotoResponse[]>}
      */
-    async getTripPhotos(slug) {
-        const response = await fetch(`${this.baseUrl}/trips/${slug}/photos`);
+    async getTripPhotos(viewToken) {
+        const response = await fetch(`${this.baseUrl}/trips/view/${viewToken}/photos`);
         if (!response.ok) throw new Error('Failed to load photos');
         return response.json();
     },

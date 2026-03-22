@@ -27,6 +27,7 @@ public class TripViewEndpointTests
             Description = "Scenic drive down PCH",
             Slug = "california-coast",
             SecretToken = Guid.NewGuid().ToString(),
+            ViewToken = Guid.NewGuid().ToString(),
             IsActive = true,
             CreatedAt = DateTime.UtcNow
         };
@@ -80,6 +81,7 @@ public class TripViewEndpointTests
             Name = "Archived Trip",
             Slug = "archived-trip",
             SecretToken = Guid.NewGuid().ToString(),
+            ViewToken = Guid.NewGuid().ToString(),
             IsActive = false,
             CreatedAt = DateTime.UtcNow
         };
@@ -105,6 +107,7 @@ public class TripViewEndpointTests
             Name = "Cross Country",
             Slug = "cross-country",
             SecretToken = Guid.NewGuid().ToString(),
+            ViewToken = Guid.NewGuid().ToString(),
             IsActive = true,
             CreatedAt = DateTime.UtcNow
         };
@@ -193,6 +196,7 @@ public class TripViewEndpointTests
             Name = "Empty Trip",
             Slug = "empty-trip",
             SecretToken = Guid.NewGuid().ToString(),
+            ViewToken = Guid.NewGuid().ToString(),
             IsActive = true,
             CreatedAt = DateTime.UtcNow
         };
@@ -250,6 +254,7 @@ public class TripViewEndpointTests
             Name = "Public Trip",
             Slug = "public-trip",
             SecretToken = Guid.NewGuid().ToString(),
+            ViewToken = Guid.NewGuid().ToString(),
             IsActive = true,
             CreatedAt = DateTime.UtcNow
         };
@@ -276,6 +281,7 @@ public class TripViewEndpointTests
             Name = "Public Trip",
             Slug = "public-trip",
             SecretToken = Guid.NewGuid().ToString(),
+            ViewToken = Guid.NewGuid().ToString(),
             IsActive = true,
             CreatedAt = DateTime.UtcNow
         };
@@ -319,6 +325,7 @@ public class TripViewEndpointTests
             Name = "Multi Photo Trip",
             Slug = "multi-photo-trip",
             SecretToken = Guid.NewGuid().ToString(),
+            ViewToken = Guid.NewGuid().ToString(),
             IsActive = true,
             CreatedAt = DateTime.UtcNow
         };

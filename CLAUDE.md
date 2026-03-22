@@ -4,7 +4,7 @@ Last verified: 2026-03-21
 
 ## Purpose
 
-Mobile-first road trip photo sharing app. Users create a trip, get a secret link for uploading geotagged photos, and share a public map view showing pins and route lines. Privacy-first: no accounts, no indexing, no tracking.
+Mobile-first road trip photo sharing app. Users create a trip, get two secret links (one for uploading photos, one for view-only map access), and share geotagged photos on an interactive map. Privacy-first: no accounts, no indexing, no tracking.
 
 ## Tech Stack
 
@@ -27,7 +27,7 @@ Mobile-first road trip photo sharing app. Users create a trip, get a secret link
 - **Guarantees**:
   - Photos stored in 3 tiers: original (full quality), display (1920px), thumb (300px)
   - Original media never degraded (re-encoded at quality 100, EXIF stripped)
-  - Auth via secret token in URL path (no accounts, no cookies)
+  - Two-token auth: SecretToken (upload + view), ViewToken (view only) — both GUIDs in URL path, no accounts/cookies
   - All responses include `X-Robots-Tag: noindex, nofollow`
   - Geocoding via Nominatim with 1req/sec rate limit and DB cache
   - Upload rate limited to 20/hr per IP
@@ -53,7 +53,8 @@ Mobile-first road trip photo sharing app. Users create a trip, get a secret link
 - Photos always have all 3 blob tiers (original, display, thumb)
 - Blob container is PRIVATE (PublicAccessType.None); photos served via proxy endpoint
 - Trip slugs are unique, lowercase alphanumeric with hyphens, max 200 chars
-- Secret tokens are GUIDs -- never exposed in public-facing URLs
+- Two tokens per trip: SecretToken (upload access via `/post/{token}`), ViewToken (view-only via `/trips/{token}`) — both GUIDs, both unique-indexed
+- View endpoints use `/api/trips/view/{viewToken}` (not slug-based)
 - Coordinate validation: lat [-90,90], lng [-180,180]
 - Caption max 1000 chars, trip name max 500 chars
 

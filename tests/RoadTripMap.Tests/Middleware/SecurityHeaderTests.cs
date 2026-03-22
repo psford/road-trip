@@ -56,7 +56,7 @@ public class SecurityHeaderTests : IAsyncLifetime
     public async Task UnknownTripSlug_Returns404WithoutEnumeration()
     {
         // Act
-        var response = await _client!.GetAsync("/api/trips/random-nonexistent-slug-12345");
+        var response = await _client!.GetAsync("/api/trips/view/random-nonexistent-token-12345");
 
         // Assert
         response.StatusCode.Should().Be(System.Net.HttpStatusCode.NotFound);

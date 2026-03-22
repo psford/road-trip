@@ -9,7 +9,7 @@
         integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" /> <!-- pragma: allowlist secret -->
     <link rel="stylesheet" href="/css/styles.css">
 </head>
-<body>
+<body class="map-page">
     <div id="tripName" class="map-header"></div>
     <div id="map" class="map-container"></div>
     <button id="routeToggle" class="map-control" style="display:none;">Show Route</button>
@@ -21,8 +21,8 @@
     <script src="/js/mapService.js"></script>
     <script src="/js/mapUI.js"></script>
     <script>
-        const slug = window.location.pathname.split('/').filter(Boolean).pop();
-        MapUI.init(slug);
+        const viewToken = window.location.pathname.split('/').filter(Boolean).pop();
+        MapUI.init(viewToken);
     </script>
 </body>
 </html>

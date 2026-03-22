@@ -1,7 +1,7 @@
 # Technical Specification: Road Trip Photo Map
 
-**Version:** 2.7
-**Last Updated:** 2026-03-21 (DesignTimeDbContextFactory TCP support for WSL2)
+**Version:** 2.8
+**Last Updated:** 2026-03-21 (Two-token access control: separate upload and view links)
 **Status:** Phase 8 - Azure Deployment (Code review issues resolved)
 
 ---
@@ -81,15 +81,16 @@ Represents a named road trip with metadata and photo collection.
 - `Slug` (string, unique, max 200): URL-friendly identifier (e.g., `parents-2026-west`)
 - `Name` (string, required, max 500): Human-readable trip name
 - `Description` (string, nullable, max 2000): Optional trip description
-- `SecretToken` (string, unique, max 36): UUID v4 for secret link authorization
+- `SecretToken` (string, unique, max 36): UUID v4 for upload link authorization (`/post/{token}`)
+- `ViewToken` (string, unique, max 36): UUID v4 for view-only link authorization (`/trips/{token}`)
 - `CreatedAt` (DateTime): Defaults to `GETUTCDATE()` on insert
 - `IsActive` (bool): Soft-delete flag (default: true)
 - `Photos` (ICollection<PhotoEntity>): Navigation to photos
 
 **Database Mapping:**
 - Table: `roadtrip.Trips`
-- Indices: `(Slug)` UNIQUE, `(SecretToken)` UNIQUE
-- Constraints: `SecretToken` required, max length 36 (UUID v4 as string)
+- Indices: `(Slug)` UNIQUE, `(SecretToken)` UNIQUE, `(ViewToken)` UNIQUE
+- Constraints: `SecretToken` required (max 36), `ViewToken` required (max 36)
 
 ---
 
@@ -148,6 +149,7 @@ CREATE TABLE roadtrip.Trips (
     Name NVARCHAR(500) NOT NULL,
     Description NVARCHAR(2000) NULL,
     SecretToken NVARCHAR(36) NOT NULL UNIQUE,
+    ViewToken NVARCHAR(36) NOT NULL UNIQUE,
     CreatedAt DATETIME DEFAULT GETUTCDATE(),
     IsActive BIT DEFAULT 1
 );
@@ -489,13 +491,14 @@ Maps to `wwwroot/create.html`. Serves HTML form for creating new trips.
 - Returns place name (may be null if Nominatim fails, but endpoint still returns 200)
 - Used by photo upload page (Phase 5) to show location preview before confirming upload
 
-### 7.8 GET /api/trips/{slug} — Get Trip Info (Phase 6, Task 1)
+### 7.8 GET /api/trips/view/{viewToken} — Get Trip Info (Phase 6, Task 1)
 
 **Route parameters:**
-- `slug` (string): Trip URL slug (required)
+- `viewToken` (string): Trip view token UUID (required)
 
 **Validation:**
-- Trip with matching slug exists and `IsActive == true` → 404 if not found
+- `viewToken` must be a valid GUID format → 400 if invalid
+- Trip with matching ViewToken exists and `IsActive == true` → 404 if not found
 
 **Response (200 OK):**
 ```json
@@ -520,13 +523,14 @@ Maps to `wwwroot/create.html`. Serves HTML form for creating new trips.
 - No auth required
 - Photo count is accurate for empty, single, and multi-photo trips
 
-### 7.9 GET /api/trips/{slug}/photos — Get Trip Photos (Phase 6, Task 1)
+### 7.9 GET /api/trips/view/{viewToken}/photos — Get Trip Photos (Phase 6, Task 1)
 
 **Route parameters:**
-- `slug` (string): Trip URL slug (required)
+- `viewToken` (string): Trip view token UUID (required)
 
 **Validation:**
-- Trip with matching slug exists and `IsActive == true` → 404 if not found
+- `viewToken` must be a valid GUID format → 400 if invalid
+- Trip with matching ViewToken exists and `IsActive == true` → 404 if not found
 
 **Response (200 OK):** Array of PhotoResponse objects ordered by `TakenAt` ascending (chronological):
 ```json
@@ -562,10 +566,10 @@ Maps to `wwwroot/create.html`. Serves HTML form for creating new trips.
 
 **Design Note:** Chronological ordering enables native apps to render route lines without client-side sorting.
 
-### 7.10 GET /trips/{slug} — Public Trip Map View (Phase 6, Task 2)
+### 7.10 GET /trips/{viewToken} — View-Only Trip Map (Phase 6, Task 2)
 
 **Route parameters:**
-- `slug` (string): Trip URL slug (required)
+- `viewToken` (string): Trip view token UUID (required)
 
 **Validation:**
 - No validation required — serves static HTML page

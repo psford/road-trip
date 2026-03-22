@@ -50,20 +50,10 @@
         <!-- Results section (hidden by default) -->
         <div id="results" class="results hidden">
             <h2>Trip Created!</h2>
-            <p>Share these links with people to let them view and add photos to your trip.</p>
+            <p>You have two links. Share the right one with the right people.</p>
 
             <div class="result-item">
-                <div class="result-label">View URL (public map)</div>
-                <div class="result-value">
-                    <span id="viewUrlValue"></span>
-                    <button class="button button-secondary copy-button" onclick="copyToClipboard('viewUrlValue', event)">
-                        Copy
-                    </button>
-                </div>
-            </div>
-
-            <div class="result-item">
-                <div class="result-label">Post URL (secret upload link)</div>
+                <div class="result-label">Upload Link (for contributors who can add photos)</div>
                 <div class="result-value">
                     <span id="postUrlValue"></span>
                     <button class="button button-secondary copy-button" onclick="copyToClipboard('postUrlValue', event)">
@@ -73,10 +63,10 @@
             </div>
 
             <div class="result-item">
-                <div class="result-label">Trip Slug</div>
+                <div class="result-label">View Link (for viewers who can only see the map)</div>
                 <div class="result-value">
-                    <span id="slugValue"></span>
-                    <button class="button button-secondary copy-button" onclick="copyToClipboard('slugValue', event)">
+                    <span id="viewUrlValue"></span>
+                    <button class="button button-secondary copy-button" onclick="copyToClipboard('viewUrlValue', event)">
                         Copy
                     </button>
                 </div>
@@ -111,10 +101,10 @@
                 // Create trip via API
                 const result = await API.createTrip(name, description || null);
 
-                // Display results
-                document.getElementById('viewUrlValue').textContent = result.viewUrl;
-                document.getElementById('postUrlValue').textContent = result.postUrl;
-                document.getElementById('slugValue').textContent = result.slug;
+                // Display results with full URLs for easy sharing from phones
+                const origin = window.location.origin;
+                document.getElementById('postUrlValue').textContent = origin + result.postUrl;
+                document.getElementById('viewUrlValue').textContent = origin + result.viewUrl;
 
                 // Show results section
                 document.getElementById('results').classList.remove('hidden');

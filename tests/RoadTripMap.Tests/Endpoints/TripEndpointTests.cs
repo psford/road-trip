@@ -32,7 +32,8 @@ public class TripEndpointTests
             Slug = slug,
             Name = request.Name,
             Description = request.Description,
-            SecretToken = token
+            SecretToken = token,
+            ViewToken = Guid.NewGuid().ToString()
         };
 
         await context.Trips.AddAsync(trip);
@@ -90,7 +91,8 @@ public class TripEndpointTests
             Slug = slug1,
             Name = "Trip One",
             Description = null,
-            SecretToken = Guid.NewGuid().ToString()
+            SecretToken = Guid.NewGuid().ToString(),
+            ViewToken = Guid.NewGuid().ToString()
         };
         await context.Trips.AddAsync(trip1);
         await context.SaveChangesAsync();
@@ -103,7 +105,8 @@ public class TripEndpointTests
             Slug = slug2,
             Name = "Trip Two",
             Description = null,
-            SecretToken = Guid.NewGuid().ToString()
+            SecretToken = Guid.NewGuid().ToString(),
+            ViewToken = Guid.NewGuid().ToString()
         };
         await context.Trips.AddAsync(trip2);
         await context.SaveChangesAsync();
@@ -129,7 +132,8 @@ public class TripEndpointTests
             Slug = slug1,
             Name = "My Trip",
             Description = null,
-            SecretToken = Guid.NewGuid().ToString()
+            SecretToken = Guid.NewGuid().ToString(),
+            ViewToken = Guid.NewGuid().ToString()
         };
         await context.Trips.AddAsync(trip1);
         await context.SaveChangesAsync();
@@ -142,7 +146,8 @@ public class TripEndpointTests
             Slug = slug2,
             Name = "My Trip",
             Description = null,
-            SecretToken = Guid.NewGuid().ToString()
+            SecretToken = Guid.NewGuid().ToString(),
+            ViewToken = Guid.NewGuid().ToString()
         };
         await context.Trips.AddAsync(trip2);
         await context.SaveChangesAsync();
@@ -168,7 +173,8 @@ public class TripEndpointTests
             Slug = slug,
             Name = request.Name,
             Description = null,
-            SecretToken = Guid.NewGuid().ToString()
+            SecretToken = Guid.NewGuid().ToString(),
+            ViewToken = Guid.NewGuid().ToString()
         };
 
         await context.Trips.AddAsync(trip);
@@ -186,20 +192,23 @@ public class TripEndpointTests
         using var context = CreateInMemoryContext();
         var slug = "test-trip";
         var token = Guid.NewGuid().ToString();
+        var viewToken = "test-view-token";
 
         // Act
         var response = new CreateTripResponse
         {
             Slug = slug,
             SecretToken = token,
-            ViewUrl = $"/trips/{slug}",
+            ViewToken = viewToken,
+            ViewUrl = $"/trips/{viewToken}",
             PostUrl = $"/post/{token}"
         };
 
         // Assert
-        response.ViewUrl.Should().Be("/trips/test-trip");
+        response.ViewUrl.Should().Be("/trips/test-view-token");
         response.PostUrl.Should().StartWith("/post/");
         response.Slug.Should().Be("test-trip");
         response.SecretToken.Should().NotBeNullOrEmpty();
+        response.ViewToken.Should().Be("test-view-token");
     }
 }

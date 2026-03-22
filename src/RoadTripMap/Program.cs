@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Azure;
 using RoadTripMap.Data;
@@ -86,6 +87,7 @@ app.Use(async (context, next) =>
 app.UseDefaultFiles();
 app.UseStaticFiles();
 
+
 app.MapGet("/api/health", () => Results.Ok(new { status = "healthy" }));
 
 app.MapGet("/api/geocode", async (double? lat, double? lng, IGeocodingService geocodingService) =>
@@ -106,20 +108,20 @@ app.MapGet("/api/geocode", async (double? lat, double? lng, IGeocodingService ge
     return Results.Ok(new { placeName });
 });
 
-app.MapGet("/create", () => Results.File("wwwroot/create.html", "text/html"));
+app.MapGet("/create", () => Results.File("create.html", "text/html"));
 
-app.MapGet("/post/{secretToken}", () => Results.File("wwwroot/post.html", "text/html"));
+app.MapGet("/post/{secretToken}", () => Results.File("post.html", "text/html"));
 
-app.MapGet("/trips/{slug}", () => Results.File("wwwroot/trips.html", "text/html"));
+app.MapGet("/trips/{viewToken}", () => Results.File("trips.html", "text/html"));
 
-app.MapGet("/api/trips/{slug}", async (string slug, RoadTripDbContext db) =>
+app.MapGet("/api/trips/view/{viewToken}", async (string viewToken, RoadTripDbContext db) =>
 {
-    // Validate slug format and length
-    if (string.IsNullOrWhiteSpace(slug) || !System.Text.RegularExpressions.Regex.IsMatch(slug, @"^[a-z0-9-]+$") || slug.Length > 200)
-        return Results.BadRequest(new { error = "Invalid slug format" });
+    // Validate view token format (UUID)
+    if (!Guid.TryParse(viewToken, out _))
+        return Results.BadRequest(new { error = "Invalid view token format" });
 
-    // Find trip by slug where IsActive == true
-    var trip = await db.Trips.FirstOrDefaultAsync(t => t.Slug == slug && t.IsActive);
+    // Find trip by view token where IsActive == true
+    var trip = await db.Trips.FirstOrDefaultAsync(t => t.ViewToken == viewToken && t.IsActive);
     if (trip == null)
         return Results.NotFound(new { error = "Trip not found" });
 
@@ -138,14 +140,14 @@ app.MapGet("/api/trips/{slug}", async (string slug, RoadTripDbContext db) =>
     return Results.Ok(response);
 });
 
-app.MapGet("/api/trips/{slug}/photos", async (string slug, RoadTripDbContext db) =>
+app.MapGet("/api/trips/view/{viewToken}/photos", async (string viewToken, RoadTripDbContext db) =>
 {
-    // Validate slug format and length
-    if (string.IsNullOrWhiteSpace(slug) || !System.Text.RegularExpressions.Regex.IsMatch(slug, @"^[a-z0-9-]+$") || slug.Length > 200)
-        return Results.BadRequest(new { error = "Invalid slug format" });
+    // Validate view token format (UUID)
+    if (!Guid.TryParse(viewToken, out _))
+        return Results.BadRequest(new { error = "Invalid view token format" });
 
-    // Find trip by slug where IsActive == true
-    var trip = await db.Trips.FirstOrDefaultAsync(t => t.Slug == slug && t.IsActive);
+    // Find trip by view token where IsActive == true
+    var trip = await db.Trips.FirstOrDefaultAsync(t => t.ViewToken == viewToken && t.IsActive);
     if (trip == null)
         return Results.NotFound(new { error = "Trip not found" });
 
@@ -187,8 +189,9 @@ app.MapPost("/api/trips", async (CreateTripRequest request, RoadTripDbContext db
         async slug => await db.Trips.AnyAsync(t => t.Slug == slug)
     );
 
-    // Generate secret token
+    // Generate tokens
     var secretToken = Guid.NewGuid().ToString();
+    var viewToken = Guid.NewGuid().ToString();
 
     // Create and save trip
     var trip = new TripEntity
@@ -196,7 +199,8 @@ app.MapPost("/api/trips", async (CreateTripRequest request, RoadTripDbContext db
         Slug = slug,
         Name = request.Name,
         Description = request.Description,
-        SecretToken = secretToken
+        SecretToken = secretToken,
+        ViewToken = viewToken
     };
 
     db.Trips.Add(trip);
@@ -207,7 +211,8 @@ app.MapPost("/api/trips", async (CreateTripRequest request, RoadTripDbContext db
     {
         Slug = slug,
         SecretToken = secretToken,
-        ViewUrl = $"/trips/{slug}",
+        ViewToken = viewToken,
+        ViewUrl = $"/trips/{viewToken}",
         PostUrl = $"/post/{secretToken}"
     };
 
@@ -215,7 +220,7 @@ app.MapPost("/api/trips", async (CreateTripRequest request, RoadTripDbContext db
 });
 
 // POST /api/trips/{secretToken}/photos — Upload photo
-app.MapPost("/api/trips/{secretToken}/photos", async (string secretToken, IFormFile file, double lat, double lng, string? caption, DateTime? takenAt, RoadTripDbContext db, IAuthStrategy authStrategy, IPhotoService photoService, IGeocodingService geocodingService, UploadRateLimiter rateLimiter, HttpContext context) =>
+app.MapPost("/api/trips/{secretToken}/photos", async (string secretToken, IFormFile file, [FromForm] double lat, [FromForm] double lng, [FromForm] string? caption, [FromForm] DateTime? takenAt, RoadTripDbContext db, IAuthStrategy authStrategy, IPhotoService photoService, IGeocodingService geocodingService, UploadRateLimiter rateLimiter, HttpContext context) =>
 {
     // Check rate limit by IP address
     var ip = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
@@ -313,6 +318,24 @@ app.MapPost("/api/trips/{secretToken}/photos", async (string secretToken, IFormF
         await db.SaveChangesAsync();
         throw;
     }
+}).DisableAntiforgery();
+
+// GET /api/post/{secretToken} — Get trip info by secret token (for post page header)
+app.MapGet("/api/post/{secretToken}", async (string secretToken, RoadTripDbContext db) =>
+{
+    var trip = await db.Trips.FirstOrDefaultAsync(t => t.SecretToken == secretToken);
+    if (trip == null)
+        return Results.NotFound(new { error = "Trip not found" });
+
+    var photoCount = await db.Photos.CountAsync(p => p.TripId == trip.Id);
+
+    return Results.Ok(new TripResponse
+    {
+        Name = trip.Name,
+        Description = trip.Description,
+        PhotoCount = photoCount,
+        CreatedAt = trip.CreatedAt
+    });
 });
 
 // GET /api/post/{secretToken}/photos — Get photos for a trip (distinct from slug-based endpoint)

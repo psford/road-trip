@@ -30,7 +30,7 @@ Road Trip Photo Map is a mobile-first web application that lets anyone create a 
 |-----------|-------------|------------------|
 | Trip Organizer | Person who creates the trip | Creates trip, distributes links to travelers |
 | Traveler | Person on the trip with a phone | Posts photos via the secret link |
-| Viewer | Friend or family member at home | Views the map and photos via the public link |
+| Viewer | Friend or family member at home | Views the map and photos via the view-only link |
 
 ---
 
@@ -40,7 +40,7 @@ Road Trip Photo Map is a mobile-first web application that lets anyone create a 
 
 Road Trip Photo Map allows users to:
 
-1. **Create** a named road trip and receive two links: a secret post link and a public view link
+1. **Create** a named road trip and receive two secret links: an upload link (for contributors) and a view-only link (for viewers)
 2. **Post** photos from a phone using the secret link -- GPS is auto-extracted, place names auto-resolved
 3. **View** an interactive map with photo pins, popups with images and metadata, and an optional route line
 4. **Download** original full-quality photos from the map view
@@ -108,7 +108,7 @@ Road Trip Photo Map allows users to:
 
 | ID | Requirement |
 |----|-------------|
-| FR-003.1 | The system must provide a public map page at `/trips/{slug}` |
+| FR-003.1 | The system must provide a view-only map page at `/trips/{viewToken}` |
 | FR-003.2 | The map must display pins at the correct GPS coordinates for each photo |
 | FR-003.3 | Clicking a pin must show a popup with the display-quality image, place name, caption, and timestamp |
 | FR-003.4 | The popup must include a "Download original" link that serves the full-quality photo |
@@ -116,7 +116,7 @@ Road Trip Photo Map allows users to:
 | FR-003.6 | The map must auto-fit bounds to show all pins on initial load |
 | FR-003.7 | A trip with zero photos must show an empty map with a "No photos yet" message |
 | FR-003.8 | A trip with one photo must center the map on that pin (no route line) |
-| FR-003.9 | Viewing a trip map must require no authentication -- just the URL |
+| FR-003.9 | Viewing a trip map requires only the view token URL -- no login or additional authentication |
 | FR-003.10 | The map must use OpenStreetMap tiles via Leaflet.js |
 
 **User Story:** *As a family member at home, I want to open a link and see a map of where my parents are on their road trip, with photos pinned at each stop.*
@@ -193,13 +193,13 @@ Road Trip Photo Map allows users to:
 | URL | Purpose | Access Level |
 |-----|---------|--------------|
 | `/create` | Create new trip form | Public |
-| `/trips/{slug}` | Map view | Public (unlisted) |
-| `/post/{secret-token}` | Photo posting page | Secret link only |
+| `/trips/{viewToken}` | Map view (view only) | View token required |
+| `/post/{secretToken}` | Photo posting page | Secret token required |
 | `/api/trips` | Trip creation endpoint | Public |
-| `/api/trips/{slug}` | Trip metadata | Public |
-| `/api/trips/{slug}/photos` | Photo list for a trip | Public |
-| `/api/trips/{secret-token}/photos` | Photo upload | Secret token required |
-| `/api/photos/{tripId}/{photoId}/{size}` | Photo binary (original/display/thumb) | Public |
+| `/api/trips/view/{viewToken}` | Trip metadata | View token required |
+| `/api/trips/view/{viewToken}/photos` | Photo list for a trip | View token required |
+| `/api/trips/{secretToken}/photos` | Photo upload | Secret token required |
+| `/api/photos/{tripId}/{photoId}/{size}` | Photo binary (original/display/thumb) | Public (unguessable IDs) |
 | `/api/geocode?lat=...&lng=...` | Reverse geocode lookup | Internal |
 
 ---

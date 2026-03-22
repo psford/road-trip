@@ -25,6 +25,8 @@ public class RoadTripDbContext : DbContext
             entity.Property(e => e.Description).HasMaxLength(2000);
             entity.Property(e => e.SecretToken).HasMaxLength(36).IsRequired();
             entity.HasIndex(e => e.SecretToken).IsUnique();
+            entity.Property(e => e.ViewToken).HasMaxLength(36).IsRequired();
+            entity.HasIndex(e => e.ViewToken).IsUnique();
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
             entity.Property(e => e.IsActive).HasDefaultValue(true);
         });

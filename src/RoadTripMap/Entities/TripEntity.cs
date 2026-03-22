@@ -7,6 +7,7 @@ public class TripEntity
     public required string Name { get; set; }
     public string? Description { get; set; }
     public required string SecretToken { get; set; }
+    public required string ViewToken { get; set; }
     public DateTime CreatedAt { get; set; }
     public bool IsActive { get; set; } = true;
 

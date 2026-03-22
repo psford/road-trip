@@ -251,7 +251,8 @@ public class IntegrationTests
         {
             Slug = "test-trip-photos",
             Name = "Test Trip Photos",
-            SecretToken = "test-token-photos" // pragma: allowlist secret
+            SecretToken = "test-token-photos", // pragma: allowlist secret
+            ViewToken = Guid.NewGuid().ToString()
         };
         await context.Trips.AddAsync(trip);
         await context.SaveChangesAsync();
@@ -311,7 +312,8 @@ public class IntegrationTests
         {
             Slug = "integration-trip",
             Name = "Integration Trip",
-            SecretToken = "integration-token" // pragma: allowlist secret
+            SecretToken = "integration-token", // pragma: allowlist secret
+            ViewToken = Guid.NewGuid().ToString()
         };
         await context.Trips.AddAsync(trip);
         await context.SaveChangesAsync();
@@ -383,7 +385,8 @@ public class IntegrationTests
         {
             Slug = "empty-trip",
             Name = "Empty Trip",
-            SecretToken = "empty-token" // pragma: allowlist secret
+            SecretToken = "empty-token", // pragma: allowlist secret
+            ViewToken = Guid.NewGuid().ToString()
         };
         await context.Trips.AddAsync(trip);
         await context.SaveChangesAsync();

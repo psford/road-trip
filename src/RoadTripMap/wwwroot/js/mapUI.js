@@ -24,11 +24,11 @@ const MapUI = {
 
     /**
      * Initialize map view for a trip
-     * @param {string} slug - Trip slug
+     * @param {string} viewToken - Trip view token
      */
-    async init(slug) {
+    async init(viewToken) {
         try {
-            const { trip, photos } = await MapService.loadTrip(slug);
+            const { trip, photos } = await MapService.loadTrip(viewToken);
 
             // Update page header with trip name
             const tripNameEl = document.getElementById('tripName');
@@ -49,8 +49,11 @@ const MapUI = {
      * @param {Array} photos - Array of PhotoResponse objects
      */
     renderMap(photos) {
-        // Initialize Leaflet map
-        this.map = L.map('map');
+        // Initialize Leaflet map with smooth panning
+        this.map = L.map('map', {
+            panAnimation: true,
+            easeLinearity: 0.25
+        });
 
         // Add OpenStreetMap tiles
         L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -68,10 +71,18 @@ const MapUI = {
             return;
         }
 
+        // Header height for autopan offset (view page has fixed header)
+        const headerHeight = document.querySelector('.map-header')?.offsetHeight || 0;
+
         // Create markers for each photo
         photos.forEach(photo => {
             const marker = L.marker([photo.lat, photo.lng]);
-            marker.bindPopup(this.createPopupHtml(photo));
+            marker.bindPopup(this.createPopupHtml(photo), {
+                autoPan: true,
+                autoPanPaddingTopLeft: L.point(10, headerHeight + 20),
+                autoPanPaddingBottomRight: L.point(10, 20),
+                autoPanAnimation: true
+            });
             marker.addTo(this.map);
             this.markers.push(marker);
         });
@@ -99,13 +110,32 @@ const MapUI = {
         const date = new Date(photo.takenAt).toLocaleDateString();
         const escapedPlaceName = this.escapeHtml(photo.placeName);
         const escapedCaption = this.escapeHtml(photo.caption);
-        return `<div style="max-width: 280px;">
-            <img src="${photo.displayUrl}" style="width:100%;border-radius:4px;" loading="lazy">
-            <h4>${escapedPlaceName}</h4>
-            ${escapedCaption ? `<p>${escapedCaption}</p>` : ''}
-            <small>${date}</small><br>
-            <a href="${photo.originalUrl}" download>Download original</a>
+        const saveBtn = this.createSaveButton(photo);
+        return `<div class="photo-popup">
+            <img src="${photo.displayUrl}" class="photo-popup-img" loading="lazy">
+            <div class="photo-popup-info">
+                <div class="photo-popup-place">${escapedPlaceName}</div>
+                ${escapedCaption ? `<div class="photo-popup-caption">${escapedCaption}</div>` : ''}
+                <div class="photo-popup-date">${date}</div>
+                ${saveBtn}
+            </div>
         </div>`;
+    },
+
+    createSaveButton(photo) {
+        if (typeof navigator.share === 'function' && window.matchMedia('(pointer: coarse)').matches) {
+            return `<button class="photo-popup-save" onclick="MapUI.sharePhoto('${photo.originalUrl}', '${this.escapeHtml(photo.placeName)}')">Share</button>`;
+        }
+        return `<a href="${photo.originalUrl}" download class="photo-popup-save">Save</a>`;
+    },
+
+    async sharePhoto(url, title) {
+        try {
+            const fullUrl = window.location.origin + url;
+            await navigator.share({ title: title || 'Photo', url: fullUrl });
+        } catch (err) {
+            if (err.name !== 'AbortError') console.warn('Share failed:', err);
+        }
     },
 
     /**
