@@ -37,19 +37,27 @@ builder.Services.AddScoped<IGeocodingService, NominatimGeocodingService>();
 
 var app = builder.Build();
 
-// Apply pending migrations on startup (production environment)
+// Apply pending migrations on startup (skip for non-relational providers like SQLite in tests)
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<RoadTripDbContext>();
     var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
     try
     {
-        db.Database.Migrate();
-        logger.LogInformation("Database migration completed successfully");
+        if (db.Database.IsSqlServer())
+        {
+            db.Database.Migrate();
+            logger.LogInformation("Database migration completed successfully");
+        }
+        else
+        {
+            db.Database.EnsureCreated();
+            logger.LogInformation("Database created (non-SQL Server provider)");
+        }
     }
     catch (Exception ex)
     {
-        logger.LogError(ex, "Database migration failed");
+        logger.LogError(ex, "Database setup failed");
         throw;
     }
 }
