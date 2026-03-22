@@ -155,7 +155,7 @@ dotnet ef database update
 ```
 
 **WSL2 Development:**
-Set `SA_DESIGN_CONNECTION` environment variable (see root CLAUDE.md for setup) to apply migrations in WSL environment.
+Set `SA_DESIGN_CONNECTION` environment variable (configured by claude-env WSL2 setup scripts) to apply migrations in WSL environment. This connection string supports DDL operations for EF Core migrations. Additionally, `WSL_SQL_CONNECTION` is set for runtime SQL access.
 
 ---
 

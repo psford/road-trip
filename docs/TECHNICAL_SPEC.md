@@ -1033,7 +1033,7 @@ Mobile-first DOM rendering layer with all business logic delegated to PostServic
 
 ## 8. Deployment
 
-### 10.1 Build & Publish
+### 8.1 Build & Publish
 
 ```bash
 dotnet publish -c Release -o ./publish
@@ -1041,12 +1041,12 @@ dotnet publish -c Release -o ./publish
 
 Outputs to `publish/` folder for Docker or direct deployment.
 
-### 10.2 App Service Configuration
+### 8.2 App Service Configuration
 
 Must set via Azure Portal or Bicep:
 - `ConnectionStrings:DefaultConnection` = Azure SQL connection string
 
-### 10.3 Shared Database Note
+### 8.3 Shared Database Note
 
 Road Trip and Stock Analyzer share the `StockAnalyzer` Azure SQL database. Migrations are run independently but operate on the same SQL instance. The `roadtrip` schema isolation prevents table name conflicts.
 

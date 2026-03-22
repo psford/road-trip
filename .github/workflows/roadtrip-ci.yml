@@ -3,14 +3,8 @@ name: Road Trip CI
 on:
   push:
     branches: [ master, main, develop ]
-    paths:
-      - '**'
-      - '.github/workflows/roadtrip-ci.yml'
   pull_request:
     branches: [ master, main, develop ]
-    paths:
-      - '**'
-      - '.github/workflows/roadtrip-ci.yml'
   workflow_dispatch:
 
 env:
