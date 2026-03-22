@@ -1,6 +1,6 @@
 # Road Trip Photo Map
 
-Last verified: 2026-03-21
+Last verified: 2026-03-22
 
 ## Purpose
 
@@ -9,7 +9,7 @@ Mobile-first road trip photo sharing app. Users create a trip, get two secret li
 ## Tech Stack
 
 - ASP.NET Core 8.0 Minimal API (no controllers)
-- EF Core 8.0 + Azure SQL (shared `StockAnalyzer` DB, `roadtrip` schema)
+- EF Core 8.0 + Azure SQL (shared DB, `roadtrip` schema — Phase 4 will add dedicated SQL instance)
 - Azure Blob Storage (private container `road-trip-photos`)
 - SkiaSharp for server-side image processing
 - Leaflet.js for map rendering
@@ -17,9 +17,9 @@ Mobile-first road trip photo sharing app. Users create a trip, get two secret li
 
 ## Commands
 
-- `dotnet build projects/road-trip/RoadTripMap.sln` -- Build
-- `dotnet test projects/road-trip/RoadTripMap.sln` -- Run tests
-- `dotnet run --project projects/road-trip/src/RoadTripMap` -- Run locally (port 5100)
+- `dotnet build RoadTripMap.sln` -- Build
+- `dotnet test RoadTripMap.sln` -- Run tests
+- `dotnet run --project src/RoadTripMap` -- Run locally (port 5100)
 
 ## Contracts
 
@@ -36,9 +36,9 @@ Mobile-first road trip photo sharing app. Users create a trip, get two secret li
 
 ## Dependencies
 
-- **Uses**: Azure SQL (shared DB), Azure Blob Storage, Nominatim API (geocoding)
-- **Used by**: GitHub Actions deploy workflow (`.github/workflows/roadtrip-deploy.yml`)
-- **Boundary**: Completely independent from Stock Analyzer code. Shares only the Azure SQL server and resource group.
+- **Uses**: Azure SQL (shared DB — see Phase 4 migration notes), Azure Blob Storage, Nominatim API (geocoding)
+- **Consumed by**: GitHub Actions deploy workflow (`.github/workflows/roadtrip-deploy.yml`)
+- **Decoupling**: Phase 4 of repo-split will add a dedicated Azure SQL instance for Road Trip, eliminating the shared DB dependency with Stock Analyzer
 
 ## Key Decisions
 
@@ -70,7 +70,102 @@ Mobile-first road trip photo sharing app. Users create a trip, get two secret li
 ## Gotchas
 
 - EXIF rotation is TODO -- `ApplyExifRotation()` is a no-op stub
-- DB is shared with Stock Analyzer; schema changes need EF Core migration in this project
-- Deploy is Docker-based (not zip deploy like Stock Analyzer)
-- Port 5100 locally (not 5000 like Stock Analyzer)
-- CI workflow is `workflow_dispatch` only (manual trigger, type "deploy")
+- DB is currently shared via Azure SQL; Phase 4 will add dedicated SQL instance. Schema changes use EF Core migrations only.
+- Deploy is Docker-based (App Service with containerized builds)
+- Port 5100 locally (distinct from other .NET apps)
+- CI workflow is `workflow_dispatch` only (manual trigger via GitHub UI)
+
+---
+
+## Git Flow
+
+This repository follows a standard develop → main flow with branch protection on main.
+
+### Branching Strategy
+
+```
+develop (work here) → PR → main (production)
+                      ↑
+               NEVER reverse this
+```
+
+| Branch | Purpose | Protection |
+|--------|---------|------------|
+| `develop` | Working branch | None — commit directly for small fixes |
+| `main` | Production ONLY | PR required, CI must pass |
+
+- **Feature branches** for: new services, architecture changes, multi-file refactors, big UI changes, multi-session work, 5+ files
+- **Direct on develop** for: small fixes, tweaks, internal docs
+- **NEVER** commit directly to main, merge to main via CLI, or deploy without explicit approval
+
+### Forbidden Operations (on develop)
+
+| Operation | Why |
+|-----------|-----|
+| `git merge main` | Develop flows TO main only |
+| `git pull origin main` | Pulls and merges main into develop |
+| `git rebase main` | Rewrites develop history based on main |
+
+If main and develop diverge, merge develop into main via PR — never the reverse.
+
+### PR Rules
+
+**Before Pushing:**
+1. `git fetch origin` (ALWAYS fetch first)
+2. Verify your branch against main (if using a feature branch)
+3. Test locally: `dotnet build RoadTripMap.sln --configuration Release && dotnet test RoadTripMap.sln --configuration Release --no-build`
+
+**After Creating a PR:**
+1. Wait for CI to pass (roadtrip-ci.yml)
+2. Patrick reviews and merges via GitHub web interface
+3. Never use `gh pr merge` — Patrick merges only
+
+**Merged PRs:** Once closed, a PR is DEAD. After any merge:
+1. Check: `gh pr list --head develop --base main --state open`
+2. No open PR → create NEW one if more work remains
+
+### Pre-Commit Protocol
+
+Before committing, verify:
+1. `git status` — check staged, unstaged, untracked files
+2. `git diff` — review actual code changes
+3. Commit message is clear and follows the project style
+4. No credentials, API keys, or sensitive data included
+
+Commit with a message describing the "why" not just the "what":
+```
+git commit -m "feat: add photo upload rate limiting
+
+Implement 20/hr per IP limit using sliding window in Redis.
+Protects API from abuse while maintaining user experience."
+```
+
+---
+
+## Database Migrations
+
+Road Trip uses EF Core for all schema changes. Never write raw SQL migration scripts.
+
+**Local Development (Windows):**
+```powershell
+cd src/RoadTripMap
+dotnet ef migrations add YourMigrationName
+# Verify the migration in Migrations/ folder
+dotnet ef database update
+```
+
+**WSL2 Development:**
+Set `SA_DESIGN_CONNECTION` environment variable (see root CLAUDE.md for setup) to apply migrations in WSL environment.
+
+---
+
+## Principles
+
+Key principles for this repository:
+
+- **Rules are hard blocks** — Git flow rules are enforced. Breaking them causes CI to fail.
+- **Test before suggesting** — Never tell someone to do something untested. Run commands locally first.
+- **No feature regression** — Changes should never lose existing functionality.
+- **EF Core only** — Database schema changes use migrations, never raw SQL.
+- **CI must pass** — All PRs to main require passing CI before merge.
+- **Deploy only when ready** — Docker build, Azure deployment, monitoring all handled by CI/CD workflows.
