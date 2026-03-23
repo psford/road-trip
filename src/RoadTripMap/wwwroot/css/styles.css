@@ -275,6 +275,23 @@ textarea {
   }
 }
 
+/* Footer */
+.site-footer {
+  text-align: center;
+  padding: var(--space-lg) 0 var(--space-sm);
+  font-size: 0.8rem;
+  color: var(--color-text-light);
+}
+
+.site-footer a {
+  color: var(--color-text-light);
+  text-decoration: underline;
+}
+
+.site-footer a:hover {
+  color: var(--color-primary);
+}
+
 /* My Trips (Homepage) */
 .my-trip-item {
   display: flex;
