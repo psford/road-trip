@@ -40,3 +40,16 @@ jobs:
         name: roadtrip-test-results
         path: '**/TestResults/*.trx'
         retention-days: 30
+
+  # Gate job for branch protection — single required check name
+  build-and-test-gate:
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Check build-and-test result
+        run: |
+          if [ "${{ needs.build-and-test.result }}" != "success" ]; then
+            echo "build-and-test failed"
+            exit 1
+          fi
