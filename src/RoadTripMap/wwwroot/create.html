@@ -9,12 +9,13 @@
 </head>
 <body>
     <div class="container">
-        <nav class="nav">
-            <a href="/">← Back to Home</a>
-        </nav>
-
-        <h1>Create a Road Trip</h1>
-        <p>Start sharing your photos with a unique trip.</p>
+        <div class="page-header">
+            <nav class="nav">
+                <a href="/">← Back to Home</a>
+            </nav>
+            <h1>Create a Road Trip</h1>
+            <p>Start sharing your photos with a unique trip.</p>
+        </div>
 
         <!-- Error message -->
         <div id="errorMessage" class="message error hidden"></div>
@@ -77,6 +78,7 @@
     </div>
 
     <script src="/js/api.js"></script>
+    <script src="/js/tripStorage.js"></script>
     <script>
         /**
          * Handle trip creation form submission
@@ -100,6 +102,9 @@
 
                 // Create trip via API
                 const result = await API.createTrip(name, description || null);
+
+                // Save trip to localStorage for "My Trips"
+                TripStorage.saveTrip(name, result.postUrl, result.viewUrl);
 
                 // Display results with full URLs for easy sharing from phones
                 const origin = window.location.origin;

@@ -9,24 +9,69 @@
 </head>
 <body>
     <div class="container">
-        <h1>Road Trip Map</h1>
-        <p>Easily share road trip photos with friends and family using secret links.</p>
+        <div class="hero">
+            <h1>Road Trip Map</h1>
+            <p>Share your journey with friends and family — no login required.</p>
+            <a href="/create" class="button-hero">Create a Trip</a>
+        </div>
 
-        <div class="card">
-            <h2>Create a New Trip</h2>
-            <p>Start a new road trip and get a unique link to share with others. They can add photos and see them on a live map.</p>
-            <a href="/create" class="button button-primary">Create a Trip</a>
+        <!-- My Trips (populated from localStorage) -->
+        <div id="myTrips" class="card" style="display:none;">
+            <h2>Your Trips</h2>
+            <div id="myTripsList"></div>
         </div>
 
         <div class="card">
             <h2>How It Works</h2>
-            <ol style="padding-left: 1.5rem;">
-                <li><strong>Create:</strong> Give your trip a name (no login required)</li>
-                <li><strong>Share:</strong> Get two secret links — one for uploading, one for viewing</li>
-                <li><strong>Upload:</strong> Contributors with the upload link can add photos</li>
-                <li><strong>View:</strong> Viewers with the view link see photos on an interactive map</li>
-            </ol>
+            <ul class="steps">
+                <li><span class="step-num">1</span><span><strong>Create</strong> — Give your trip a name (no login required)</span></li>
+                <li><span class="step-num">2</span><span><strong>Share</strong> — Get two secret links — one for uploading, one for viewing</span></li>
+                <li><span class="step-num">3</span><span><strong>Upload</strong> — Contributors with the upload link can add photos</span></li>
+                <li><span class="step-num">4</span><span><strong>View</strong> — Viewers with the view link see photos on an interactive map</span></li>
+            </ul>
         </div>
     </div>
+
+    <script src="/js/tripStorage.js"></script>
+    <script>
+        (function() {
+            const trips = TripStorage.getTrips();
+            if (trips.length === 0) return;
+
+            const container = document.getElementById('myTrips');
+            const list = document.getElementById('myTripsList');
+            container.style.display = '';
+
+            trips.forEach(trip => {
+                const item = document.createElement('div');
+                item.className = 'my-trip-item';
+
+                const name = document.createElement('div');
+                name.className = 'my-trip-name';
+                name.textContent = trip.name;
+
+                const links = document.createElement('div');
+                links.className = 'my-trip-links';
+
+                const postLink = document.createElement('a');
+                postLink.href = trip.postUrl;
+                postLink.textContent = 'Upload Photos';
+                postLink.className = 'button button-primary my-trip-link';
+                links.appendChild(postLink);
+
+                if (trip.viewUrl) {
+                    const viewLink = document.createElement('a');
+                    viewLink.href = trip.viewUrl;
+                    viewLink.textContent = 'View Map';
+                    viewLink.className = 'button button-secondary my-trip-link';
+                    links.appendChild(viewLink);
+                }
+
+                item.appendChild(name);
+                item.appendChild(links);
+                list.appendChild(item);
+            });
+        })();
+    </script>
 </body>
 </html>
