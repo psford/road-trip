@@ -3,7 +3,7 @@
   "contentVersion": "1.0.0.0",
   "parameters": {
     "appServicePlanResourceId": {
-      "value": "/subscriptions/{subscription-id}/resourceGroups/rg-stockanalyzer-prod/providers/Microsoft.Web/serverfarms/asp-stockanalyzer"
+      "value": "/subscriptions/{subscription-id}/resourceGroups/rg-roadtripmap-prod/providers/Microsoft.Web/serverfarms/asp-roadtripmap-prod"
     },
     "sqlConnectionString": {
       "value": "Server=tcp:sql-stockanalyzer-{suffix}.database.windows.net,1433;Initial Catalog=StockAnalyzer;Persist Security Info=False;User ID={username};Password={password};MultipleActiveResultSets=False;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;"

@@ -1,0 +1,211 @@
+name: Deploy to Azure Production
+
+# PRODUCTION DEPLOYMENT - Manual trigger only
+# Builds Docker image, pushes to ACR, deploys to App Service.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_deploy:
+        description: 'Type "deploy" to confirm production deployment'
+        required: true
+        type: string
+      reason:
+        description: 'Reason for deployment (shown in logs)'
+        required: true
+        type: string
+
+env:
+  AZURE_WEBAPP_NAME: app-roadtripmap-prod
+  RESOURCE_GROUP: rg-roadtripmap-prod
+  DOTNET_VERSION: '8.0.x'
+  ACR_NAME: acrstockanalyzerer34ug
+  ACR_LOGIN_SERVER: acrstockanalyzerer34ug.azurecr.io
+  IMAGE_NAME: roadtripmap
+
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate confirmation
+        if: ${{ github.event.inputs.confirm_deploy != 'deploy' }}
+        run: |
+          echo "::error::Deployment not confirmed. You must type 'deploy' to proceed."
+          exit 1
+
+      - name: Log deployment reason
+        run: |
+          echo "## Production Deployment" >> $GITHUB_STEP_SUMMARY
+          echo "**Triggered by:** ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Reason:** ${{ github.event.inputs.reason }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Branch:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+
+      - uses: actions/checkout@v6
+
+      - name: Test Azure credentials
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Verify Azure access
+        run: |
+          echo "Testing Azure resource group access..."
+          az group show --name ${{ env.RESOURCE_GROUP }} --query "name" -o tsv
+          echo "✅ Azure credentials valid and resource group accessible"
+
+      - name: Test ACR credentials
+        run: |
+          echo "Testing ACR access..."
+          az acr login --name ${{ env.ACR_NAME }} --expose-token --output none
+          echo "✅ ACR credentials valid"
+
+      - name: Azure Logout
+        if: always()
+        run: az logout || true
+
+  build-and-test:
+    needs: preflight
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore dependencies
+        run: dotnet restore RoadTripMap.sln
+
+      - name: Build
+        run: dotnet build RoadTripMap.sln --configuration Release --no-restore
+
+      - name: Test
+        run: dotnet test RoadTripMap.sln --configuration Release --no-build --verbosity normal
+
+  build-container:
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    outputs:
+      image-tag: prod-${{ github.run_number }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Log in to ACR
+        run: az acr login --name ${{ env.ACR_NAME }}
+
+      - name: Build and push to ACR
+        run: |
+          docker build -t ${{ env.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:latest .
+          docker tag ${{ env.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:latest ${{ env.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:prod-${{ github.run_number }}
+          docker push ${{ env.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:latest
+          docker push ${{ env.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:prod-${{ github.run_number }}
+
+      - name: Record image info for rollback
+        run: |
+          echo "## Container Image" >> $GITHUB_STEP_SUMMARY
+          echo "**Tag:** prod-${{ github.run_number }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Registry:** ${{ env.ACR_LOGIN_SERVER }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          PREV_RUN=$(( ${{ github.run_number }} - 1 ))
+          echo "To rollback, redeploy with tag: \`prod-${PREV_RUN}\`" >> $GITHUB_STEP_SUMMARY
+
+      - name: Azure Logout
+        if: always()
+        run: az logout || true
+
+  deploy:
+    needs: build-container
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://app-roadtripmap-prod.azurewebsites.net
+    steps:
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Deploy to App Service
+        run: |
+          echo "Deploying image: ${{ env.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:prod-${{ github.run_number }}"
+
+          az webapp config container set \
+            --name ${{ env.AZURE_WEBAPP_NAME }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --container-image-name ${{ env.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:prod-${{ github.run_number }} \
+            --container-registry-url https://${{ env.ACR_LOGIN_SERVER }} \
+            --container-registry-user ${{ env.ACR_NAME }} \
+            --container-registry-password ${{ secrets.ACR_PASSWORD }}
+
+          az webapp restart \
+            --name ${{ env.AZURE_WEBAPP_NAME }} \
+            --resource-group ${{ env.RESOURCE_GROUP }}
+
+          echo "✅ Container image updated"
+
+      - name: Wait for container startup
+        run: |
+          echo "Waiting for App Service to start new container..."
+          sleep 30
+
+      - name: Health check with retry
+        run: |
+          BASE_URL="https://app-roadtripmap-prod.azurewebsites.net"
+          for i in 1 2 3 4 5; do
+            echo "Health check attempt $i..."
+            response=$(curl -s -o /dev/null -w "%{http_code}" "$BASE_URL/api/health" --max-time 30 || echo "000")
+            if [ "$response" = "200" ]; then
+              echo "✅ Health check passed!"
+              exit 0
+            fi
+            echo "Health check returned $response, waiting 30s..."
+            sleep 30
+          done
+          echo "::error::Health check failed after 5 attempts"
+          exit 1
+
+      - name: Smoke tests
+        run: |
+          echo "Running smoke tests..."
+          BASE_URL="https://app-roadtripmap-prod.azurewebsites.net"
+          FAILED=0
+
+          test_endpoint() {
+            local name="$1" url="$2"
+            echo -n "Testing $name... "
+            response=$(curl -s -o /dev/null -w "%{http_code}" "$url" --max-time 30 || echo "000")
+            if [ "$response" = "200" ]; then
+              echo "✅ OK (HTTP $response)"
+            else
+              echo "❌ FAILED (HTTP $response)"
+              FAILED=$((FAILED+1))
+            fi
+          }
+
+          test_endpoint "Homepage" "$BASE_URL/"
+          test_endpoint "Create page" "$BASE_URL/create"
+          test_endpoint "Health API" "$BASE_URL/api/health"
+
+          echo ""
+          echo "## Smoke Test Results" >> $GITHUB_STEP_SUMMARY
+          if [ $FAILED -eq 0 ]; then
+            echo "✅ All endpoints passed" >> $GITHUB_STEP_SUMMARY
+            echo "## Deployment Successful" >> $GITHUB_STEP_SUMMARY
+            echo "Production is live at $BASE_URL" >> $GITHUB_STEP_SUMMARY
+            echo "**Image:** prod-${{ github.run_number }}" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ $FAILED endpoint(s) failed" >> $GITHUB_STEP_SUMMARY
+            echo "::error::$FAILED endpoint(s) failed smoke test"
+            exit 1
+          fi
+
+      - name: Azure Logout
+        if: always()
+        run: az logout || true
