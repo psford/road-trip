@@ -1,0 +1,56 @@
+name: Deploy Road Trip Map to Azure
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "deploy" to confirm'
+        required: true
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '8.0.x'
+      - run: dotnet restore RoadTripMap.sln
+      - run: dotnet build RoadTripMap.sln -c Release --no-restore
+      - run: dotnet test RoadTripMap.sln -c Release --no-build
+
+  deploy:
+    needs: build-and-test
+    if: github.event.inputs.confirm == 'deploy'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v6
+      - uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+      - run: |
+          az acr login --name acrstockanalyzerer34ug
+          docker build -t acrstockanalyzerer34ug.azurecr.io/roadtripmap:${{ github.sha }} \
+                       -t acrstockanalyzerer34ug.azurecr.io/roadtripmap:latest \
+                       -f Dockerfile .
+          docker push acrstockanalyzerer34ug.azurecr.io/roadtripmap:${{ github.sha }}
+          docker push acrstockanalyzerer34ug.azurecr.io/roadtripmap:latest
+      - run: |
+          az webapp config container set \
+            --name app-roadtripmap-prod \
+            --resource-group rg-roadtripmap-prod \
+            --container-image-name acrstockanalyzerer34ug.azurecr.io/roadtripmap:${{ github.sha }}
+          az webapp restart --name app-roadtripmap-prod --resource-group rg-roadtripmap-prod
+      - run: |
+          sleep 30
+          for i in $(seq 1 5); do
+            if curl -sf https://app-roadtripmap-prod.azurewebsites.net/api/health; then
+              echo "Health check passed"
+              exit 0
+            fi
+            echo "Attempt $i failed, waiting 15s..."
+            sleep 15
+          done
+          echo "Health check failed after 5 attempts"
+          exit 1

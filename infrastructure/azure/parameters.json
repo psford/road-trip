@@ -2,11 +2,11 @@
   "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
   "contentVersion": "1.0.0.0",
   "parameters": {
-    "appServicePlanResourceId": {
-      "value": "/subscriptions/{subscription-id}/resourceGroups/rg-roadtripmap-prod/providers/Microsoft.Web/serverfarms/asp-roadtripmap-prod"
+    "sqlAdminUsername": {
+      "value": "sqladmin"
     },
-    "sqlConnectionString": {
-      "value": "Server=tcp:sql-stockanalyzer-{suffix}.database.windows.net,1433;Initial Catalog=StockAnalyzer;Persist Security Info=False;User ID={username};Password={password};MultipleActiveResultSets=False;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;"
+    "sqlAdminPassword": {
+      "value": "#{SQLAdminPassword}#"
     },
     "storageConnectionString": {
       "value": "DefaultEndpointsProtocol=https;AccountName={storage-account-name};AccountKey={storage-account-key};EndpointSuffix=core.windows.net"
