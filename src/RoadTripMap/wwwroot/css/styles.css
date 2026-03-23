@@ -275,6 +275,45 @@ textarea {
   }
 }
 
+/* My Trips (Homepage) */
+.my-trip-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  padding: var(--space-sm) 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.my-trip-item:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.my-trip-item:first-child {
+  padding-top: 0;
+}
+
+.my-trip-name {
+  font-weight: 600;
+  color: var(--color-text);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.my-trip-links {
+  display: flex;
+  gap: var(--space-xs);
+  flex-shrink: 0;
+}
+
+.my-trip-link {
+  padding: var(--space-xs) var(--space-sm);
+  font-size: 0.8rem;
+}
+
 /* Hero Section (Homepage) */
 .hero {
   background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%);
@@ -350,29 +389,38 @@ textarea {
 /* Page Header (inner pages) */
 .page-header {
   background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%);
-  padding: var(--space-lg) var(--space-md);
+  padding: var(--space-xs) var(--space-sm);
   color: white;
   margin: calc(-1 * var(--space-sm));
-  margin-bottom: var(--space-lg);
+  margin-bottom: var(--space-xs);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
 }
 
 .page-header h1 {
   color: white;
-  margin-bottom: var(--space-xs);
+  font-size: 1rem;
+  margin-bottom: 0;
+  text-align: right;
+  flex: 1;
+  min-width: 0;
 }
 
 .page-header p {
-  color: rgba(255, 255, 255, 0.85);
-  margin-bottom: 0;
+  display: none;
 }
 
 .page-header .nav {
-  margin-bottom: var(--space-sm);
+  margin-bottom: 0;
+  flex-shrink: 0;
 }
 
 .page-header .nav a {
   color: rgba(255, 255, 255, 0.85);
   padding: 0;
+  font-size: 0.85rem;
 }
 
 .page-header .nav a:hover {
@@ -390,6 +438,26 @@ textarea {
     margin: calc(-1 * var(--space-lg));
     margin-bottom: var(--space-lg);
     padding: var(--space-lg);
+    display: block;
+  }
+
+  .page-header h1 {
+    font-size: 2rem;
+    margin-bottom: var(--space-xs);
+    text-align: left;
+  }
+
+  .page-header p {
+    display: block;
+    font-size: 1rem;
+  }
+
+  .page-header .nav {
+    margin-bottom: var(--space-sm);
+  }
+
+  .page-header .nav a {
+    font-size: 1rem;
   }
 }
 
@@ -401,9 +469,16 @@ textarea {
 
 .add-photo-button {
   width: 100%;
-  padding: var(--space-lg);
-  font-size: 1.1rem;
+  padding: var(--space-sm);
+  font-size: 0.95rem;
   font-weight: 600;
+}
+
+@media (min-width: 768px) {
+  .add-photo-button {
+    padding: var(--space-md);
+    font-size: 1.1rem;
+  }
 }
 
 /* Photo Preview Section */
@@ -497,7 +572,7 @@ textarea {
 
 /* Photo Map on Post Page */
 .photo-map-section {
-  margin-top: var(--space-lg);
+  margin-top: var(--space-sm);
   display: none;
 }
 
@@ -506,8 +581,8 @@ textarea {
 }
 
 .photo-map-section h3 {
-  font-size: 1.2rem;
-  margin-bottom: var(--space-md);
+  font-size: 1rem;
+  margin-bottom: var(--space-xs);
   margin-top: 0;
 }
 
@@ -522,7 +597,7 @@ textarea {
 
 /* Photo List */
 .photo-list {
-  margin-top: var(--space-lg);
+  margin-top: var(--space-sm);
 }
 
 .photo-list.empty {
@@ -530,14 +605,14 @@ textarea {
 }
 
 .photo-list h3 {
-  font-size: 1.2rem;
-  margin-bottom: var(--space-md);
+  font-size: 1rem;
+  margin-bottom: var(--space-xs);
   margin-top: 0;
 }
 
 .photo-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(100px, 150px));
   gap: var(--space-sm);
 }
 
@@ -653,7 +728,7 @@ textarea {
 /* Responsive adjustments for post page */
 @media (min-width: 768px) {
   .photo-grid {
-    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(140px, 180px));
   }
 }
 
@@ -687,11 +762,26 @@ body.map-page {
   height: var(--map-header-height);
   display: flex;
   align-items: center;
+  gap: var(--space-sm);
   padding: 0 var(--space-lg);
   background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%);
   font-size: 1.5rem;
   font-weight: 700;
   color: white;
+}
+
+/* Back button in map header */
+.map-back {
+  color: rgba(255, 255, 255, 0.85);
+  text-decoration: none;
+  font-size: 1.2rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.map-back:hover {
+  color: white;
+  text-decoration: none;
 }
 
 /* Push Leaflet zoom controls below floating header on view page.

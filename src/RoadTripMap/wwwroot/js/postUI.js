@@ -51,6 +51,8 @@ const PostUI = {
             if (trip.description) {
                 document.getElementById('tripDescription').textContent = trip.description;
             }
+            // Save to localStorage so user can find this trip again
+            TripStorage.saveTrip(trip.name, '/post/' + this.secretToken, '');
         } catch (err) {
             console.error('Failed to load trip info:', err);
             document.getElementById('tripName').textContent = 'Trip';
