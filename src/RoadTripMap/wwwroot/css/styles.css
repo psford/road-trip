@@ -7,12 +7,14 @@
 }
 
 :root {
-  --color-primary: #0066cc;
-  --color-primary-hover: #0052a3;
-  --color-bg: #ffffff;
-  --color-text: #333333;
-  --color-text-light: #666666;
-  --color-border: #dddddd;
+  --color-primary: #2a9d8f;
+  --color-primary-hover: #238b7e;
+  --color-primary-dark: #264653;
+  --color-bg: #faf9f7;
+  --color-surface: #ffffff;
+  --color-text: #2d3436;
+  --color-text-light: #636e72;
+  --color-border: #e8e4df;
   --color-error: #d32f2f;
   --color-error-bg: #ffebee;
   --color-success: #388e3c;
@@ -22,8 +24,8 @@
   --space-md: 1.5rem;
   --space-lg: 2rem;
   --space-xl: 3rem;
-  --radius: 4px;
-  --shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  --radius: 8px;
+  --shadow: 0 1px 3px rgba(0, 0, 0, 0.06), 0 4px 12px rgba(0, 0, 0, 0.04);
   --font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
 }
 
@@ -44,6 +46,7 @@ h1 {
   font-size: 2rem;
   margin-bottom: var(--space-md);
   font-weight: 700;
+  letter-spacing: -0.03em;
 }
 
 h2 {
@@ -88,7 +91,7 @@ textarea {
   font-family: inherit;
   font-size: inherit;
   color: var(--color-text);
-  background-color: var(--color-bg);
+  background-color: var(--color-surface);
   line-height: 1.4;
 }
 
@@ -96,7 +99,7 @@ input[type="text"]:focus,
 textarea:focus {
   outline: none;
   border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px rgba(0, 102, 204, 0.1);
+  box-shadow: 0 0 0 3px rgba(42, 157, 143, 0.1);
 }
 
 textarea {
@@ -112,7 +115,7 @@ textarea {
   border-radius: var(--radius);
   font-family: inherit;
   font-size: inherit;
-  font-weight: 500;
+  font-weight: 600;
   cursor: pointer;
   transition: all 0.2s ease;
   text-align: center;
@@ -134,11 +137,11 @@ textarea {
 .button-secondary {
   background-color: transparent;
   color: var(--color-primary);
-  border: 1px solid var(--color-primary);
+  border: 2px solid var(--color-primary);
 }
 
 .button-secondary:hover {
-  background-color: rgba(0, 102, 204, 0.05);
+  background-color: rgba(42, 157, 143, 0.05);
 }
 
 /* Messages */
@@ -166,7 +169,7 @@ textarea {
 
 /* Cards */
 .card {
-  background-color: var(--color-bg);
+  background-color: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius);
   padding: var(--space-md);
@@ -199,7 +202,7 @@ textarea {
 
 .result-value {
   font-family: 'Courier New', monospace;
-  background-color: white;
+  background-color: var(--color-surface);
   padding: var(--space-sm);
   border-radius: var(--radius);
   word-break: break-all;
@@ -272,6 +275,124 @@ textarea {
   }
 }
 
+/* Hero Section (Homepage) */
+.hero {
+  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%);
+  padding: var(--space-xl) var(--space-md) var(--space-lg);
+  text-align: center;
+  color: white;
+  margin: calc(-1 * var(--space-sm));
+  margin-bottom: var(--space-lg);
+}
+
+.hero h1 {
+  color: white;
+  margin-bottom: var(--space-sm);
+}
+
+.hero p {
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 1.05rem;
+  margin-bottom: var(--space-md);
+}
+
+.hero .button-hero {
+  display: inline-block;
+  padding: var(--space-sm) var(--space-lg);
+  background: white;
+  color: var(--color-primary-dark);
+  border: none;
+  border-radius: 24px;
+  font-family: inherit;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  transition: all 0.2s ease;
+}
+
+.hero .button-hero:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
+  text-decoration: none;
+  color: var(--color-primary-dark);
+}
+
+/* How It Works Steps */
+.steps {
+  list-style: none;
+  padding: 0;
+}
+
+.steps li {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-sm);
+  line-height: 1.5;
+}
+
+.step-num {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+/* Page Header (inner pages) */
+.page-header {
+  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%);
+  padding: var(--space-lg) var(--space-md);
+  color: white;
+  margin: calc(-1 * var(--space-sm));
+  margin-bottom: var(--space-lg);
+}
+
+.page-header h1 {
+  color: white;
+  margin-bottom: var(--space-xs);
+}
+
+.page-header p {
+  color: rgba(255, 255, 255, 0.85);
+  margin-bottom: 0;
+}
+
+.page-header .nav {
+  margin-bottom: var(--space-sm);
+}
+
+.page-header .nav a {
+  color: rgba(255, 255, 255, 0.85);
+  padding: 0;
+}
+
+.page-header .nav a:hover {
+  color: white;
+}
+
+@media (min-width: 768px) {
+  .hero {
+    margin: calc(-1 * var(--space-lg));
+    margin-bottom: var(--space-lg);
+    padding: var(--space-xl) var(--space-lg) var(--space-lg);
+  }
+
+  .page-header {
+    margin: calc(-1 * var(--space-lg));
+    margin-bottom: var(--space-lg);
+    padding: var(--space-lg);
+  }
+}
+
 /* Post Page Styles (Phase 5) */
 
 #fileInput {
@@ -306,7 +427,7 @@ textarea {
   color: var(--color-text-light);
   margin-bottom: var(--space-md);
   padding: var(--space-sm);
-  background-color: #f5f5f5;
+  background-color: var(--color-bg);
   border-radius: var(--radius);
 }
 
@@ -337,7 +458,7 @@ textarea {
   color: var(--color-text-light);
   margin-bottom: var(--space-md);
   padding: var(--space-sm);
-  background-color: #f5f5f5;
+  background-color: var(--color-bg);
   border-radius: var(--radius);
 }
 
@@ -350,14 +471,14 @@ textarea {
   font-family: inherit;
   font-size: inherit;
   color: var(--color-text);
-  background-color: var(--color-bg);
+  background-color: var(--color-surface);
   margin-bottom: var(--space-md);
 }
 
 .caption-input:focus {
   outline: none;
   border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px rgba(0, 102, 204, 0.1);
+  box-shadow: 0 0 0 3px rgba(42, 157, 143, 0.1);
 }
 
 /* Post Button Group */
@@ -422,7 +543,7 @@ textarea {
 
 .photo-item {
   position: relative;
-  background-color: white;
+  background-color: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius);
   overflow: hidden;
@@ -567,13 +688,10 @@ body.map-page {
   display: flex;
   align-items: center;
   padding: 0 var(--space-lg);
-  background: rgba(255, 255, 255, 0.95);
-  backdrop-filter: blur(4px);
+  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%);
   font-size: 1.5rem;
   font-weight: 700;
-  color: var(--color-text);
-  border-bottom: 1px solid var(--color-border);
-  box-shadow: var(--shadow);
+  color: white;
 }
 
 /* Push Leaflet zoom controls below floating header on view page.
@@ -688,7 +806,7 @@ body.map-page .leaflet-top.leaflet-left {
 }
 
 .photo-popup-save:hover {
-  background-color: rgba(0, 102, 204, 0.05);
+  background-color: rgba(42, 157, 143, 0.05);
   text-decoration: none;
 }
 
