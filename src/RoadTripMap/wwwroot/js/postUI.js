@@ -302,7 +302,7 @@ const PostUI = {
         // Add markers with carousel sync
         photos.forEach(photo => {
             const marker = L.marker([photo.lat, photo.lng]);
-            const date = new Date(photo.takenAt).toLocaleDateString();
+            const date = photo.takenAt ? new Date(photo.takenAt).toLocaleDateString() : 'Date unknown';
             const escapedPlace = this.escapeHtml(photo.placeName);
             const escapedCaption = this.escapeHtml(photo.caption);
 

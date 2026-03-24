@@ -135,7 +135,7 @@ const MapUI = {
      * @returns {string} - HTML string for popup content
      */
     createPopupHtml(photo) {
-        const date = new Date(photo.takenAt).toLocaleDateString();
+        const date = photo.takenAt ? new Date(photo.takenAt).toLocaleDateString() : 'Date unknown';
         const escapedPlaceName = this.escapeHtml(photo.placeName);
         const escapedCaption = this.escapeHtml(photo.caption);
         const saveBtn = this.createSaveButton(photo);

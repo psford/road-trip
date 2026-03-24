@@ -548,7 +548,7 @@ public class PhotoEndpointTests
     }
 
     [Fact]
-    public async Task GetPhotosEndpoint_OrdersByCreatedAtDescending()
+    public async Task GetPhotosEndpoint_OrdersByTakenAtAscending()
     {
         // Arrange
         using var context = CreateInMemoryContext();
@@ -598,17 +598,18 @@ public class PhotoEndpointTests
         await context.Photos.AddAsync(photo3);
         await context.SaveChangesAsync();
 
-        // Act
+        // Act - Use the new null-safe ordering
         var photos = await context.Photos
             .Where(p => p.TripId == trip.Id)
-            .OrderByDescending(p => p.CreatedAt)
+            .OrderBy(p => p.TakenAt == null)
+            .ThenBy(p => p.TakenAt)
             .ToListAsync();
 
-        // Assert
+        // Assert - photos should be ordered by takenAt ascending (oldest first)
         photos.Should().HaveCount(3);
-        photos[0].Caption.Should().Be("Third");
+        photos[0].Caption.Should().Be("First");
         photos[1].Caption.Should().Be("Second");
-        photos[2].Caption.Should().Be("First");
+        photos[2].Caption.Should().Be("Third");
     }
 
     [Fact]
@@ -693,9 +694,11 @@ public class PhotoEndpointTests
         photos[1].Caption.Should().Be("Photo with recent date");
         photos[1].TakenAt.Should().NotBeNull();
 
-        // Last two should have null takenAt values
+        // Last two should have null takenAt values (order among nulls is not guaranteed)
         photos[2].TakenAt.Should().BeNull();
-        photos[3].Caption.Should().Be("Another photo with null takenAt");
         photos[3].TakenAt.Should().BeNull();
+        new[] { photos[2].Caption, photos[3].Caption }
+            .Should()
+            .Contain(new[] { "Photo with null takenAt", "Another photo with null takenAt" });
     }
 }
