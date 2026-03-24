@@ -16,6 +16,8 @@ const PostUI = {
     currentMetadata: null,
     currentLat: null,
     currentLng: null,
+    carousel: null,
+    markerLookup: new Map(),
 
     init(secretToken) {
         this.secretToken = secretToken;
@@ -51,8 +53,6 @@ const PostUI = {
             if (trip.description) {
                 document.getElementById('tripDescription').textContent = trip.description;
             }
-            // Save to localStorage so user can find this trip again
-            TripStorage.saveTrip(trip.name, '/post/' + this.secretToken, '');
         } catch (err) {
             console.error('Failed to load trip info:', err);
             document.getElementById('tripName').textContent = 'Trip';
@@ -243,26 +243,29 @@ const PostUI = {
             const photos = await PostService.listPhotos(this.secretToken);
 
             const photoList = document.getElementById('photoList');
-            const photoGrid = document.getElementById('photoGrid');
+            const photoMapSection = document.getElementById('photoMapSection');
 
             if (photos.length === 0) {
                 photoList.classList.add('empty');
-                photoGrid.innerHTML = '';
+                photoMapSection.classList.remove('visible');
                 this.hidePhotoMap();
                 return;
             }
 
             photoList.classList.remove('empty');
-            photoGrid.innerHTML = '';
-
-            // Render photos most recent first
-            photos.forEach(photo => {
-                const photoEl = this.createPhotoElement(photo);
-                photoGrid.appendChild(photoEl);
-            });
+            photoMapSection.classList.add('visible');
 
             // Render photo map
             this.renderPhotoMap(photos);
+
+            // Initialize or update the carousel
+            const container = document.getElementById('photoCarousel');
+            container.innerHTML = '';
+            this.carousel = PhotoCarousel.init(container, photos, {
+                canDelete: true,
+                onDelete: (photo) => this.onDeleteFromCarousel(photo),
+                onSelect: (photo) => this.onCarouselSelect(photo)
+            });
         } catch (err) {
             console.error('Error loading photos:', err);
             this.showToast('Failed to load photos', 'error');
@@ -277,12 +280,10 @@ const PostUI = {
     },
 
     renderPhotoMap(photos) {
-        const section = document.getElementById('photoMapSection');
-        section.classList.add('visible');
-
         // Clear existing markers
         this.photoMapMarkers.forEach(m => m.remove());
         this.photoMapMarkers = [];
+        this.markerLookup.clear();
         if (this.routeLayer) {
             this.routeLayer.remove();
             this.routeLayer = null;
@@ -298,7 +299,7 @@ const PostUI = {
             }).addTo(this.photoMap);
         }
 
-        // Add markers with delete-capable popups
+        // Add markers with carousel sync
         photos.forEach(photo => {
             const marker = L.marker([photo.lat, photo.lng]);
             const date = new Date(photo.takenAt).toLocaleDateString();
@@ -311,7 +312,6 @@ const PostUI = {
                     <div class="photo-popup-place">${escapedPlace}</div>
                     ${escapedCaption ? `<div class="photo-popup-caption">${escapedCaption}</div>` : ''}
                     <div class="photo-popup-date">${date}</div>
-                    <button class="photo-popup-delete" data-photo-id="${photo.id}">Delete Photo</button>
                 </div>
             </div>`;
 
@@ -322,13 +322,13 @@ const PostUI = {
                 autoPanAnimation: true
             });
             marker.on('popupopen', () => {
-                const btn = document.querySelector(`.photo-popup-delete[data-photo-id="${photo.id}"]`);
-                if (btn) {
-                    btn.addEventListener('click', () => this.onDeleteFromMap(photo.id));
+                if (this.carousel) {
+                    this.carousel.selectPhoto(photo.id);
                 }
             });
             marker.addTo(this.photoMap);
             this.photoMapMarkers.push(marker);
+            this.markerLookup.set(photo.id, marker);
         });
 
         // Fit bounds
@@ -368,11 +368,19 @@ const PostUI = {
         this.routeVisible = !this.routeVisible;
     },
 
-    async onDeleteFromMap(photoId) {
+    onCarouselSelect(photo) {
+        const marker = this.markerLookup.get(photo.id);
+        if (marker) {
+            this.photoMap.flyTo([photo.lat, photo.lng], 15);
+            marker.openPopup();
+        }
+        PhotoCarousel.showFullscreen(photo);
+    },
+
+    async onDeleteFromCarousel(photo) {
         if (!confirm('Delete this photo?')) return;
         try {
-            await PostService.deletePhoto(this.secretToken, photoId);
-            this.photoMap.closePopup();
+            await PostService.deletePhoto(this.secretToken, photo.id);
             this.showToast('Photo deleted', 'success');
             await this.refreshPhotoList();
         } catch (err) {
@@ -387,53 +395,6 @@ const PostUI = {
         if (btn) btn.style.display = 'none';
     },
 
-    createPhotoElement(photo) {
-        const div = document.createElement('div');
-        div.className = 'photo-item';
-
-        const img = document.createElement('img');
-        img.className = 'photo-item-image';
-        img.src = photo.thumbnailUrl;
-        img.alt = photo.caption || 'Photo';
-
-        const details = document.createElement('div');
-        details.className = 'photo-item-details';
-
-        const place = document.createElement('div');
-        place.className = 'photo-item-place';
-        place.textContent = photo.placeName || 'Unknown location';
-
-        if (photo.caption) {
-            const caption = document.createElement('div');
-            caption.className = 'photo-item-caption';
-            caption.textContent = photo.caption;
-            details.appendChild(place);
-            details.appendChild(caption);
-        } else {
-            details.appendChild(place);
-        }
-
-        const deleteBtn = document.createElement('button');
-        deleteBtn.className = 'photo-item-delete';
-        deleteBtn.textContent = '✕';
-        deleteBtn.addEventListener('click', async () => {
-            if (confirm('Delete this photo?')) {
-                try {
-                    await PostService.deletePhoto(this.secretToken, photo.id);
-                    this.showToast('Photo deleted', 'success');
-                    await this.refreshPhotoList();
-                } catch (err) {
-                    this.showToast('Failed to delete photo', 'error');
-                }
-            }
-        });
-
-        div.appendChild(img);
-        div.appendChild(details);
-        div.appendChild(deleteBtn);
-
-        return div;
-    },
 
     showToast(message, type) {
         const container = document.getElementById('toastContainer');
