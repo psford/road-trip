@@ -344,7 +344,8 @@ app.MapGet("/api/post/{secretToken}", async (string secretToken, RoadTripDbConte
         Name = trip.Name,
         Description = trip.Description,
         PhotoCount = photoCount,
-        CreatedAt = trip.CreatedAt
+        CreatedAt = trip.CreatedAt,
+        ViewUrl = $"/trips/{trip.ViewToken}"
     });
 });
 
