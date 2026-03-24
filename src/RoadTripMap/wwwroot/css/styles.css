@@ -964,6 +964,92 @@ body.map-page .leaflet-top.leaflet-left {
   }
 }
 
+/* Photo Carousel - Horizontal scrollable thumbnail strip */
+
+.carousel-strip {
+  display: flex;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  gap: var(--space-xs);
+  padding: var(--space-xs);
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.carousel-strip::-webkit-scrollbar {
+  display: none;
+}
+
+.carousel-item {
+  scroll-snap-align: center;
+  flex: 0 0 auto;
+  width: 120px;
+  position: relative;
+  border-radius: var(--radius);
+  overflow: hidden;
+  cursor: pointer;
+  border: 2px solid transparent;
+  transition: border-color 0.2s;
+}
+
+.carousel-item.selected {
+  border-color: var(--color-primary);
+}
+
+.carousel-item img {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  display: block;
+}
+
+.carousel-item-label {
+  padding: 2px var(--space-xs);
+  font-size: 0.7rem;
+  color: var(--color-text-light);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.carousel-item-actions {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: flex;
+  gap: 4px;
+}
+
+.carousel-action-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.5);
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  padding: 0;
+}
+
+.carousel-action-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+.carousel-action-btn:hover {
+  background: rgba(0, 0, 0, 0.7);
+}
+
+/* Responsive: Desktop carousel item width */
+@media (min-width: 768px) {
+  .carousel-item {
+    width: 150px;
+  }
+}
+
 /* Responsive map header for mobile */
 @media (max-width: 480px) {
   body.map-page {
