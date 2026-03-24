@@ -24,6 +24,7 @@
   --space-md: 1.5rem;
   --space-lg: 2rem;
   --space-xl: 3rem;
+  --carousel-height: 100px; /* thumbnail + label + padding */
   --radius: 8px;
   --shadow: 0 1px 3px rgba(0, 0, 0, 0.06), 0 4px 12px rgba(0, 0, 0, 0.04);
   --font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
@@ -870,10 +871,6 @@ body.map-page .leaflet-top.leaflet-left {
 }
 
 /* Floating carousel on view page */
-:root {
-  --carousel-height: 100px; /* thumbnail + label + padding */
-}
-
 .view-carousel-container {
   position: fixed;
   bottom: 0;

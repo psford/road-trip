@@ -102,13 +102,18 @@ const MapUI = {
 
         // Initialize carousel BEFORE single-photo early return
         const carouselContainer = document.getElementById('viewCarousel');
-        this.carousel = PhotoCarousel.init(carouselContainer, photos, {
-            canDelete: false,
-            onDelete: null,
-            onSelect: (photo) => this.onCarouselSelect(photo)
-        });
-        carouselContainer.classList.add('active');
-        document.getElementById('routeToggle').classList.add('above-carousel');
+        if (carouselContainer) {
+            this.carousel = PhotoCarousel.init(carouselContainer, photos, {
+                canDelete: false,
+                onDelete: null,
+                onSelect: (photo) => this.onCarouselSelect(photo)
+            });
+            carouselContainer.classList.add('active');
+        }
+        const routeToggleBtn = document.getElementById('routeToggle');
+        if (routeToggleBtn) {
+            routeToggleBtn.classList.add('above-carousel');
+        }
 
         // Handle single photo
         if (photos.length === 1) {
