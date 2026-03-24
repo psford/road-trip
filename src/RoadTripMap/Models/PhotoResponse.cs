@@ -10,5 +10,5 @@ public record PhotoResponse
     public required double Lng { get; init; }
     public required string PlaceName { get; init; }
     public string? Caption { get; init; }
-    public required DateTime TakenAt { get; init; }
+    public DateTime? TakenAt { get; init; }
 }

@@ -160,9 +160,11 @@ app.MapGet("/api/trips/view/{viewToken}/photos", async (string viewToken, RoadTr
         return Results.NotFound(new { error = "Trip not found" });
 
     // Query photos ordered by TakenAt ascending (chronological for route line)
+    // Nulls sort last: OrderBy(p => p.TakenAt == null) returns false (0) for non-null, true (1) for null
     var photos = await db.Photos
         .Where(p => p.TripId == trip.Id)
-        .OrderBy(p => p.TakenAt)
+        .OrderBy(p => p.TakenAt == null)
+        .ThenBy(p => p.TakenAt)
         .Select(p => new PhotoResponse
         {
             Id = p.Id,
@@ -271,7 +273,7 @@ app.MapPost("/api/trips/{secretToken}/photos", async (string secretToken, IFormF
         Latitude = lat,
         Longitude = lng,
         Caption = caption,
-        TakenAt = takenAt ?? DateTime.UtcNow,
+        TakenAt = takenAt,
         PlaceName = null, // Will be set by geocoding
         BlobPath = "" // Placeholder, will be set after upload
     };
@@ -354,10 +356,12 @@ app.MapGet("/api/post/{secretToken}/photos", async (string secretToken, RoadTrip
     if (trip == null)
         return Results.NotFound(new { error = "Trip not found" });
 
-    // Query photos, ordered by most recent first
+    // Query photos, ordered by takenAt ascending (chronological)
+    // Nulls sort last: OrderBy(p => p.TakenAt == null) returns false (0) for non-null, true (1) for null
     var photos = await db.Photos
         .Where(p => p.TripId == trip.Id)
-        .OrderByDescending(p => p.CreatedAt)
+        .OrderBy(p => p.TakenAt == null)
+        .ThenBy(p => p.TakenAt)
         .Select(p => new PhotoResponse
         {
             Id = p.Id,

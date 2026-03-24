@@ -610,4 +610,92 @@ public class PhotoEndpointTests
         photos[1].Caption.Should().Be("Second");
         photos[2].Caption.Should().Be("First");
     }
+
+    [Fact]
+    public async Task GetPhotosEndpoint_WithNullTakenAt_SortsNullsLast()
+    {
+        // Arrange
+        using var context = CreateInMemoryContext();
+        var trip = new TripEntity
+        {
+            Slug = "null-taken-at-trip",
+            Name = "Null Taken At Trip",
+            SecretToken = "null-token", // pragma: allowlist secret
+            ViewToken = Guid.NewGuid().ToString()
+        };
+        await context.Trips.AddAsync(trip);
+        await context.SaveChangesAsync();
+
+        var now = DateTime.UtcNow;
+
+        // Create photos with mixed takenAt values (some null, some with dates)
+        var photo1 = new PhotoEntity
+        {
+            TripId = trip.Id,
+            Latitude = 40.7128,
+            Longitude = -74.0060,
+            Caption = "Photo with old date",
+            TakenAt = now.AddDays(-5),
+            CreatedAt = now.AddDays(-5),
+            BlobPath = "1/15.jpg"
+        };
+        var photo2 = new PhotoEntity
+        {
+            TripId = trip.Id,
+            Latitude = 34.0522,
+            Longitude = -118.2437,
+            Caption = "Photo with null takenAt",
+            TakenAt = null,
+            CreatedAt = now.AddDays(-3),
+            BlobPath = "1/16.jpg"
+        };
+        var photo3 = new PhotoEntity
+        {
+            TripId = trip.Id,
+            Latitude = 41.8781,
+            Longitude = -87.6298,
+            Caption = "Photo with recent date",
+            TakenAt = now.AddDays(-1),
+            CreatedAt = now.AddDays(-1),
+            BlobPath = "1/17.jpg"
+        };
+        var photo4 = new PhotoEntity
+        {
+            TripId = trip.Id,
+            Latitude = 39.7392,
+            Longitude = -104.9903,
+            Caption = "Another photo with null takenAt",
+            TakenAt = null,
+            CreatedAt = now,
+            BlobPath = "1/18.jpg"
+        };
+
+        await context.Photos.AddAsync(photo1);
+        await context.Photos.AddAsync(photo2);
+        await context.Photos.AddAsync(photo3);
+        await context.Photos.AddAsync(photo4);
+        await context.SaveChangesAsync();
+
+        // Act - Use the new null-safe ordering
+        var photos = await context.Photos
+            .Where(p => p.TripId == trip.Id)
+            .OrderBy(p => p.TakenAt == null)
+            .ThenBy(p => p.TakenAt)
+            .ToListAsync();
+
+        // Assert
+        photos.Should().HaveCount(4);
+
+        // First two should have non-null takenAt values, ordered chronologically (oldest first)
+        photos[0].Caption.Should().Be("Photo with old date");
+        photos[0].TakenAt.Should().NotBeNull();
+
+        photos[1].Caption.Should().Be("Photo with recent date");
+        photos[1].TakenAt.Should().NotBeNull();
+
+        // Last two should have null takenAt values
+        photos[2].TakenAt.Should().BeNull();
+        photos[3].Caption.Should().Be("Another photo with null takenAt");
+        photos[3].TakenAt.Should().BeNull();
+    }
 }
