@@ -1,10 +1,14 @@
 using FluentAssertions;
+using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Moq;
 using RoadTripMap.Data;
 using RoadTripMap.Entities;
 using RoadTripMap.Models;
 using RoadTripMap.Services;
+using System.Text.Json;
 
 namespace RoadTripMap.Tests.Endpoints;
 
@@ -548,16 +552,40 @@ public class PhotoEndpointTests
     }
 
     [Fact]
-    public async Task GetPhotosEndpoint_OrdersByCreatedAtDescending()
+    public async Task GetPhotosEndpoint_OrdersByTakenAtAscending()
     {
-        // Arrange
-        using var context = CreateInMemoryContext();
+        // Arrange - Create a test server with HTTP client
+        using var connection = new SqliteConnection("DataSource=:memory:");
+        connection.Open();
+
+        using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.ConfigureServices(services =>
+                {
+                    var descriptor = services.SingleOrDefault(
+                        d => d.ServiceType == typeof(DbContextOptions<RoadTripDbContext>));
+                    if (descriptor != null) services.Remove(descriptor);
+
+                    services.AddDbContext<RoadTripDbContext>(options =>
+                        options.UseSqlite(connection));
+                });
+            });
+
+        using var client = factory.CreateClient();
+        using var context = new RoadTripDbContext(new DbContextOptionsBuilder<RoadTripDbContext>()
+            .UseSqlite(connection)
+            .Options);
+
+        await context.Database.EnsureCreatedAsync();
+
         var trip = new TripEntity
         {
             Slug = "ordered-trip",
             Name = "Ordered Trip",
             SecretToken = "ordered-token", // pragma: allowlist secret
-            ViewToken = Guid.NewGuid().ToString()
+            ViewToken = Guid.NewGuid().ToString(),
+            CreatedAt = DateTime.UtcNow
         };
         await context.Trips.AddAsync(trip);
         await context.SaveChangesAsync();
@@ -598,16 +626,136 @@ public class PhotoEndpointTests
         await context.Photos.AddAsync(photo3);
         await context.SaveChangesAsync();
 
-        // Act
-        var photos = await context.Photos
-            .Where(p => p.TripId == trip.Id)
-            .OrderByDescending(p => p.CreatedAt)
-            .ToListAsync();
+        // Act - Call the actual API endpoint via HTTP
+        var response = await client.GetAsync($"/api/post/{trip.SecretToken}/photos");
 
-        // Assert
+        // Assert - Verify HTTP response is successful
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
+
+        var json = await response.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(json);
+        var photos = doc.RootElement.EnumerateArray().ToList();
+
+        // Verify photos are ordered by takenAt ascending (oldest first)
         photos.Should().HaveCount(3);
-        photos[0].Caption.Should().Be("Third");
-        photos[1].Caption.Should().Be("Second");
-        photos[2].Caption.Should().Be("First");
+        photos[0].GetProperty("caption").GetString().Should().Be("First");
+        photos[1].GetProperty("caption").GetString().Should().Be("Second");
+        photos[2].GetProperty("caption").GetString().Should().Be("Third");
+    }
+
+    [Fact]
+    public async Task GetPhotosEndpoint_WithNullTakenAt_SortsNullsLast()
+    {
+        // Arrange - Create a test server with HTTP client
+        using var connection = new SqliteConnection("DataSource=:memory:");
+        connection.Open();
+
+        using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.ConfigureServices(services =>
+                {
+                    var descriptor = services.SingleOrDefault(
+                        d => d.ServiceType == typeof(DbContextOptions<RoadTripDbContext>));
+                    if (descriptor != null) services.Remove(descriptor);
+
+                    services.AddDbContext<RoadTripDbContext>(options =>
+                        options.UseSqlite(connection));
+                });
+            });
+
+        using var client = factory.CreateClient();
+        using var context = new RoadTripDbContext(new DbContextOptionsBuilder<RoadTripDbContext>()
+            .UseSqlite(connection)
+            .Options);
+
+        await context.Database.EnsureCreatedAsync();
+
+        var trip = new TripEntity
+        {
+            Slug = "null-taken-at-trip",
+            Name = "Null Taken At Trip",
+            SecretToken = "null-token", // pragma: allowlist secret
+            ViewToken = Guid.NewGuid().ToString(),
+            CreatedAt = DateTime.UtcNow
+        };
+        await context.Trips.AddAsync(trip);
+        await context.SaveChangesAsync();
+
+        var now = DateTime.UtcNow;
+
+        // Create photos with mixed takenAt values (some null, some with dates)
+        var photo1 = new PhotoEntity
+        {
+            TripId = trip.Id,
+            Latitude = 40.7128,
+            Longitude = -74.0060,
+            Caption = "Photo with old date",
+            TakenAt = now.AddDays(-5),
+            CreatedAt = now.AddDays(-5),
+            BlobPath = "1/15.jpg"
+        };
+        var photo2 = new PhotoEntity
+        {
+            TripId = trip.Id,
+            Latitude = 34.0522,
+            Longitude = -118.2437,
+            Caption = "Photo with null takenAt",
+            TakenAt = null,
+            CreatedAt = now.AddDays(-3),
+            BlobPath = "1/16.jpg"
+        };
+        var photo3 = new PhotoEntity
+        {
+            TripId = trip.Id,
+            Latitude = 41.8781,
+            Longitude = -87.6298,
+            Caption = "Photo with recent date",
+            TakenAt = now.AddDays(-1),
+            CreatedAt = now.AddDays(-1),
+            BlobPath = "1/17.jpg"
+        };
+        var photo4 = new PhotoEntity
+        {
+            TripId = trip.Id,
+            Latitude = 39.7392,
+            Longitude = -104.9903,
+            Caption = "Another photo with null takenAt",
+            TakenAt = null,
+            CreatedAt = now,
+            BlobPath = "1/18.jpg"
+        };
+
+        await context.Photos.AddAsync(photo1);
+        await context.Photos.AddAsync(photo2);
+        await context.Photos.AddAsync(photo3);
+        await context.Photos.AddAsync(photo4);
+        await context.SaveChangesAsync();
+
+        // Act - Call the actual API endpoint via HTTP
+        var response = await client.GetAsync($"/api/post/{trip.SecretToken}/photos");
+
+        // Assert - Verify HTTP response is successful
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
+
+        var json = await response.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(json);
+        var photos = doc.RootElement.EnumerateArray().ToList();
+
+        // Verify photos are ordered correctly
+        photos.Should().HaveCount(4);
+
+        // First two should have non-null takenAt values, ordered chronologically (oldest first)
+        photos[0].GetProperty("caption").GetString().Should().Be("Photo with old date");
+        photos[0].GetProperty("takenAt").ValueKind.Should().NotBe(JsonValueKind.Null);
+
+        photos[1].GetProperty("caption").GetString().Should().Be("Photo with recent date");
+        photos[1].GetProperty("takenAt").ValueKind.Should().NotBe(JsonValueKind.Null);
+
+        // Last two should have null takenAt values (order among nulls is not guaranteed)
+        photos[2].GetProperty("takenAt").ValueKind.Should().Be(JsonValueKind.Null);
+        photos[3].GetProperty("takenAt").ValueKind.Should().Be(JsonValueKind.Null);
+        var nullCaptions = new[] { photos[2].GetProperty("caption").GetString(), photos[3].GetProperty("caption").GetString() };
+        nullCaptions.Should().Contain(new[] { "Photo with null takenAt", "Another photo with null takenAt" });
     }
 }

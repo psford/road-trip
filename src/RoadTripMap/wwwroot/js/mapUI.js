@@ -9,6 +9,8 @@ const MapUI = {
     markers: [],
     routeLayer: null,
     routeVisible: false,
+    carousel: null,
+    markerLookup: null,
 
     /**
      * Escape HTML special characters to prevent XSS
@@ -74,7 +76,8 @@ const MapUI = {
         // Header height for autopan offset (view page has fixed header)
         const headerHeight = document.querySelector('.map-header')?.offsetHeight || 0;
 
-        // Create markers for each photo
+        // Build markerLookup and create markers for each photo
+        this.markerLookup = new Map();
         photos.forEach(photo => {
             const marker = L.marker([photo.lat, photo.lng]);
             marker.bindPopup(this.createPopupHtml(photo), {
@@ -85,7 +88,32 @@ const MapUI = {
             });
             marker.addTo(this.map);
             this.markers.push(marker);
+
+            // Build markerLookup for carousel-to-map sync
+            this.markerLookup.set(photo.id, marker);
+
+            // Add popupopen handler for map-to-carousel sync
+            marker.on('popupopen', () => {
+                if (this.carousel) {
+                    this.carousel.selectPhoto(photo.id);
+                }
+            });
         });
+
+        // Initialize carousel BEFORE single-photo early return
+        const carouselContainer = document.getElementById('viewCarousel');
+        if (carouselContainer) {
+            this.carousel = PhotoCarousel.init(carouselContainer, photos, {
+                canDelete: false,
+                onDelete: null,
+                onSelect: (photo) => this.onCarouselSelect(photo)
+            });
+            carouselContainer.classList.add('active');
+        }
+        const routeToggleBtn = document.getElementById('routeToggle');
+        if (routeToggleBtn) {
+            routeToggleBtn.classList.add('above-carousel');
+        }
 
         // Handle single photo
         if (photos.length === 1) {
@@ -107,7 +135,7 @@ const MapUI = {
      * @returns {string} - HTML string for popup content
      */
     createPopupHtml(photo) {
-        const date = new Date(photo.takenAt).toLocaleDateString();
+        const date = photo.takenAt ? new Date(photo.takenAt).toLocaleDateString() : 'Date unknown';
         const escapedPlaceName = this.escapeHtml(photo.placeName);
         const escapedCaption = this.escapeHtml(photo.caption);
         const saveBtn = this.createSaveButton(photo);
@@ -136,6 +164,19 @@ const MapUI = {
         } catch (err) {
             if (err.name !== 'AbortError') console.warn('Share failed:', err);
         }
+    },
+
+    /**
+     * Handle carousel selection: pan map, open popup, show fullscreen viewer
+     * @param {Object} photo - PhotoResponse object
+     */
+    onCarouselSelect(photo) {
+        const marker = this.markerLookup.get(photo.id);
+        if (marker) {
+            this.map.flyTo([photo.lat, photo.lng], 15);
+            marker.openPopup();
+        }
+        PhotoCarousel.showFullscreen(photo);
     },
 
     /**

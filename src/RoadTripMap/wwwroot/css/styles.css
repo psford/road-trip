@@ -24,6 +24,7 @@
   --space-md: 1.5rem;
   --space-lg: 2rem;
   --space-xl: 3rem;
+  --carousel-height: 100px; /* thumbnail + label + padding */
   --radius: 8px;
   --shadow: 0 1px 3px rgba(0, 0, 0, 0.06), 0 4px 12px rgba(0, 0, 0, 0.04);
   --font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
@@ -627,66 +628,6 @@ textarea {
   margin-top: 0;
 }
 
-.photo-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(100px, 150px));
-  gap: var(--space-sm);
-}
-
-.photo-item {
-  position: relative;
-  background-color: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius);
-  overflow: hidden;
-}
-
-.photo-item-image {
-  width: 100%;
-  aspect-ratio: 1;
-  object-fit: cover;
-}
-
-.photo-item-details {
-  padding: var(--space-xs);
-  font-size: 0.75rem;
-  line-height: 1.3;
-}
-
-.photo-item-place {
-  color: var(--color-text-light);
-  font-weight: 500;
-}
-
-.photo-item-caption {
-  color: var(--color-text);
-  margin-top: var(--space-xs);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-}
-
-.photo-item-delete {
-  position: absolute;
-  top: 4px;
-  right: 4px;
-  padding: 4px 8px;
-  background-color: rgba(211, 47, 47, 0.9);
-  color: white;
-  border: none;
-  border-radius: 2px;
-  font-size: 0.7rem;
-  cursor: pointer;
-  opacity: 0;
-  transition: opacity 0.2s;
-}
-
-.photo-item:hover .photo-item-delete {
-  opacity: 1;
-}
-
 /* Toast Notifications */
 .toast-container {
   position: fixed;
@@ -743,12 +684,6 @@ textarea {
 }
 
 /* Responsive adjustments for post page */
-@media (min-width: 768px) {
-  .photo-grid {
-    grid-template-columns: repeat(auto-fill, minmax(140px, 180px));
-  }
-}
-
 @media (min-width: 1024px) {
   .toast-container {
     max-width: 400px;
@@ -935,6 +870,32 @@ body.map-page .leaflet-top.leaflet-left {
   background-color: var(--color-error-bg);
 }
 
+/* Floating carousel on view page */
+.view-carousel-container {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  z-index: 999;
+  padding: var(--space-xs) 0;
+  display: none;
+}
+
+.view-carousel-container.active {
+  display: block;
+}
+
+.map-page .map-control.above-carousel {
+  bottom: calc(var(--carousel-height) + var(--space-sm));
+}
+
+.view-carousel-container .carousel-item-label {
+  color: rgba(255, 255, 255, 0.8);
+}
+
 /* Mobile popup sizing */
 @media (max-width: 480px) {
   .photo-popup {
@@ -961,6 +922,123 @@ body.map-page .leaflet-top.leaflet-left {
   .photo-popup-delete {
     font-size: 0.75rem;
     padding: 3px 8px;
+  }
+}
+
+/* Photo Carousel - Horizontal scrollable thumbnail strip */
+
+.carousel-strip {
+  display: flex;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  gap: var(--space-xs);
+  padding: var(--space-xs);
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.carousel-strip::-webkit-scrollbar {
+  display: none;
+}
+
+.carousel-item {
+  scroll-snap-align: center;
+  flex: 0 0 auto;
+  width: 120px;
+  position: relative;
+  border-radius: var(--radius);
+  overflow: hidden;
+  cursor: pointer;
+  border: 2px solid transparent;
+  transition: border-color 0.2s;
+}
+
+.carousel-item.selected {
+  border-color: var(--color-primary);
+}
+
+.carousel-item img {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  display: block;
+}
+
+.carousel-item-label {
+  padding: 2px var(--space-xs);
+  font-size: 0.7rem;
+  color: var(--color-text-light);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.carousel-item-actions {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: flex;
+  gap: 4px;
+}
+
+.carousel-action-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.5);
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  padding: 0;
+}
+
+.carousel-action-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+.carousel-action-btn:hover {
+  background: rgba(0, 0, 0, 0.7);
+}
+
+/* Fullscreen Image Viewer */
+.fullscreen-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.9);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+  cursor: pointer;
+}
+
+.fullscreen-overlay img {
+  max-width: 90vw;
+  max-height: 90vh;
+  object-fit: contain;
+  cursor: default;
+}
+
+.fullscreen-overlay .fullscreen-save {
+  position: absolute;
+  top: var(--space-md);
+  right: var(--space-md);
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Responsive: Desktop carousel item width */
+@media (min-width: 768px) {
+  .carousel-item {
+    width: 150px;
   }
 }
 

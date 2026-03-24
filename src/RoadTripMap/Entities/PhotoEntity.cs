@@ -9,7 +9,7 @@ public class PhotoEntity
     public double Longitude { get; set; }
     public string? PlaceName { get; set; }
     public string? Caption { get; set; }
-    public DateTime TakenAt { get; set; }
+    public DateTime? TakenAt { get; set; }
     public DateTime CreatedAt { get; set; }
 
     public TripEntity Trip { get; set; } = null!;
