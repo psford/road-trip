@@ -17,11 +17,13 @@
     <div id="map" class="map-container"></div>
     <button id="routeToggle" class="map-control" style="display:none;">Show Route</button>
     <div id="emptyMessage" class="map-empty" style="display:none;">No photos yet</div>
+    <div id="viewCarousel" class="view-carousel-container"></div>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
         integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script> <!-- pragma: allowlist secret -->
     <script src="/js/api.js"></script>
     <script src="/js/mapService.js"></script>
+    <script src="/js/photoCarousel.js"></script>
     <script src="/js/mapUI.js"></script>
     <script>
         const viewToken = window.location.pathname.split('/').filter(Boolean).pop();
