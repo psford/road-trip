@@ -51,8 +51,21 @@ const PostUI = {
             if (trip.description) {
                 document.getElementById('tripDescription').textContent = trip.description;
             }
-            // Save to localStorage so user can find this trip again
-            TripStorage.saveTrip(trip.name, '/post/' + this.secretToken, '');
+            // Show view link for sharing
+            if (trip.viewUrl) {
+                const section = document.getElementById('viewLinkSection');
+                const origin = window.location.origin;
+                document.getElementById('viewUrlValue').textContent = origin + trip.viewUrl;
+                section.style.display = '';
+                document.getElementById('copyViewLink').addEventListener('click', () => {
+                    const text = document.getElementById('viewUrlValue').textContent;
+                    navigator.clipboard.writeText(text).then(() => {
+                        const btn = document.getElementById('copyViewLink');
+                        btn.textContent = 'Copied!';
+                        setTimeout(() => { btn.textContent = 'Copy'; }, 2000);
+                    });
+                });
+            }
         } catch (err) {
             console.error('Failed to load trip info:', err);
             document.getElementById('tripName').textContent = 'Trip';
@@ -210,8 +223,10 @@ const PostUI = {
         const takenAt = this.currentMetadata?.timestamp || null;
 
         try {
-            // Disable button
-            document.getElementById('postButton').disabled = true;
+            // Show loading state
+            const postBtn = document.getElementById('postButton');
+            postBtn.disabled = true;
+            postBtn.textContent = 'Posting...';
 
             // Upload photo
             const result = await PostService.uploadPhoto(
@@ -230,7 +245,9 @@ const PostUI = {
             console.error('Error posting photo:', err);
             this.showToast(err.message || 'Failed to post photo', 'error');
         } finally {
-            document.getElementById('postButton').disabled = false;
+            const postBtn = document.getElementById('postButton');
+            postBtn.disabled = false;
+            postBtn.textContent = 'Post Photo';
         }
     },
 
@@ -306,13 +323,12 @@ const PostUI = {
             const escapedCaption = this.escapeHtml(photo.caption);
 
             const popupHtml = `<div class="photo-popup">
-                <img src="${photo.displayUrl}" class="photo-popup-img" loading="lazy">
-                <div class="photo-popup-info">
+                <img src="${photo.displayUrl}" class="photo-popup-img" data-full-src="${photo.displayUrl}">
+                <div class="photo-popup-overlay">
                     <div class="photo-popup-place">${escapedPlace}</div>
                     ${escapedCaption ? `<div class="photo-popup-caption">${escapedCaption}</div>` : ''}
-                    <div class="photo-popup-date">${date}</div>
-                    <button class="photo-popup-delete" data-photo-id="${photo.id}">Delete Photo</button>
                 </div>
+                <button class="photo-popup-delete" data-photo-id="${photo.id}">✕</button>
             </div>`;
 
             marker.bindPopup(popupHtml, {
@@ -325,6 +341,36 @@ const PostUI = {
                 const btn = document.querySelector(`.photo-popup-delete[data-photo-id="${photo.id}"]`);
                 if (btn) {
                     btn.addEventListener('click', () => this.onDeleteFromMap(photo.id));
+                }
+                // Re-pan after image loads so popup is fully visible
+                const img = document.querySelector(`.photo-popup-img[data-full-src="${photo.displayUrl}"]`);
+                if (img) {
+                    img.style.cursor = 'pointer';
+                    img.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        this.showFullscreenImage(photo.displayUrl);
+                    });
+                    // Leaflet's _adjustPan measures the popup before it's
+                    // fully laid out. After a short delay (to let both
+                    // the image render and any initial pan complete),
+                    // check if the popup overflows and correct.
+                    setTimeout(() => {
+                        const map = marker._map;
+                        const popup = marker.getPopup();
+                        if (!map || !popup || !popup.isOpen()) return;
+
+                        const popupEl = popup.getElement();
+                        if (!popupEl) return;
+
+                        const mapContainer = map.getContainer();
+                        const mapRect = mapContainer.getBoundingClientRect();
+                        const popupRect = popupEl.getBoundingClientRect();
+
+                        const overflowTop = mapRect.top - popupRect.top;
+                        if (overflowTop > 0) {
+                            map.panBy([0, -(overflowTop + 10)]);
+                        }
+                    }, 100);
                 }
             });
             marker.addTo(this.photoMap);
@@ -340,7 +386,7 @@ const PostUI = {
             this.setupRouteToggle(photos);
         }
 
-        // Recalculate map size
+        // Recalculate map size after container is visible
         setTimeout(() => this.photoMap.invalidateSize(), 100);
     },
 
@@ -433,6 +479,30 @@ const PostUI = {
         div.appendChild(deleteBtn);
 
         return div;
+    },
+
+    showFullscreenImage(src) {
+        const overlay = document.createElement('div');
+        overlay.className = 'fullscreen-overlay';
+
+        const img = document.createElement('img');
+        img.src = src;
+        img.className = 'fullscreen-image';
+
+        overlay.appendChild(img);
+        document.body.appendChild(overlay);
+
+        // Close on tap/click anywhere
+        overlay.addEventListener('click', () => overlay.remove());
+
+        // Close on escape key
+        const onKey = (e) => {
+            if (e.key === 'Escape') {
+                overlay.remove();
+                document.removeEventListener('keydown', onKey);
+            }
+        };
+        document.addEventListener('keydown', onKey);
     },
 
     showToast(message, type) {

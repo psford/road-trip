@@ -6,4 +6,5 @@ public record TripResponse
     public string? Description { get; init; }
     public required int PhotoCount { get; init; }
     public required DateTime CreatedAt { get; init; }
+    public string? ViewUrl { get; init; }
 }

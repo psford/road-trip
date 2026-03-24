@@ -65,6 +65,16 @@
             <h3>Photos</h3>
             <div id="photoGrid" class="photo-grid"></div>
         </div>
+
+        <!-- Share View Link -->
+        <div id="viewLinkSection" class="card view-link-section" style="display:none;">
+            <h3>Share This Trip</h3>
+            <p>Send this link to anyone who should see the map:</p>
+            <div class="result-value">
+                <span id="viewUrlValue"></span>
+                <button class="button button-secondary copy-button" id="copyViewLink">Copy</button>
+            </div>
+        </div>
     </div>
 
     <!-- Toast notification area -->
@@ -75,7 +85,6 @@
     <script src="/js/exifUtil.js"></script>
     <script src="/js/api.js"></script>
     <script src="/js/postService.js"></script>
-    <script src="/js/tripStorage.js"></script>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
         integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="anonymous"></script>
     <script src="/js/postUI.js"></script>

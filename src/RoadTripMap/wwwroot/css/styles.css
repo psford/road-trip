@@ -605,11 +605,17 @@ textarea {
 
 .post-photo-map {
   width: 100%;
-  height: 400px;
+  height: 300px;
   border: 1px solid var(--color-border);
   border-radius: 8px;
   overflow: hidden;
   margin-bottom: var(--space-md);
+}
+
+@media (min-width: 768px) {
+  .post-photo-map {
+    height: 500px;
+  }
 }
 
 /* Photo List */
@@ -625,6 +631,41 @@ textarea {
   font-size: 1rem;
   margin-bottom: var(--space-xs);
   margin-top: 0;
+}
+
+/* Fullscreen Image Overlay */
+.fullscreen-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  background: rgba(0, 0, 0, 0.9);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.fullscreen-image {
+  max-width: 95vw;
+  max-height: 95vh;
+  object-fit: contain;
+  border-radius: var(--radius);
+}
+
+/* View Link Section */
+.view-link-section {
+  margin-top: var(--space-sm);
+}
+
+.view-link-section h3 {
+  font-size: 1rem;
+  margin-bottom: var(--space-xs);
+  margin-top: 0;
+}
+
+.view-link-section p {
+  font-size: 0.85rem;
+  color: var(--color-text-light);
 }
 
 .photo-grid {
@@ -853,114 +894,96 @@ body.map-page .leaflet-top.leaflet-left {
 
 /* Leaflet popup customization */
 .leaflet-popup-content-wrapper {
-  background-color: white;
-  border-radius: 8px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  background: none;
+  border-radius: 0;
+  box-shadow: none;
   padding: 0;
+  overflow: visible;
+}
+
+.leaflet-popup {
+  margin-bottom: 20px;
+}
+
+/* Hide default Leaflet close button — we have our own */
+.leaflet-popup-close-button {
+  display: none;
 }
 
 .leaflet-popup-content {
   margin: 0;
   padding: 0;
+  min-width: 220px;
+}
+
+.leaflet-popup-tip {
+  background: rgba(0, 0, 0, 0.6);
 }
 
 /* Photo popup component */
 .photo-popup {
-  max-width: 260px;
+  position: relative;
+  line-height: 0;
 }
 
 .photo-popup-img {
   width: 100%;
-  border-radius: 8px 8px 0 0;
+  min-height: 150px;
+  max-height: 250px;
+  object-fit: cover;
   display: block;
+  cursor: pointer;
 }
 
-.photo-popup-info {
-  padding: 8px 12px 10px;
+.photo-popup-overlay {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 24px 10px 8px;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.75));
+  line-height: 1.3;
 }
 
 .photo-popup-place {
-  font-size: 0.9rem;
+  font-size: 0.8rem;
   font-weight: 600;
-  color: var(--color-text);
+  color: white;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
 }
 
 .photo-popup-caption {
-  font-size: 0.85rem;
-  color: var(--color-text-light);
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.9);
   margin-top: 2px;
-}
-
-.photo-popup-date {
-  font-size: 0.8rem;
-  color: var(--color-text-light);
-  margin-top: 4px;
-}
-
-.photo-popup-save {
-  display: inline-block;
-  margin-top: 6px;
-  padding: 4px 12px;
-  font-size: 0.85rem;
-  font-weight: 500;
-  color: var(--color-primary);
-  background: none;
-  border: 1px solid var(--color-primary);
-  border-radius: var(--radius);
-  cursor: pointer;
-  text-decoration: none;
-  text-align: center;
-}
-
-.photo-popup-save:hover {
-  background-color: rgba(42, 157, 143, 0.05);
-  text-decoration: none;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
 }
 
 .photo-popup-delete {
-  display: inline-block;
-  margin-top: 6px;
-  margin-left: 4px;
-  padding: 4px 12px;
-  font-size: 0.85rem;
-  font-weight: 500;
-  color: var(--color-error);
-  background: none;
-  border: 1px solid var(--color-error);
-  border-radius: var(--radius);
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  font-size: 0.8rem;
+  line-height: 24px;
+  text-align: center;
+  color: white;
+  background: rgba(0, 0, 0, 0.5);
+  border: none;
+  border-radius: 50%;
   cursor: pointer;
 }
 
 .photo-popup-delete:hover {
-  background-color: var(--color-error-bg);
+  background: rgba(211, 47, 47, 0.9);
 }
 
 /* Mobile popup sizing */
 @media (max-width: 480px) {
-  .photo-popup {
-    max-width: 180px;
-  }
-
-  .photo-popup-info {
-    padding: 6px 8px 8px;
-  }
-
-  .photo-popup-place {
-    font-size: 0.8rem;
-  }
-
-  .photo-popup-caption {
-    font-size: 0.75rem;
-  }
-
-  .photo-popup-date {
-    font-size: 0.7rem;
-  }
-
-  .photo-popup-save,
-  .photo-popup-delete {
-    font-size: 0.75rem;
-    padding: 3px 8px;
+  .leaflet-popup-content {
+    min-width: 180px;
   }
 }
 
