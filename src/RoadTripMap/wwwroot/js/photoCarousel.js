@@ -244,5 +244,63 @@ const PhotoCarousel = {
         if (this.selectedPhotoId === photoId) {
             this.selectedPhotoId = null;
         }
+    },
+
+    /**
+     * Show a fullscreen image viewer overlay
+     * @param {Object} photo - Photo object with displayUrl and originalUrl
+     */
+    showFullscreen(photo) {
+        // Create the overlay container
+        const overlay = document.createElement('div');
+        overlay.className = 'fullscreen-overlay';
+
+        // Create the image element using displayUrl (optimized for screen viewing)
+        const img = document.createElement('img');
+        img.src = photo.displayUrl;
+        img.alt = photo.placeName || 'Photo';
+
+        // Create save button in top-right
+        const saveBtn = document.createElement('button');
+        saveBtn.className = 'fullscreen-save carousel-action-btn';
+        saveBtn.type = 'button';
+        saveBtn.setAttribute('aria-label', 'Save photo');
+        saveBtn.title = 'Save or share';
+        // Reuse the same download icon SVG
+        saveBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>';
+
+        // Handle save button click
+        saveBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            PhotoCarousel.handleSave(photo);
+        });
+
+        // Assemble overlay
+        overlay.appendChild(img);
+        overlay.appendChild(saveBtn);
+
+        // Handle close on background click (not on image or save button)
+        const closeOverlay = () => {
+            overlay.remove();
+            document.removeEventListener('keydown', handleEscape);
+        };
+
+        overlay.addEventListener('click', (e) => {
+            // Only close if clicking on the overlay background itself (not children)
+            if (e.target === overlay) {
+                closeOverlay();
+            }
+        });
+
+        // Handle close on Escape key
+        const handleEscape = (e) => {
+            if (e.key === 'Escape') {
+                closeOverlay();
+            }
+        };
+        document.addEventListener('keydown', handleEscape);
+
+        // Add to DOM
+        document.body.appendChild(overlay);
     }
 };
