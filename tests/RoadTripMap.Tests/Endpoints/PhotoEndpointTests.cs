@@ -558,7 +558,7 @@ public class PhotoEndpointTests
         using var connection = new SqliteConnection("DataSource=:memory:");
         connection.Open();
 
-        var factory = new WebApplicationFactory<Program>()
+        using var factory = new WebApplicationFactory<Program>()
             .WithWebHostBuilder(builder =>
             {
                 builder.ConfigureServices(services =>
@@ -650,7 +650,7 @@ public class PhotoEndpointTests
         using var connection = new SqliteConnection("DataSource=:memory:");
         connection.Open();
 
-        var factory = new WebApplicationFactory<Program>()
+        using var factory = new WebApplicationFactory<Program>()
             .WithWebHostBuilder(builder =>
             {
                 builder.ConfigureServices(services =>
