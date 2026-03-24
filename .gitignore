@@ -20,6 +20,9 @@ obj/
 .idea/
 *.sln.iml
 
+## Node
+node_modules/
+
 ## Environment
 .env
 .env.local
