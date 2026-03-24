@@ -23,3 +23,6 @@ obj/
 ## Environment
 .env
 .env.local
+
+## Worktrees
+.worktrees/
