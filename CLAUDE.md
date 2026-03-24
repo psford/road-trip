@@ -1,6 +1,6 @@
 # Road Trip Photo Map
 
-Last verified: 2026-03-22
+Last verified: 2026-03-23
 
 ## Purpose
 
@@ -27,6 +27,8 @@ Mobile-first road trip photo sharing app. Users create a trip, get two secret li
 - **Guarantees**:
   - Photos stored in 3 tiers: original (full quality), display (1920px), thumb (300px)
   - Original media never degraded (re-encoded at quality 100, EXIF stripped)
+  - `TakenAt` is nullable -- null means no EXIF date was available; upload no longer defaults to `DateTime.UtcNow`
+  - Photo endpoints return photos ordered by `TakenAt` ascending (nulls sort last)
   - Two-token auth: SecretToken (upload + view), ViewToken (view only) — both GUIDs in URL path, no accounts/cookies
   - All responses include `X-Robots-Tag: noindex, nofollow`
   - Geocoding via Nominatim with 1req/sec rate limit and DB cache
@@ -64,6 +66,7 @@ Mobile-first road trip photo sharing app. Users create a trip, get two secret li
 - `src/RoadTripMap/Services/IAuthStrategy.cs` -- Auth abstraction (upgradeable)
 - `src/RoadTripMap/Services/PhotoService.cs` -- Image processing + blob storage
 - `src/RoadTripMap/Services/NominatimGeocodingService.cs` -- Reverse geocoding with cache
+- `src/RoadTripMap/wwwroot/js/photoCarousel.js` -- Carousel UI module (scroll-snap strip, fullscreen viewer, map sync)
 - `infrastructure/azure/main.bicep` -- Azure App Service definition
 - `docs/TECHNICAL_SPEC.md` -- Full technical specification
 
