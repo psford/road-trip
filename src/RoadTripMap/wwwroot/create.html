@@ -11,10 +11,9 @@
     <div class="container">
         <div class="page-header">
             <nav class="nav">
-                <a href="/">← Back to Home</a>
+                <a href="/">← Back</a>
             </nav>
             <h1>Create a Road Trip</h1>
-            <p>Start sharing your photos with a unique trip.</p>
         </div>
 
         <!-- Error message -->
@@ -44,122 +43,44 @@
                     ></textarea>
                 </div>
 
-                <button type="submit" class="button button-primary">Create Trip</button>
+                <button type="submit" id="createButton" class="button button-primary">Create Trip</button>
             </form>
-        </div>
-
-        <!-- Results section (hidden by default) -->
-        <div id="results" class="results hidden">
-            <h2>Trip Created!</h2>
-            <p>You have two links. Share the right one with the right people.</p>
-
-            <div class="result-item">
-                <div class="result-label">Upload Link (for contributors who can add photos)</div>
-                <div class="result-value">
-                    <span id="postUrlValue"></span>
-                    <button class="button button-secondary copy-button" onclick="copyToClipboard('postUrlValue', event)">
-                        Copy
-                    </button>
-                </div>
-            </div>
-
-            <div class="result-item">
-                <div class="result-label">View Link (for viewers who can only see the map)</div>
-                <div class="result-value">
-                    <span id="viewUrlValue"></span>
-                    <button class="button button-secondary copy-button" onclick="copyToClipboard('viewUrlValue', event)">
-                        Copy
-                    </button>
-                </div>
-            </div>
-
-            <button class="button button-primary" onclick="createAnotherTrip()">Create Another Trip</button>
         </div>
     </div>
 
     <script src="/js/api.js"></script>
-    <script src="/js/tripStorage.js"></script>
     <script>
-        /**
-         * Handle trip creation form submission
-         */
         document.getElementById('createTripForm').addEventListener('submit', async (e) => {
             e.preventDefault();
 
-            // Clear previous errors
             const errorEl = document.getElementById('errorMessage');
             errorEl.classList.add('hidden');
 
-            // Get form values
             const name = document.getElementById('tripName').value.trim();
             const description = document.getElementById('tripDescription').value.trim();
 
             try {
-                // Validate name
                 if (!name) {
                     throw new Error('Trip name is required');
                 }
 
-                // Create trip via API
+                // Show loading state
+                const btn = document.getElementById('createButton');
+                btn.disabled = true;
+                btn.textContent = 'Creating...';
+
                 const result = await API.createTrip(name, description || null);
 
-                // Save trip to localStorage for "My Trips"
-                TripStorage.saveTrip(name, result.postUrl, result.viewUrl);
-
-                // Display results with full URLs for easy sharing from phones
-                const origin = window.location.origin;
-                document.getElementById('postUrlValue').textContent = origin + result.postUrl;
-                document.getElementById('viewUrlValue').textContent = origin + result.viewUrl;
-
-                // Show results section
-                document.getElementById('results').classList.remove('hidden');
-
-                // Hide form
-                document.getElementById('createTripForm').style.display = 'none';
+                // Redirect straight to the post page
+                window.location.href = result.postUrl;
             } catch (error) {
-                // Show error message
                 errorEl.textContent = error.message || 'Failed to create trip';
                 errorEl.classList.remove('hidden');
+                const btn = document.getElementById('createButton');
+                btn.disabled = false;
+                btn.textContent = 'Create Trip';
             }
         });
-
-        /**
-         * Copy text to clipboard
-         * @param {string} elementId - ID of element containing text to copy
-         * @param {Event} evt - Click event from the button
-         */
-        function copyToClipboard(elementId, evt) {
-            const element = document.getElementById(elementId);
-            const text = element.textContent;
-
-            navigator.clipboard.writeText(text).then(() => {
-                // Show feedback
-                const button = evt.target;
-                const originalText = button.textContent;
-                button.textContent = 'Copied!';
-                setTimeout(() => {
-                    button.textContent = originalText;
-                }, 2000);
-            }).catch((err) => {
-                console.error('Failed to copy:', err);
-                alert('Failed to copy to clipboard');
-            });
-        }
-
-        /**
-         * Reset form to create another trip
-         */
-        function createAnotherTrip() {
-            // Reset form
-            document.getElementById('createTripForm').reset();
-            document.getElementById('createTripForm').style.display = 'block';
-
-            // Hide results
-            document.getElementById('results').classList.add('hidden');
-
-            // Focus on name input
-            document.getElementById('tripName').focus();
-        }
     </script>
 </body>
 </html>
