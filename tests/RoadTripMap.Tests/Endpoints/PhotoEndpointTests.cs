@@ -1,10 +1,14 @@
 using FluentAssertions;
+using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Moq;
 using RoadTripMap.Data;
 using RoadTripMap.Entities;
 using RoadTripMap.Models;
 using RoadTripMap.Services;
+using System.Text.Json;
 
 namespace RoadTripMap.Tests.Endpoints;
 
@@ -550,14 +554,38 @@ public class PhotoEndpointTests
     [Fact]
     public async Task GetPhotosEndpoint_OrdersByTakenAtAscending()
     {
-        // Arrange
-        using var context = CreateInMemoryContext();
+        // Arrange - Create a test server with HTTP client
+        using var connection = new SqliteConnection("DataSource=:memory:");
+        connection.Open();
+
+        var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.ConfigureServices(services =>
+                {
+                    var descriptor = services.SingleOrDefault(
+                        d => d.ServiceType == typeof(DbContextOptions<RoadTripDbContext>));
+                    if (descriptor != null) services.Remove(descriptor);
+
+                    services.AddDbContext<RoadTripDbContext>(options =>
+                        options.UseSqlite(connection));
+                });
+            });
+
+        using var client = factory.CreateClient();
+        using var context = new RoadTripDbContext(new DbContextOptionsBuilder<RoadTripDbContext>()
+            .UseSqlite(connection)
+            .Options);
+
+        await context.Database.EnsureCreatedAsync();
+
         var trip = new TripEntity
         {
             Slug = "ordered-trip",
             Name = "Ordered Trip",
             SecretToken = "ordered-token", // pragma: allowlist secret
-            ViewToken = Guid.NewGuid().ToString()
+            ViewToken = Guid.NewGuid().ToString(),
+            CreatedAt = DateTime.UtcNow
         };
         await context.Trips.AddAsync(trip);
         await context.SaveChangesAsync();
@@ -598,31 +626,58 @@ public class PhotoEndpointTests
         await context.Photos.AddAsync(photo3);
         await context.SaveChangesAsync();
 
-        // Act - Use the new null-safe ordering
-        var photos = await context.Photos
-            .Where(p => p.TripId == trip.Id)
-            .OrderBy(p => p.TakenAt == null)
-            .ThenBy(p => p.TakenAt)
-            .ToListAsync();
+        // Act - Call the actual API endpoint via HTTP
+        var response = await client.GetAsync($"/api/post/{trip.SecretToken}/photos");
 
-        // Assert - photos should be ordered by takenAt ascending (oldest first)
+        // Assert - Verify HTTP response is successful
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
+
+        var json = await response.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(json);
+        var photos = doc.RootElement.EnumerateArray().ToList();
+
+        // Verify photos are ordered by takenAt ascending (oldest first)
         photos.Should().HaveCount(3);
-        photos[0].Caption.Should().Be("First");
-        photos[1].Caption.Should().Be("Second");
-        photos[2].Caption.Should().Be("Third");
+        photos[0].GetProperty("caption").GetString().Should().Be("First");
+        photos[1].GetProperty("caption").GetString().Should().Be("Second");
+        photos[2].GetProperty("caption").GetString().Should().Be("Third");
     }
 
     [Fact]
     public async Task GetPhotosEndpoint_WithNullTakenAt_SortsNullsLast()
     {
-        // Arrange
-        using var context = CreateInMemoryContext();
+        // Arrange - Create a test server with HTTP client
+        using var connection = new SqliteConnection("DataSource=:memory:");
+        connection.Open();
+
+        var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.ConfigureServices(services =>
+                {
+                    var descriptor = services.SingleOrDefault(
+                        d => d.ServiceType == typeof(DbContextOptions<RoadTripDbContext>));
+                    if (descriptor != null) services.Remove(descriptor);
+
+                    services.AddDbContext<RoadTripDbContext>(options =>
+                        options.UseSqlite(connection));
+                });
+            });
+
+        using var client = factory.CreateClient();
+        using var context = new RoadTripDbContext(new DbContextOptionsBuilder<RoadTripDbContext>()
+            .UseSqlite(connection)
+            .Options);
+
+        await context.Database.EnsureCreatedAsync();
+
         var trip = new TripEntity
         {
             Slug = "null-taken-at-trip",
             Name = "Null Taken At Trip",
             SecretToken = "null-token", // pragma: allowlist secret
-            ViewToken = Guid.NewGuid().ToString()
+            ViewToken = Guid.NewGuid().ToString(),
+            CreatedAt = DateTime.UtcNow
         };
         await context.Trips.AddAsync(trip);
         await context.SaveChangesAsync();
@@ -677,28 +732,30 @@ public class PhotoEndpointTests
         await context.Photos.AddAsync(photo4);
         await context.SaveChangesAsync();
 
-        // Act - Use the new null-safe ordering
-        var photos = await context.Photos
-            .Where(p => p.TripId == trip.Id)
-            .OrderBy(p => p.TakenAt == null)
-            .ThenBy(p => p.TakenAt)
-            .ToListAsync();
+        // Act - Call the actual API endpoint via HTTP
+        var response = await client.GetAsync($"/api/post/{trip.SecretToken}/photos");
 
-        // Assert
+        // Assert - Verify HTTP response is successful
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
+
+        var json = await response.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(json);
+        var photos = doc.RootElement.EnumerateArray().ToList();
+
+        // Verify photos are ordered correctly
         photos.Should().HaveCount(4);
 
         // First two should have non-null takenAt values, ordered chronologically (oldest first)
-        photos[0].Caption.Should().Be("Photo with old date");
-        photos[0].TakenAt.Should().NotBeNull();
+        photos[0].GetProperty("caption").GetString().Should().Be("Photo with old date");
+        photos[0].GetProperty("takenAt").ValueKind.Should().NotBe(JsonValueKind.Null);
 
-        photos[1].Caption.Should().Be("Photo with recent date");
-        photos[1].TakenAt.Should().NotBeNull();
+        photos[1].GetProperty("caption").GetString().Should().Be("Photo with recent date");
+        photos[1].GetProperty("takenAt").ValueKind.Should().NotBe(JsonValueKind.Null);
 
         // Last two should have null takenAt values (order among nulls is not guaranteed)
-        photos[2].TakenAt.Should().BeNull();
-        photos[3].TakenAt.Should().BeNull();
-        new[] { photos[2].Caption, photos[3].Caption }
-            .Should()
-            .Contain(new[] { "Photo with null takenAt", "Another photo with null takenAt" });
+        photos[2].GetProperty("takenAt").ValueKind.Should().Be(JsonValueKind.Null);
+        photos[3].GetProperty("takenAt").ValueKind.Should().Be(JsonValueKind.Null);
+        var nullCaptions = new[] { photos[2].GetProperty("caption").GetString(), photos[3].GetProperty("caption").GetString() };
+        nullCaptions.Should().Contain(new[] { "Photo with null takenAt", "Another photo with null takenAt" });
     }
 }
