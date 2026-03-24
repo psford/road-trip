@@ -28,7 +28,7 @@ const PhotoCarousel = {
         // Handle empty state: hide container and return early
         if (this.photos.length === 0) {
             this.container.style.display = 'none';
-            return;
+            return this;
         }
 
         this.container.style.display = '';
@@ -46,6 +46,7 @@ const PhotoCarousel = {
         });
 
         this.container.appendChild(this.strip);
+        return this;
     },
 
     /**
@@ -251,6 +252,12 @@ const PhotoCarousel = {
      * @param {Object} photo - Photo object with displayUrl and originalUrl
      */
     showFullscreen(photo) {
+        // Remove any existing overlay to prevent stacking
+        const existing = document.querySelector('.fullscreen-overlay');
+        if (existing) {
+            existing.remove();
+        }
+
         // Create the overlay container
         const overlay = document.createElement('div');
         overlay.className = 'fullscreen-overlay';

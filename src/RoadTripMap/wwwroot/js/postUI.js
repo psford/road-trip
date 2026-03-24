@@ -395,7 +395,6 @@ const PostUI = {
         if (btn) btn.style.display = 'none';
     },
 
-
     showToast(message, type) {
         const container = document.getElementById('toastContainer');
 
