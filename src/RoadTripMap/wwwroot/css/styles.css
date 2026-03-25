@@ -758,9 +758,8 @@ body.map-page {
   text-decoration: none;
 }
 
-/* Push Leaflet zoom controls below floating header on view page.
-   Leaflet default left offset is 10px; match that gap below the header. */
-body.map-page .leaflet-top.leaflet-left {
+/* Push MapLibre zoom controls below floating header on view page */
+body.map-page .maplibregl-ctrl-top-left {
   top: calc(var(--map-header-height, 56px) + 10px);
 }
 
@@ -808,31 +807,27 @@ body.map-page .leaflet-top.leaflet-left {
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
 }
 
-/* Leaflet popup customization */
-.leaflet-popup-content-wrapper {
+/* MapLibre popup customization */
+.maplibregl-popup-content {
   background: none;
   border-radius: 0;
   box-shadow: none;
   padding: 0;
   overflow: visible;
-}
-
-.leaflet-popup {
-  margin-bottom: 20px;
-}
-
-/* Hide default Leaflet close button — we have our own */
-.leaflet-popup-close-button {
-  display: none;
-}
-
-.leaflet-popup-content {
   margin: 0;
-  padding: 0;
   min-width: 220px;
 }
 
-.leaflet-popup-tip {
+.maplibregl-popup {
+  margin-bottom: 20px;
+}
+
+/* Hide default close button — disabled via closeButton:false, CSS as fallback */
+.maplibregl-popup-close-button {
+  display: none;
+}
+
+.maplibregl-popup-tip {
   background: rgba(0, 0, 0, 0.6);
 }
 
@@ -924,7 +919,7 @@ body.map-page .leaflet-top.leaflet-left {
 
 /* Mobile popup sizing */
 @media (max-width: 480px) {
-  .leaflet-popup-content {
+  .maplibregl-popup-content {
     min-width: 180px;
   }
 }
