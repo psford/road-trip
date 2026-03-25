@@ -322,7 +322,6 @@ const PostUI = {
 
         // Add markers with carousel sync
         photos.forEach(photo => {
-            const marker = L.marker([photo.lat, photo.lng]);
             const date = photo.takenAt ? new Date(photo.takenAt).toLocaleDateString() : 'Date unknown';
             const escapedPlace = this.escapeHtml(photo.placeName);
             const escapedCaption = this.escapeHtml(photo.caption);
@@ -337,48 +336,35 @@ const PostUI = {
                 <button class="photo-popup-delete" data-photo-id="${photo.id}">✕</button>
             </div>`;
 
-            marker.bindPopup(popupHtml, {
-                autoPan: true,
-                autoPanPaddingTopLeft: L.point(10, 20),
-                autoPanPaddingBottomRight: L.point(10, 20),
-                autoPanAnimation: true
-            });
-            marker.on('popupopen', () => {
+            const popup = new maplibregl.Popup({
+                offset: 25,
+                closeButton: false,
+                maxWidth: 'none'
+            }).setHTML(popupHtml);
+
+            popup.on('open', () => {
                 if (this.carousel) {
                     this.carousel.selectPhoto(photo.id);
                 }
-                // Re-pan after image loads so popup is fully visible
-                const img = document.querySelector(`.photo-popup-img[data-full-src="${photo.displayUrl}"]`);
-                if (img) {
-                    img.style.cursor = 'pointer';
-                    img.addEventListener('click', (e) => {
-                        e.stopPropagation();
-                        this.showFullscreenImage(photo.displayUrl);
-                    });
-                    // TODO(Phase 2): Re-evaluate this popup pan workaround with MapLibre.
-                    // Currently measures the popup before it's fully laid out.
-                    // After a short delay (to let both the image render and any
-                    // initial pan complete), check if the popup overflows and correct.
-                    setTimeout(() => {
-                        const map = marker._map;
-                        const popup = marker.getPopup();
-                        if (!map || !popup || !popup.isOpen()) return;
-
-                        const popupEl = popup.getElement();
-                        if (!popupEl) return;
-
-                        const mapContainer = map.getContainer();
-                        const mapRect = mapContainer.getBoundingClientRect();
-                        const popupRect = popupEl.getBoundingClientRect();
-
-                        const overflowTop = mapRect.top - popupRect.top;
-                        if (overflowTop > 0) {
-                            map.panBy([0, -(overflowTop + 10)]);
-                        }
-                    }, 100);
+                const popupEl = popup.getElement();
+                if (popupEl) {
+                    const img = popupEl.querySelector('.photo-popup-img');
+                    if (img && !img.dataset.listenerAttached) {
+                        img.dataset.listenerAttached = 'true';
+                        img.style.cursor = 'pointer';
+                        img.addEventListener('click', (e) => {
+                            e.stopPropagation();
+                            PhotoCarousel.showFullscreen(photo);
+                        });
+                    }
                 }
             });
-            marker.addTo(this.photoMap);
+
+            const marker = new maplibregl.Marker()
+                .setLngLat([photo.lng, photo.lat])
+                .setPopup(popup)
+                .addTo(this.photoMap);
+
             this.photoMapMarkers.push(marker);
             this.markerLookup.set(photo.id, marker);
         });
