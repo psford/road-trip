@@ -20,14 +20,14 @@ public class UploadRateLimiterTests
     }
 
     [Fact]
-    public void IsAllowed_Under20Uploads_AllReturnsTrue()
+    public void IsAllowed_UnderLimit_AllReturnsTrue()
     {
         // Arrange
         var limiter = new UploadRateLimiter();
         var ip = "192.168.1.1";
 
         // Act & Assert
-        for (int i = 0; i < 20; i++)
+        for (int i = 0; i < 200; i++)
         {
             var result = limiter.IsAllowed(ip);
             result.Should().BeTrue($"Upload {i + 1} should be allowed");
@@ -35,19 +35,19 @@ public class UploadRateLimiterTests
     }
 
     [Fact]
-    public void IsAllowed_21stUpload_ReturnsFalse()
+    public void IsAllowed_201stUpload_ReturnsFalse()
     {
         // Arrange
         var limiter = new UploadRateLimiter();
         var ip = "192.168.1.1";
 
-        // Act - Do 20 allowed uploads
-        for (int i = 0; i < 20; i++)
+        // Act - Do 200 allowed uploads
+        for (int i = 0; i < 200; i++)
         {
             limiter.IsAllowed(ip);
         }
 
-        // 21st should be denied
+        // 201st should be denied
         var result = limiter.IsAllowed(ip);
 
         // Assert
@@ -63,7 +63,7 @@ public class UploadRateLimiterTests
         var ip2 = "192.168.1.2";
 
         // Act - Max out IP1
-        for (int i = 0; i < 20; i++)
+        for (int i = 0; i < 200; i++)
         {
             limiter.IsAllowed(ip1);
         }
@@ -83,16 +83,14 @@ public class UploadRateLimiterTests
         var limiter = new UploadRateLimiter();
         var ip = "192.168.1.1";
 
-        // Simulate timestamps expiring by checking the logic
-        // Since we can't easily mock DateTime.UtcNow, we'll verify the cutoff logic
-        // by filling to capacity and verifying the next call would fail
-        for (int i = 0; i < 20; i++)
+        // Fill to capacity and verify the next call would fail
+        for (int i = 0; i < 200; i++)
         {
             limiter.IsAllowed(ip);
         }
 
         var afterLimit = limiter.IsAllowed(ip);
-        afterLimit.Should().BeFalse("Should be rate limited after 20 uploads");
+        afterLimit.Should().BeFalse("Should be rate limited after 200 uploads");
 
         // In a real scenario, waiting 1 hour would allow new uploads
         // This test verifies the logic is in place
@@ -120,8 +118,8 @@ public class UploadRateLimiterTests
         var allowedCount = 0;
         var tasks = new List<Task>();
 
-        // Act - 40 concurrent requests from same IP
-        for (int i = 0; i < 40; i++)
+        // Act - 400 concurrent requests from same IP
+        for (int i = 0; i < 400; i++)
         {
             tasks.Add(Task.Run(() =>
             {
@@ -131,7 +129,7 @@ public class UploadRateLimiterTests
         }
         await Task.WhenAll(tasks);
 
-        // Assert - Only first 20 should succeed
-        allowedCount.Should().Be(20, "Thread-safe limiter should allow exactly 20 concurrent uploads");
+        // Assert - Only first 200 should succeed
+        allowedCount.Should().Be(200, "Thread-safe limiter should allow exactly 200 concurrent uploads");
     }
 }

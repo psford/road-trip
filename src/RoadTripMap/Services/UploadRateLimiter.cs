@@ -4,12 +4,12 @@ namespace RoadTripMap.Services;
 
 /// <summary>
 /// In-memory, thread-safe IP-based rate limiter for photo uploads.
-/// Tracks upload timestamps per IP address and enforces 20 uploads/hour limit.
+/// Tracks upload timestamps per IP address and enforces 200 uploads/hour limit.
 /// </summary>
 public class UploadRateLimiter
 {
     private readonly ConcurrentDictionary<string, (List<DateTime> Timestamps, object Lock)> _uploadLog = new();
-    private const int MaxUploadsPerHour = 20;
+    private const int MaxUploadsPerHour = 200;
 
     /// <summary>
     /// Checks if an upload is allowed for the given IP address.
