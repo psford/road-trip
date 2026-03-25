@@ -10,7 +10,6 @@ const MAP_STYLE = `https://api.maptiler.com/maps/streets-v2/style.json?key=${MAP
 const MapUI = {
     map: null,
     markers: [],
-    routeLayer: null,
     routeVisible: false,
     carousel: null,
     markerLookup: null,
@@ -116,13 +115,17 @@ const MapUI = {
 
         // Handle single photo
         if (photos.length === 1) {
-            this.map.setView([photos[0].lat, photos[0].lng], 13);
+            this.map.jumpTo({ center: [photos[0].lng, photos[0].lat], zoom: 13 });
             return;
         }
 
-        // Handle multiple photos: auto-fit bounds with padding
-        const group = new L.featureGroup(this.markers);
-        this.map.fitBounds(group.getBounds(), { padding: [50, 50], maxZoom: 15 });
+        // Handle multiple photos: auto-fit bounds with header-aware padding
+        const bounds = new maplibregl.LngLatBounds();
+        photos.forEach(p => bounds.extend([p.lng, p.lat]));
+        this.map.fitBounds(bounds, {
+            padding: { top: headerHeight + 50, bottom: 50, left: 50, right: 50 },
+            maxZoom: 15
+        });
 
         // Setup route toggle for multiple photos
         this.setupRouteToggle(photos);
@@ -172,8 +175,10 @@ const MapUI = {
     onCarouselSelect(photo) {
         const marker = this.markerLookup.get(photo.id);
         if (marker) {
-            this.map.flyTo([photo.lat, photo.lng], 15);
-            marker.openPopup();
+            this.map.flyTo({ center: [photo.lng, photo.lat], zoom: 15 });
+            if (!marker.getPopup().isOpen()) {
+                marker.togglePopup();
+            }
         }
         PhotoCarousel.showFullscreen(photo);
     },
@@ -183,10 +188,38 @@ const MapUI = {
      * @param {Array} photos - Array of PhotoResponse objects
      */
     setupRouteToggle(photos) {
-        const coords = MapService.getRouteCoordinates(photos);
-        this.routeLayer = L.polyline(coords, { color: '#3388ff', weight: 3, opacity: 0.8 });
+        if (photos.length < 2) return;
+        const leafletCoords = MapService.getRouteCoordinates(photos);
+        const coords = leafletCoords.map(([lat, lng]) => [lng, lat]);
 
-        // Show route toggle button
+        const addRoute = () => {
+            if (this.map.getSource('route')) return;
+            this.map.addSource('route', {
+                type: 'geojson',
+                data: {
+                    type: 'Feature',
+                    geometry: { type: 'LineString', coordinates: coords }
+                }
+            });
+            this.map.addLayer({
+                id: 'route',
+                type: 'line',
+                source: 'route',
+                layout: { visibility: 'none' },
+                paint: {
+                    'line-color': '#3388ff',
+                    'line-width': 3,
+                    'line-opacity': 0.8
+                }
+            });
+        };
+
+        if (this.map.loaded()) {
+            addRoute();
+        } else {
+            this.map.on('load', addRoute);
+        }
+
         const routeToggleBtn = document.getElementById('routeToggle');
         if (routeToggleBtn) {
             routeToggleBtn.style.display = 'block';
@@ -198,18 +231,13 @@ const MapUI = {
      * Toggle route visibility
      */
     toggleRoute() {
+        const routeToggleBtn = document.getElementById('routeToggle');
         if (this.routeVisible) {
-            this.map.removeLayer(this.routeLayer);
-            const routeToggleBtn = document.getElementById('routeToggle');
-            if (routeToggleBtn) {
-                routeToggleBtn.textContent = 'Show Route';
-            }
+            this.map.setLayoutProperty('route', 'visibility', 'none');
+            if (routeToggleBtn) routeToggleBtn.textContent = 'Show Route';
         } else {
-            this.routeLayer.addTo(this.map);
-            const routeToggleBtn = document.getElementById('routeToggle');
-            if (routeToggleBtn) {
-                routeToggleBtn.textContent = 'Hide Route';
-            }
+            this.map.setLayoutProperty('route', 'visibility', 'visible');
+            if (routeToggleBtn) routeToggleBtn.textContent = 'Hide Route';
         }
         this.routeVisible = !this.routeVisible;
     },
