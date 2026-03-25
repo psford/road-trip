@@ -30,9 +30,14 @@ const PostUI = {
         });
 
         document.getElementById('fileInput').addEventListener('change', (e) => {
-            if (e.target.files.length > 0) {
-                this.onFileSelected(e.target.files[0]);
+            const files = e.target.files;
+            if (files.length === 0) return;
+            if (files.length === 1) {
+                this.onFileSelected(files[0]);
+            } else {
+                this.onMultipleFilesSelected(files);
             }
+            e.target.value = '';
         });
 
         document.getElementById('cancelButton').addEventListener('click', () => {
@@ -96,6 +101,69 @@ const PostUI = {
             console.error('Error selecting photo:', err);
             this.showToast('Error processing photo: ' + err.message, 'error');
         }
+    },
+
+    async onMultipleFilesSelected(fileList) {
+        const files = Array.from(fileList);
+        this.showToast(`Processing ${files.length} photos...`, 'info');
+
+        // Extract metadata for all files
+        const withMetadata = [];
+        for (const file of files) {
+            try {
+                const metadata = await PostService.extractPhotoMetadata(file);
+                withMetadata.push({ file, metadata });
+            } catch (err) {
+                console.warn('Failed to extract metadata from', file.name, err);
+            }
+        }
+
+        // Triage: split into GPS-tagged and untagged
+        const gpsFiles = withMetadata.filter(f => f.metadata.gps);
+        const noGpsFiles = withMetadata.filter(f => !f.metadata.gps);
+
+        // Start GPS uploads immediately via queue
+        if (gpsFiles.length > 0) {
+            UploadQueue.start(this.secretToken, gpsFiles, {
+                onEachComplete: () => this.refreshPhotoList(),
+                onAllComplete: () => this.handleNoGpsFiles(noGpsFiles)
+            });
+        } else {
+            this.handleNoGpsFiles(noGpsFiles);
+        }
+
+        // Show non-GPS info
+        if (noGpsFiles.length > 0 && gpsFiles.length > 0) {
+            if (noGpsFiles.length <= 5) {
+                UploadQueue.addMessage(`${noGpsFiles.length} photo${noGpsFiles.length > 1 ? 's' : ''} need a location — set pins after upload`);
+            } else {
+                UploadQueue.addMessage(`${noGpsFiles.length} photos skipped — no GPS data`);
+            }
+        }
+    },
+
+    handleNoGpsFiles(noGpsFiles) {
+        if (noGpsFiles.length === 0) return;
+
+        if (noGpsFiles.length <= 5) {
+            // Queue for sequential pin-drop
+            this.pinDropQueue = [...noGpsFiles];
+            this.showToast(`${noGpsFiles.length} photo${noGpsFiles.length > 1 ? 's' : ''} need a location`, 'info');
+            this.processNextPinDrop();
+        } else {
+            this.showToast(`${noGpsFiles.length} photos skipped — no GPS data. Add them individually to set a pin.`, 'info');
+        }
+    },
+
+    processNextPinDrop() {
+        if (!this.pinDropQueue || this.pinDropQueue.length === 0) {
+            this.pinDropQueue = null;
+            return;
+        }
+        const next = this.pinDropQueue.shift();
+        this.currentFile = next.file;
+        this.currentMetadata = next.metadata;
+        this.showPinDropMap(next.file, next.metadata);
     },
 
     showPreview(file, metadata) {
@@ -243,6 +311,10 @@ const PostUI = {
             this.showToast('Photo posted!', 'success');
             this.hidePreview();
             await this.refreshPhotoList();
+            // If pin-drop queue has more items, process next
+            if (this.pinDropQueue && this.pinDropQueue.length > 0) {
+                this.processNextPinDrop();
+            }
         } catch (err) {
             console.error('Error posting photo:', err);
             this.showToast(err.message || 'Failed to post photo', 'error');

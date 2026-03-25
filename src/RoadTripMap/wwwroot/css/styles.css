@@ -1107,3 +1107,107 @@ body.map-page .maplibregl-ctrl-top-left {
     font-size: 1.5rem;
   }
 }
+
+/* Upload Status Bar */
+.upload-status-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 1000;
+  background: #fff;
+  border-top: 1px solid #d0d0d0;
+  box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.15);
+  transition: opacity 0.3s, transform 0.3s;
+}
+
+.upload-status-dismiss {
+  opacity: 0;
+  transform: translateY(100%);
+}
+
+.upload-status-collapsed {
+  position: relative;
+  padding: 12px 16px;
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.upload-status-fill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 0;
+  background: rgba(51, 136, 255, 0.15);
+  transition: width 0.3s ease;
+}
+
+.upload-status-label {
+  position: relative;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: #2d3748;
+}
+
+.upload-status-close {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  font-size: 1.2rem;
+  color: #666;
+  cursor: pointer;
+  padding: 4px 8px;
+  z-index: 1;
+}
+
+.upload-status-expanded {
+  max-height: 200px;
+  overflow-y: auto;
+  border-top: 1px solid #e0e0e0;
+  padding: 8px 16px;
+}
+
+.upload-status-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  font-size: 0.85rem;
+  color: #4a5568;
+}
+
+.upload-status-icon {
+  width: 16px;
+  text-align: center;
+  font-weight: bold;
+}
+
+.status-done { color: #38a169; }
+.status-failed { color: #e53e3e; }
+.status-active { color: #3388ff; }
+.status-queued { color: #a0aec0; }
+
+.upload-status-message {
+  color: #718096;
+  font-style: italic;
+}
+
+.has-upload-badge::after {
+  content: attr(data-upload-badge);
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  background: #3388ff;
+  color: white;
+  font-size: 0.7rem;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}

@@ -27,7 +27,7 @@
         <button id="addPhotoButton" class="button button-primary add-photo-button">
             📷 Add Photo
         </button>
-        <input type="file" id="fileInput" accept="image/*">
+        <input type="file" id="fileInput" accept="image/*" multiple>
 
         <!-- Photo Preview Section (hidden until photo selected) -->
         <div id="previewSection" class="card preview-section">
@@ -88,6 +88,7 @@
     <script src="https://unpkg.com/maplibre-gl@5.21.0/dist/maplibre-gl.js"
         integrity="sha256-qbkAeuPV31m78vg62R7iyGWC6hUsCZAM1MhPYwevvJs=" crossorigin="anonymous"></script>
     <script src="/js/photoCarousel.js"></script>
+    <script src="/js/uploadQueue.js"></script>
     <script src="/js/postUI.js"></script>
 </body>
 </html>
