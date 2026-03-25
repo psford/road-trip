@@ -189,8 +189,8 @@ const MapUI = {
      */
     setupRouteToggle(photos) {
         if (photos.length < 2) return;
-        const leafletCoords = MapService.getRouteCoordinates(photos);
-        const coords = leafletCoords.map(([lat, lng]) => [lng, lat]);
+        const latLngCoords = MapService.getRouteCoordinates(photos);
+        const coords = latLngCoords.map(([lat, lng]) => [lng, lat]);
 
         const addRoute = () => {
             if (this.map.getSource('route')) return;

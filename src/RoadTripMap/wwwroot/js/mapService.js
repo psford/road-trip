@@ -21,7 +21,7 @@ const MapService = {
     /**
      * Extract route coordinates from photos for polyline rendering
      * @param {Array} photos - Array of PhotoResponse objects
-     * @returns {Array<[lat, lng]>} - Array of coordinate pairs in Leaflet format
+     * @returns {Array<[lat, lng]>} - Array of coordinate pairs (lat, lng order)
      */
     getRouteCoordinates(photos) {
         return photos.map(p => [p.lat, p.lng]);
