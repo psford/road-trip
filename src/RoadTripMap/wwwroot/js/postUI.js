@@ -13,7 +13,6 @@ const PostUI = {
     marker: null,
     photoMap: null,
     photoMapMarkers: [],
-    routeLayer: null,
     routeVisible: false,
     currentFile: null,
     currentMetadata: null,
@@ -304,9 +303,9 @@ const PostUI = {
         this.photoMapMarkers.forEach(m => m.remove());
         this.photoMapMarkers = [];
         this.markerLookup.clear();
-        if (this.routeLayer) {
-            this.routeLayer.remove();
-            this.routeLayer = null;
+        if (this.photoMap && this.photoMap.getLayer('route')) {
+            this.photoMap.removeLayer('route');
+            this.photoMap.removeSource('route');
             this.routeVisible = false;
         }
 
@@ -383,8 +382,36 @@ const PostUI = {
     },
 
     setupRouteToggle(photos) {
-        const coords = photos.map(p => [p.lat, p.lng]);
-        this.routeLayer = L.polyline(coords, { color: '#3388ff', weight: 3, opacity: 0.8 });
+        if (photos.length < 2) return;
+        const coords = photos.map(p => [p.lng, p.lat]);
+
+        const addRoute = () => {
+            if (this.photoMap.getSource('route')) return;
+            this.photoMap.addSource('route', {
+                type: 'geojson',
+                data: {
+                    type: 'Feature',
+                    geometry: { type: 'LineString', coordinates: coords }
+                }
+            });
+            this.photoMap.addLayer({
+                id: 'route',
+                type: 'line',
+                source: 'route',
+                layout: { visibility: 'none' },
+                paint: {
+                    'line-color': '#3388ff',
+                    'line-width': 3,
+                    'line-opacity': 0.8
+                }
+            });
+        };
+
+        if (this.photoMap.loaded()) {
+            addRoute();
+        } else {
+            this.photoMap.on('load', addRoute);
+        }
 
         const btn = document.getElementById('routeToggle');
         if (btn) {
@@ -397,10 +424,10 @@ const PostUI = {
     toggleRoute() {
         const btn = document.getElementById('routeToggle');
         if (this.routeVisible) {
-            this.photoMap.removeLayer(this.routeLayer);
+            this.photoMap.setLayoutProperty('route', 'visibility', 'none');
             if (btn) btn.textContent = 'Show Route';
         } else {
-            this.routeLayer.addTo(this.photoMap);
+            this.photoMap.setLayoutProperty('route', 'visibility', 'visible');
             if (btn) btn.textContent = 'Hide Route';
         }
         this.routeVisible = !this.routeVisible;
