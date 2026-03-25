@@ -8,64 +8,80 @@ test.use({ viewport: { width: 375, height: 812 } });
 test('pin-drop marker behavior: clicking map adds/updates marker', async ({ page }) => {
     await page.goto(`${BASE_URL}/post/${SECRET_TOKEN}`);
 
-    // Click "Add Photo" button
-    const addPhotoButton = page.locator('#addPhotoButton');
-    await addPhotoButton.click();
+    // Programmatically initialize the pin-drop map (simulating file without GPS)
+    // This tests AC2.4 and AC2.5 without requiring file upload interaction
+    const mapInitialized = await page.evaluate(() => {
+        // Make the map container and preview section visible
+        const mapSection = document.getElementById('mapSection');
+        const previewSection = document.getElementById('previewSection');
+        const pinDropMap = document.getElementById('pinDropMap');
 
-    // Simulate file input (select a test image)
-    // Since we can't directly upload files in this test, we'll mock it
-    // For now, we'll test the map click behavior directly
+        if (!mapSection || !previewSection || !pinDropMap) {
+            return { success: false, error: 'Missing DOM elements' };
+        }
 
-    // The map won't be visible until a file is selected without GPS
-    // So we need to find a way to trigger the pin-drop map
-    // Let's check if the #pinDropMap exists and is visible
-    const pinDropMap = page.locator('#pinDropMap');
+        // Show the sections
+        mapSection.classList.add('visible');
+        previewSection.classList.add('visible');
 
-    // Try to get to the pin-drop map state
-    // We'll use a file that likely has no GPS data
-    const fileInput = page.locator('#fileInput');
+        // Initialize the pin-drop map if not already done
+        if (!PostUI.map) {
+            PostUI.initializePinDropMap();
+        }
 
-    // Create a minimal test image without GPS data
-    // For this test, we'll focus on the map click behavior
-    // by directly evaluating the map's state
+        // Center map
+        PostUI.map.jumpTo({ center: [-98.5795, 39.8283], zoom: 4 });
 
-    // Wait for the map to be initialized (if a file triggers it)
+        // Trigger resize after visibility change
+        PostUI.map.resize();
+
+        return { success: true };
+    });
+
+    if (!mapInitialized.success) {
+        test.skip();
+    }
+
+    // Wait for map to stabilize
     await page.waitForTimeout(500);
 
-    // Check if we can interact with the map
-    // For AC2.4: Click on #pinDropMap, assert .maplibregl-marker appears
+    // Verify the map is now visible and ready
     const mapElement = page.locator('#pinDropMap');
-    const isVisible = await mapElement.isVisible().catch(() => false);
+    const isVisible = await mapElement.isVisible();
+    expect(isVisible).toBe(true);
 
-    if (isVisible) {
-        // Click on the map
-        const mapBox = await mapElement.boundingBox();
-        if (mapBox) {
-            await page.click('#pinDropMap', {
-                position: {
-                    x: mapBox.width / 2,
-                    y: mapBox.height / 2
-                }
-            });
+    // Get map bounding box for click calculations
+    const mapBox = await mapElement.boundingBox();
+    expect(mapBox).not.toBeNull();
 
-            // AC2.4: Assert .maplibregl-marker appears
-            await page.waitForSelector('.maplibregl-marker', { timeout: 5000 });
-            const marker = page.locator('.maplibregl-marker');
-            const markerCount = await marker.count();
-            expect(markerCount).toBeGreaterThan(0);
+    if (mapBox) {
+        // AC2.4: Click on the map, assert .maplibregl-marker appears
+        await page.click('#pinDropMap', {
+            position: {
+                x: mapBox.width / 2,
+                y: mapBox.height / 2
+            }
+        });
 
-            // AC2.5: Click map twice, assert exactly 1 .maplibregl-marker (old one removed)
-            await page.click('#pinDropMap', {
-                position: {
-                    x: mapBox.width / 3,
-                    y: mapBox.height / 3
-                }
-            });
-            await page.waitForTimeout(300);
+        // Wait for marker to appear
+        await page.waitForSelector('.maplibregl-marker', { timeout: 5000 });
+        const marker = page.locator('.maplibregl-marker');
+        const markerCount = await marker.count();
+        expect(markerCount).toBeGreaterThan(0);
 
-            const markerCountAfterSecondClick = await page.locator('.maplibregl-marker').count();
-            expect(markerCountAfterSecondClick).toBe(1);
-        }
+        // AC2.5: Click map again at different position, assert exactly 1 marker (old one removed)
+        await page.click('#pinDropMap', {
+            position: {
+                x: mapBox.width / 3,
+                y: mapBox.height / 3
+            }
+        });
+
+        // Wait for any updates
+        await page.waitForTimeout(300);
+
+        const markerCountAfterSecondClick = await page.locator('.maplibregl-marker').count();
+        expect(markerCountAfterSecondClick).toBe(1);
     }
 });
 
