@@ -609,7 +609,7 @@ textarea {
   height: 300px;
   border: 1px solid var(--color-border);
   border-radius: 8px;
-  overflow: hidden;
+  overflow: visible;
   margin-bottom: var(--space-md);
 }
 
@@ -805,6 +805,12 @@ body.map-page .maplibregl-ctrl-top-left {
   color: var(--color-text-light);
   text-align: center;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+}
+
+/* Clip map tiles to rounded corners without clipping popups */
+.post-photo-map .maplibregl-canvas-container {
+  border-radius: 8px;
+  overflow: hidden;
 }
 
 /* MapLibre popup customization — scoped via className:'photo-map-popup' */

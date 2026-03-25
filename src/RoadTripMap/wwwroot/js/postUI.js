@@ -342,6 +342,10 @@ const PostUI = {
             }).setHTML(popupHtml);
 
             popup.on('open', () => {
+                // Close all other popups (MapLibre allows multiple open)
+                this.photoMapMarkers.forEach(m => {
+                    if (m !== marker && m.getPopup().isOpen()) m.togglePopup();
+                });
                 if (this.carousel) {
                     this.carousel.selectPhoto(photo.id);
                 }
@@ -356,6 +360,8 @@ const PostUI = {
                             PhotoCarousel.showFullscreen(photo);
                         });
                     }
+                    // Pan map to keep popup in view
+                    this.panToFitPopup(this.photoMap, popupEl);
                 }
             });
 
@@ -432,6 +438,20 @@ const PostUI = {
             if (btn) btn.textContent = 'Hide Route';
         }
         this.routeVisible = !this.routeVisible;
+    },
+
+    panToFitPopup(map, popupEl) {
+        const padding = 20;
+        const mapRect = map.getContainer().getBoundingClientRect();
+        const popupRect = popupEl.getBoundingClientRect();
+        let dx = 0, dy = 0;
+        if (popupRect.left < mapRect.left + padding) dx = popupRect.left - mapRect.left - padding;
+        if (popupRect.right > mapRect.right - padding) dx = popupRect.right - mapRect.right + padding;
+        if (popupRect.top < mapRect.top + padding) dy = popupRect.top - mapRect.top - padding;
+        if (popupRect.bottom > mapRect.bottom - padding) dy = popupRect.bottom - mapRect.bottom + padding;
+        if (dx !== 0 || dy !== 0) {
+            map.panBy([dx, dy], { duration: 300 });
+        }
     },
 
     onCarouselSelect(photo) {

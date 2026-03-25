@@ -85,8 +85,26 @@ const MapUI = {
             }).setHTML(this.createPopupHtml(photo));
 
             popup.on('open', () => {
+                // Close all other popups (MapLibre allows multiple open)
+                this.markers.forEach(m => {
+                    if (m !== marker && m.getPopup().isOpen()) m.togglePopup();
+                });
                 if (this.carousel) {
                     this.carousel.selectPhoto(photo.id);
+                }
+                const popupEl = popup.getElement();
+                if (popupEl) {
+                    const img = popupEl.querySelector('.photo-popup-img');
+                    if (img && !img.dataset.listenerAttached) {
+                        img.dataset.listenerAttached = 'true';
+                        img.style.cursor = 'pointer';
+                        img.addEventListener('click', (e) => {
+                            e.stopPropagation();
+                            PhotoCarousel.showFullscreen(photo);
+                        });
+                    }
+                    // Pan map to keep popup in view
+                    this.panToFitPopup(this.map, popupEl);
                 }
             });
 
@@ -144,7 +162,7 @@ const MapUI = {
         const saveBtn = this.createSaveButton(photo);
         return `<div class="photo-popup">
             <img src="${photo.displayUrl}" class="photo-popup-img">
-            <div class="photo-popup-info">
+            <div class="photo-popup-overlay">
                 <div class="photo-popup-place">${escapedPlaceName}</div>
                 ${escapedCaption ? `<div class="photo-popup-caption">${escapedCaption}</div>` : ''}
                 <div class="photo-popup-date">${date}</div>
