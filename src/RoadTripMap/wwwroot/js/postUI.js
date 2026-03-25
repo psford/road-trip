@@ -370,10 +370,11 @@ const PostUI = {
 
         // Fit bounds
         if (photos.length === 1) {
-            this.photoMap.setView([photos[0].lat, photos[0].lng], 13);
+            this.photoMap.jumpTo({ center: [photos[0].lng, photos[0].lat], zoom: 13 });
         } else {
-            const group = new L.featureGroup(this.photoMapMarkers);
-            this.photoMap.fitBounds(group.getBounds(), { padding: [50, 50], maxZoom: 15 });
+            const bounds = new maplibregl.LngLatBounds();
+            photos.forEach(p => bounds.extend([p.lng, p.lat]));
+            this.photoMap.fitBounds(bounds, { padding: 50, maxZoom: 15 });
             this.setupRouteToggle(photos);
         }
 
@@ -436,8 +437,10 @@ const PostUI = {
     onCarouselSelect(photo) {
         const marker = this.markerLookup.get(photo.id);
         if (marker) {
-            this.photoMap.flyTo([photo.lat, photo.lng], 15);
-            marker.openPopup();
+            this.photoMap.flyTo({ center: [photo.lng, photo.lat], zoom: 15 });
+            if (!marker.getPopup().isOpen()) {
+                marker.togglePopup();
+            }
         }
         PhotoCarousel.showFullscreen(photo);
     },
