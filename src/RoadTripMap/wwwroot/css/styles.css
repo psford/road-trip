@@ -609,7 +609,7 @@ textarea {
   height: 300px;
   border: 1px solid var(--color-border);
   border-radius: 8px;
-  overflow: hidden;
+  overflow: visible;
   margin-bottom: var(--space-md);
 }
 
@@ -758,9 +758,8 @@ body.map-page {
   text-decoration: none;
 }
 
-/* Push Leaflet zoom controls below floating header on view page.
-   Leaflet default left offset is 10px; match that gap below the header. */
-body.map-page .leaflet-top.leaflet-left {
+/* Push MapLibre zoom controls below floating header on view page */
+body.map-page .maplibregl-ctrl-top-left {
   top: calc(var(--map-header-height, 56px) + 10px);
 }
 
@@ -808,32 +807,50 @@ body.map-page .leaflet-top.leaflet-left {
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
 }
 
-/* Leaflet popup customization */
-.leaflet-popup-content-wrapper {
-  background: none;
-  border-radius: 0;
-  box-shadow: none;
+/* Clip map tiles to rounded corners without clipping popups */
+.post-photo-map .maplibregl-canvas-container {
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+/* MapLibre popup customization — scoped via className:'photo-map-popup' */
+.photo-map-popup .maplibregl-popup-content {
+  background: transparent;
+  border-radius: 8px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4);
   padding: 0;
-  overflow: visible;
-}
-
-.leaflet-popup {
-  margin-bottom: 20px;
-}
-
-/* Hide default Leaflet close button — we have our own */
-.leaflet-popup-close-button {
-  display: none;
-}
-
-.leaflet-popup-content {
+  overflow: hidden;
   margin: 0;
-  padding: 0;
   min-width: 220px;
 }
 
-.leaflet-popup-tip {
-  background: rgba(0, 0, 0, 0.6);
+.photo-map-popup {
+  margin-bottom: 20px;
+}
+
+/* Hide default close button — disabled via closeButton:false, CSS as fallback */
+.photo-map-popup .maplibregl-popup-close-button {
+  display: none;
+}
+
+/* Dark tip — override each anchor direction's colored border */
+.photo-map-popup.maplibregl-popup-anchor-bottom .maplibregl-popup-tip {
+  border-top-color: rgba(0, 0, 0, 0.6);
+}
+.photo-map-popup.maplibregl-popup-anchor-top .maplibregl-popup-tip,
+.photo-map-popup.maplibregl-popup-anchor-top-left .maplibregl-popup-tip,
+.photo-map-popup.maplibregl-popup-anchor-top-right .maplibregl-popup-tip {
+  border-bottom-color: rgba(0, 0, 0, 0.6);
+}
+.photo-map-popup.maplibregl-popup-anchor-left .maplibregl-popup-tip {
+  border-right-color: rgba(0, 0, 0, 0.6);
+}
+.photo-map-popup.maplibregl-popup-anchor-right .maplibregl-popup-tip {
+  border-left-color: rgba(0, 0, 0, 0.6);
+}
+.photo-map-popup.maplibregl-popup-anchor-bottom-left .maplibregl-popup-tip,
+.photo-map-popup.maplibregl-popup-anchor-bottom-right .maplibregl-popup-tip {
+  border-top-color: rgba(0, 0, 0, 0.6);
 }
 
 /* Photo popup component */
@@ -924,7 +941,7 @@ body.map-page .leaflet-top.leaflet-left {
 
 /* Mobile popup sizing */
 @media (max-width: 480px) {
-  .leaflet-popup-content {
+  .photo-map-popup .maplibregl-popup-content {
     min-width: 180px;
   }
 }

@@ -1,6 +1,6 @@
 # Road Trip Photo Map
 
-Last verified: 2026-03-23
+Last verified: 2026-03-24
 
 ## Purpose
 
@@ -12,7 +12,7 @@ Mobile-first road trip photo sharing app. Users create a trip, get two secret li
 - EF Core 8.0 + Azure SQL (shared DB, `roadtrip` schema — Phase 4 will add dedicated SQL instance)
 - Azure Blob Storage (private container `road-trip-photos`)
 - SkiaSharp for server-side image processing
-- Leaflet.js for map rendering
+- MapLibre GL JS v5.21.0 for map rendering (vector tiles via MapTiler)
 - Vanilla HTML/JS/CSS frontend (no framework)
 
 ## Commands
@@ -38,7 +38,7 @@ Mobile-first road trip photo sharing app. Users create a trip, get two secret li
 
 ## Dependencies
 
-- **Uses**: Azure SQL (shared DB — see Phase 4 migration notes), Azure Blob Storage, Nominatim API (geocoding)
+- **Uses**: Azure SQL (shared DB — see Phase 4 migration notes), Azure Blob Storage, Nominatim API (geocoding), MapTiler (vector tile styles)
 - **Consumed by**: GitHub Actions deploy workflow (`.github/workflows/roadtrip-deploy.yml`)
 - **Decoupling**: Phase 4 of repo-split will add a dedicated Azure SQL instance for Road Trip, eliminating the shared DB dependency with Stock Analyzer
 
@@ -49,6 +49,7 @@ Mobile-first road trip photo sharing app. Users create a trip, get two secret li
 - **Nominatim over Google Maps**: Free, no API key, respects OSM usage policy with rate limiter
 - **SkiaSharp over ImageSharp**: Already proven in ecosystem; handles EXIF rotation and resize
 - **No SPA framework**: Static HTML pages served same-origin; keeps bundle zero
+- **MapLibre GL JS over Leaflet**: Leaflet had an unfixed popup auto-pan bug on mobile (popup overflow behind header). MapLibre handles popup positioning natively, supports vector tiles, and eliminates the manual pan workaround.
 
 ## Invariants
 

@@ -4,13 +4,15 @@
  * Handles the UI rendering and event binding for the photo posting page.
  */
 
+const MAPTILER_KEY = 'uctgdtdamYqEtDUPiPHB';
+const MAP_STYLE = `https://api.maptiler.com/maps/streets-v2/style.json?key=${MAPTILER_KEY}`;
+
 const PostUI = {
     secretToken: null,
     map: null,
     marker: null,
     photoMap: null,
     photoMapMarkers: [],
-    routeLayer: null,
     routeVisible: false,
     currentFile: null,
     currentMetadata: null,
@@ -147,9 +149,9 @@ const PostUI = {
         }
 
         // Center map on default location (USA center)
-        this.map.setView([39.8283, -98.5795], 4);
+        this.map.jumpTo({ center: [-98.5795, 39.8283], zoom: 4 });
         if (this.marker) {
-            this.map.removeLayer(this.marker);
+            this.marker.remove();
         }
 
         // Clear caption input
@@ -159,35 +161,33 @@ const PostUI = {
         document.getElementById('previewSection').classList.add('visible');
         document.getElementById('fileInput').value = '';
 
-        // Leaflet needs a size recalc after container becomes visible
+        // MapLibre needs a size recalc after container becomes visible
         setTimeout(() => {
-            if (this.map) this.map.invalidateSize();
+            if (this.map) this.map.resize();
         }, 100);
     },
 
     initializePinDropMap() {
-        // Create map
-        this.map = L.map('pinDropMap').setView([39.8283, -98.5795], 4);
-
-        // Add tile layer
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            attribution: '© OpenStreetMap contributors',
-            maxZoom: 19,
-        }).addTo(this.map);
+        this.map = new maplibregl.Map({
+            container: 'pinDropMap',
+            style: MAP_STYLE,
+            center: [-98.5795, 39.8283],
+            zoom: 4
+        });
 
         // Handle map clicks for marker placement
         this.map.on('click', async (e) => {
-            const { lat, lng } = e.latlng;
+            const { lng, lat } = e.lngLat;
             this.currentLat = lat;
             this.currentLng = lng;
 
             // Remove old marker
             if (this.marker) {
-                this.map.removeLayer(this.marker);
+                this.marker.remove();
             }
 
             // Add new marker
-            this.marker = L.marker([lat, lng]).addTo(this.map);
+            this.marker = new maplibregl.Marker().setLngLat([lng, lat]).addTo(this.map);
 
             // Geocode the location
             try {
@@ -303,24 +303,24 @@ const PostUI = {
         this.photoMapMarkers.forEach(m => m.remove());
         this.photoMapMarkers = [];
         this.markerLookup.clear();
-        if (this.routeLayer) {
-            this.routeLayer.remove();
-            this.routeLayer = null;
+        if (this.photoMap && this.photoMap.getLayer('route')) {
+            this.photoMap.removeLayer('route');
+            this.photoMap.removeSource('route');
             this.routeVisible = false;
         }
 
         // Initialize map if not done
         if (!this.photoMap) {
-            this.photoMap = L.map('photoMap');
-            L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                maxZoom: 19,
-                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-            }).addTo(this.photoMap);
+            this.photoMap = new maplibregl.Map({
+                container: 'photoMap',
+                style: MAP_STYLE,
+                center: [-98.5795, 39.8283],
+                zoom: 4
+            });
         }
 
         // Add markers with carousel sync
         photos.forEach(photo => {
-            const marker = L.marker([photo.lat, photo.lng]);
             const date = photo.takenAt ? new Date(photo.takenAt).toLocaleDateString() : 'Date unknown';
             const escapedPlace = this.escapeHtml(photo.placeName);
             const escapedCaption = this.escapeHtml(photo.caption);
@@ -332,71 +332,93 @@ const PostUI = {
                     ${escapedCaption ? `<div class="photo-popup-caption">${escapedCaption}</div>` : ''}
                     <div class="photo-popup-date">${date}</div>
                 </div>
-                <button class="photo-popup-delete" data-photo-id="${photo.id}">✕</button>
             </div>`;
 
-            marker.bindPopup(popupHtml, {
-                autoPan: true,
-                autoPanPaddingTopLeft: L.point(10, 20),
-                autoPanPaddingBottomRight: L.point(10, 20),
-                autoPanAnimation: true
-            });
-            marker.on('popupopen', () => {
+            const popup = new maplibregl.Popup({
+                offset: 25,
+                closeButton: false,
+                maxWidth: 'none',
+                className: 'photo-map-popup'
+            }).setHTML(popupHtml);
+
+            popup.on('open', () => {
+                // Close all other popups (MapLibre allows multiple open)
+                this.photoMapMarkers.forEach(m => {
+                    if (m !== marker && m.getPopup().isOpen()) m.togglePopup();
+                });
                 if (this.carousel) {
                     this.carousel.selectPhoto(photo.id);
                 }
-                // Re-pan after image loads so popup is fully visible
-                const img = document.querySelector(`.photo-popup-img[data-full-src="${photo.displayUrl}"]`);
-                if (img) {
-                    img.style.cursor = 'pointer';
-                    img.addEventListener('click', (e) => {
-                        e.stopPropagation();
-                        this.showFullscreenImage(photo.displayUrl);
-                    });
-                    // Leaflet's _adjustPan measures the popup before it's
-                    // fully laid out. After a short delay (to let both
-                    // the image render and any initial pan complete),
-                    // check if the popup overflows and correct.
-                    setTimeout(() => {
-                        const map = marker._map;
-                        const popup = marker.getPopup();
-                        if (!map || !popup || !popup.isOpen()) return;
-
-                        const popupEl = popup.getElement();
-                        if (!popupEl) return;
-
-                        const mapContainer = map.getContainer();
-                        const mapRect = mapContainer.getBoundingClientRect();
-                        const popupRect = popupEl.getBoundingClientRect();
-
-                        const overflowTop = mapRect.top - popupRect.top;
-                        if (overflowTop > 0) {
-                            map.panBy([0, -(overflowTop + 10)]);
-                        }
-                    }, 100);
+                const popupEl = popup.getElement();
+                if (popupEl) {
+                    const img = popupEl.querySelector('.photo-popup-img');
+                    if (img && !img.dataset.listenerAttached) {
+                        img.dataset.listenerAttached = 'true';
+                        img.style.cursor = 'pointer';
+                        img.addEventListener('click', (e) => {
+                            e.stopPropagation();
+                            PhotoCarousel.showFullscreen(photo);
+                        });
+                    }
+                    // Pan map to keep popup in view
+                    this.panToFitPopup(this.photoMap, popupEl);
                 }
             });
-            marker.addTo(this.photoMap);
+
+            const marker = new maplibregl.Marker()
+                .setLngLat([photo.lng, photo.lat])
+                .setPopup(popup)
+                .addTo(this.photoMap);
+
             this.photoMapMarkers.push(marker);
             this.markerLookup.set(photo.id, marker);
         });
 
         // Fit bounds
         if (photos.length === 1) {
-            this.photoMap.setView([photos[0].lat, photos[0].lng], 13);
+            this.photoMap.jumpTo({ center: [photos[0].lng, photos[0].lat], zoom: 13 });
         } else {
-            const group = new L.featureGroup(this.photoMapMarkers);
-            this.photoMap.fitBounds(group.getBounds(), { padding: [50, 50], maxZoom: 15 });
+            const bounds = new maplibregl.LngLatBounds();
+            photos.forEach(p => bounds.extend([p.lng, p.lat]));
+            this.photoMap.fitBounds(bounds, { padding: 50, maxZoom: 15 });
             this.setupRouteToggle(photos);
         }
 
         // Recalculate map size after container is visible
-        setTimeout(() => this.photoMap.invalidateSize(), 100);
+        setTimeout(() => this.photoMap.resize(), 100);
     },
 
     setupRouteToggle(photos) {
-        const coords = photos.map(p => [p.lat, p.lng]);
-        this.routeLayer = L.polyline(coords, { color: '#3388ff', weight: 3, opacity: 0.8 });
+        if (photos.length < 2) return;
+        const coords = photos.map(p => [p.lng, p.lat]);
+
+        const addRoute = () => {
+            if (this.photoMap.getSource('route')) return;
+            this.photoMap.addSource('route', {
+                type: 'geojson',
+                data: {
+                    type: 'Feature',
+                    geometry: { type: 'LineString', coordinates: coords }
+                }
+            });
+            this.photoMap.addLayer({
+                id: 'route',
+                type: 'line',
+                source: 'route',
+                layout: { visibility: 'none' },
+                paint: {
+                    'line-color': '#3388ff',
+                    'line-width': 3,
+                    'line-opacity': 0.8
+                }
+            });
+        };
+
+        if (this.photoMap.isStyleLoaded()) {
+            addRoute();
+        } else {
+            this.photoMap.once('idle', addRoute);
+        }
 
         const btn = document.getElementById('routeToggle');
         if (btn) {
@@ -409,20 +431,36 @@ const PostUI = {
     toggleRoute() {
         const btn = document.getElementById('routeToggle');
         if (this.routeVisible) {
-            this.photoMap.removeLayer(this.routeLayer);
+            this.photoMap.setLayoutProperty('route', 'visibility', 'none');
             if (btn) btn.textContent = 'Show Route';
         } else {
-            this.routeLayer.addTo(this.photoMap);
+            this.photoMap.setLayoutProperty('route', 'visibility', 'visible');
             if (btn) btn.textContent = 'Hide Route';
         }
         this.routeVisible = !this.routeVisible;
     },
 
+    panToFitPopup(map, popupEl) {
+        const padding = 20;
+        const mapRect = map.getContainer().getBoundingClientRect();
+        const popupRect = popupEl.getBoundingClientRect();
+        let dx = 0, dy = 0;
+        if (popupRect.left < mapRect.left + padding) dx = popupRect.left - mapRect.left - padding;
+        if (popupRect.right > mapRect.right - padding) dx = popupRect.right - mapRect.right + padding;
+        if (popupRect.top < mapRect.top + padding) dy = popupRect.top - mapRect.top - padding;
+        if (popupRect.bottom > mapRect.bottom - padding) dy = popupRect.bottom - mapRect.bottom + padding;
+        if (dx !== 0 || dy !== 0) {
+            map.panBy([dx, dy], { duration: 300 });
+        }
+    },
+
     onCarouselSelect(photo) {
         const marker = this.markerLookup.get(photo.id);
         if (marker) {
-            this.photoMap.flyTo([photo.lat, photo.lng], 15);
-            marker.openPopup();
+            this.photoMap.flyTo({ center: [photo.lng, photo.lat], zoom: 15 });
+            if (!marker.getPopup().isOpen()) {
+                marker.togglePopup();
+            }
         }
         PhotoCarousel.showFullscreen(photo);
     },

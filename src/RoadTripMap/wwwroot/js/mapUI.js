@@ -1,13 +1,15 @@
 /**
  * Road Trip Map UI Layer
- * Leaflet-specific rendering for map view — web-only, native apps would replace with MapKit/Google Maps
+ * MapLibre GL JS rendering for map view — web-only, native apps would replace with MapKit/Google Maps
  * All data comes from MapService; UI handles DOM rendering and user interactions
  */
+
+const MAPTILER_KEY = 'uctgdtdamYqEtDUPiPHB';
+const MAP_STYLE = `https://api.maptiler.com/maps/streets-v2/style.json?key=${MAPTILER_KEY}`;
 
 const MapUI = {
     map: null,
     markers: [],
-    routeLayer: null,
     routeVisible: false,
     carousel: null,
     markerLookup: null,
@@ -47,25 +49,21 @@ const MapUI = {
     },
 
     /**
-     * Render Leaflet map with photo pins
+     * Render map with photo pins
      * @param {Array} photos - Array of PhotoResponse objects
      */
     renderMap(photos) {
-        // Initialize Leaflet map with smooth panning
-        this.map = L.map('map', {
-            panAnimation: true,
-            easeLinearity: 0.25
+        // Initialize MapLibre map
+        this.map = new maplibregl.Map({
+            container: 'map',
+            style: MAP_STYLE,
+            center: [-98.5795, 39.8283],
+            zoom: 4
         });
-
-        // Add OpenStreetMap tiles
-        L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            maxZoom: 19,
-            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-        }).addTo(this.map);
 
         // Handle empty trip
         if (photos.length === 0) {
-            this.map.setView([39.8, -98.6], 4); // Center of USA
+            this.map.jumpTo({ center: [-98.6, 39.8], zoom: 4 }); // Center of USA
             const emptyMsg = document.getElementById('emptyMessage');
             if (emptyMsg) {
                 emptyMsg.style.display = 'block';
@@ -79,25 +77,44 @@ const MapUI = {
         // Build markerLookup and create markers for each photo
         this.markerLookup = new Map();
         photos.forEach(photo => {
-            const marker = L.marker([photo.lat, photo.lng]);
-            marker.bindPopup(this.createPopupHtml(photo), {
-                autoPan: true,
-                autoPanPaddingTopLeft: L.point(10, headerHeight + 20),
-                autoPanPaddingBottomRight: L.point(10, 20),
-                autoPanAnimation: true
-            });
-            marker.addTo(this.map);
-            this.markers.push(marker);
+            const popup = new maplibregl.Popup({
+                offset: 25,
+                closeButton: false,
+                maxWidth: 'none',
+                className: 'photo-map-popup'
+            }).setHTML(this.createPopupHtml(photo));
 
-            // Build markerLookup for carousel-to-map sync
-            this.markerLookup.set(photo.id, marker);
-
-            // Add popupopen handler for map-to-carousel sync
-            marker.on('popupopen', () => {
+            popup.on('open', () => {
+                // Close all other popups (MapLibre allows multiple open)
+                this.markers.forEach(m => {
+                    if (m !== marker && m.getPopup().isOpen()) m.togglePopup();
+                });
                 if (this.carousel) {
                     this.carousel.selectPhoto(photo.id);
                 }
+                const popupEl = popup.getElement();
+                if (popupEl) {
+                    const img = popupEl.querySelector('.photo-popup-img');
+                    if (img && !img.dataset.listenerAttached) {
+                        img.dataset.listenerAttached = 'true';
+                        img.style.cursor = 'pointer';
+                        img.addEventListener('click', (e) => {
+                            e.stopPropagation();
+                            PhotoCarousel.showFullscreen(photo);
+                        });
+                    }
+                    // Pan map to keep popup in view
+                    this.panToFitPopup(this.map, popupEl);
+                }
             });
+
+            const marker = new maplibregl.Marker()
+                .setLngLat([photo.lng, photo.lat])
+                .setPopup(popup)
+                .addTo(this.map);
+
+            this.markers.push(marker);
+            this.markerLookup.set(photo.id, marker);
         });
 
         // Initialize carousel BEFORE single-photo early return
@@ -117,13 +134,17 @@ const MapUI = {
 
         // Handle single photo
         if (photos.length === 1) {
-            this.map.setView([photos[0].lat, photos[0].lng], 13);
+            this.map.jumpTo({ center: [photos[0].lng, photos[0].lat], zoom: 13 });
             return;
         }
 
-        // Handle multiple photos: auto-fit bounds with padding
-        const group = new L.featureGroup(this.markers);
-        this.map.fitBounds(group.getBounds(), { padding: [50, 50], maxZoom: 15 });
+        // Handle multiple photos: auto-fit bounds with header-aware padding
+        const bounds = new maplibregl.LngLatBounds();
+        photos.forEach(p => bounds.extend([p.lng, p.lat]));
+        this.map.fitBounds(bounds, {
+            padding: { top: headerHeight + 50, bottom: 50, left: 50, right: 50 },
+            maxZoom: 15
+        });
 
         // Setup route toggle for multiple photos
         this.setupRouteToggle(photos);
@@ -140,8 +161,8 @@ const MapUI = {
         const escapedCaption = this.escapeHtml(photo.caption);
         const saveBtn = this.createSaveButton(photo);
         return `<div class="photo-popup">
-            <img src="${photo.displayUrl}" class="photo-popup-img" loading="lazy">
-            <div class="photo-popup-info">
+            <img src="${photo.displayUrl}" class="photo-popup-img">
+            <div class="photo-popup-overlay">
                 <div class="photo-popup-place">${escapedPlaceName}</div>
                 ${escapedCaption ? `<div class="photo-popup-caption">${escapedCaption}</div>` : ''}
                 <div class="photo-popup-date">${date}</div>
@@ -173,8 +194,10 @@ const MapUI = {
     onCarouselSelect(photo) {
         const marker = this.markerLookup.get(photo.id);
         if (marker) {
-            this.map.flyTo([photo.lat, photo.lng], 15);
-            marker.openPopup();
+            this.map.flyTo({ center: [photo.lng, photo.lat], zoom: 15 });
+            if (!marker.getPopup().isOpen()) {
+                marker.togglePopup();
+            }
         }
         PhotoCarousel.showFullscreen(photo);
     },
@@ -184,10 +207,38 @@ const MapUI = {
      * @param {Array} photos - Array of PhotoResponse objects
      */
     setupRouteToggle(photos) {
-        const coords = MapService.getRouteCoordinates(photos);
-        this.routeLayer = L.polyline(coords, { color: '#3388ff', weight: 3, opacity: 0.8 });
+        if (photos.length < 2) return;
+        const latLngCoords = MapService.getRouteCoordinates(photos);
+        const coords = latLngCoords.map(([lat, lng]) => [lng, lat]);
 
-        // Show route toggle button
+        const addRoute = () => {
+            if (this.map.getSource('route')) return;
+            this.map.addSource('route', {
+                type: 'geojson',
+                data: {
+                    type: 'Feature',
+                    geometry: { type: 'LineString', coordinates: coords }
+                }
+            });
+            this.map.addLayer({
+                id: 'route',
+                type: 'line',
+                source: 'route',
+                layout: { visibility: 'none' },
+                paint: {
+                    'line-color': '#3388ff',
+                    'line-width': 3,
+                    'line-opacity': 0.8
+                }
+            });
+        };
+
+        if (this.map.isStyleLoaded()) {
+            addRoute();
+        } else {
+            this.map.once('idle', addRoute);
+        }
+
         const routeToggleBtn = document.getElementById('routeToggle');
         if (routeToggleBtn) {
             routeToggleBtn.style.display = 'block';
@@ -199,18 +250,13 @@ const MapUI = {
      * Toggle route visibility
      */
     toggleRoute() {
+        const routeToggleBtn = document.getElementById('routeToggle');
         if (this.routeVisible) {
-            this.map.removeLayer(this.routeLayer);
-            const routeToggleBtn = document.getElementById('routeToggle');
-            if (routeToggleBtn) {
-                routeToggleBtn.textContent = 'Show Route';
-            }
+            this.map.setLayoutProperty('route', 'visibility', 'none');
+            if (routeToggleBtn) routeToggleBtn.textContent = 'Show Route';
         } else {
-            this.routeLayer.addTo(this.map);
-            const routeToggleBtn = document.getElementById('routeToggle');
-            if (routeToggleBtn) {
-                routeToggleBtn.textContent = 'Hide Route';
-            }
+            this.map.setLayoutProperty('route', 'visibility', 'visible');
+            if (routeToggleBtn) routeToggleBtn.textContent = 'Hide Route';
         }
         this.routeVisible = !this.routeVisible;
     },

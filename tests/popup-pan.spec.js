@@ -8,13 +8,13 @@ test.use({ viewport: { width: 375, height: 812 } });
 
 test('popup is fully visible within map on first and subsequent clicks', async ({ page }) => {
     await page.goto(`${BASE_URL}/post/${SECRET_TOKEN}`);
-    await page.waitForSelector('.leaflet-marker-icon');
+    await page.waitForSelector('.maplibregl-marker');
     await page.waitForTimeout(500);
 
     const checkPopup = async () => {
         return await page.evaluate(() => {
             const mapEl = document.getElementById('photoMap');
-            const popup = document.querySelector('.leaflet-popup');
+            const popup = document.querySelector('.maplibregl-popup');
             if (!mapEl || !popup) return { error: 'missing elements' };
             const mapRect = mapEl.getBoundingClientRect();
             const popupRect = popup.getBoundingClientRect();
@@ -30,7 +30,7 @@ test('popup is fully visible within map on first and subsequent clicks', async (
     };
 
     // Click the first marker
-    const markers = page.locator('.leaflet-marker-icon');
+    const markers = page.locator('.maplibregl-marker');
     await markers.first().click();
     await page.waitForSelector('.photo-popup');
     await page.waitForTimeout(600);
