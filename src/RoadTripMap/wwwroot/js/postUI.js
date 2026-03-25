@@ -4,6 +4,9 @@
  * Handles the UI rendering and event binding for the photo posting page.
  */
 
+const MAPTILER_KEY = 'uctgdtdamYqEtDUPiPHB';
+const MAP_STYLE = `https://api.maptiler.com/maps/streets-v2/style.json?key=${MAPTILER_KEY}`;
+
 const PostUI = {
     secretToken: null,
     map: null,
@@ -147,9 +150,9 @@ const PostUI = {
         }
 
         // Center map on default location (USA center)
-        this.map.setView([39.8283, -98.5795], 4);
+        this.map.jumpTo({ center: [-98.5795, 39.8283], zoom: 4 });
         if (this.marker) {
-            this.map.removeLayer(this.marker);
+            this.marker.remove();
         }
 
         // Clear caption input
@@ -159,35 +162,33 @@ const PostUI = {
         document.getElementById('previewSection').classList.add('visible');
         document.getElementById('fileInput').value = '';
 
-        // Leaflet needs a size recalc after container becomes visible
+        // MapLibre needs a size recalc after container becomes visible
         setTimeout(() => {
-            if (this.map) this.map.invalidateSize();
+            if (this.map) this.map.resize();
         }, 100);
     },
 
     initializePinDropMap() {
-        // Create map
-        this.map = L.map('pinDropMap').setView([39.8283, -98.5795], 4);
-
-        // Add tile layer
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            attribution: '© OpenStreetMap contributors',
-            maxZoom: 19,
-        }).addTo(this.map);
+        this.map = new maplibregl.Map({
+            container: 'pinDropMap',
+            style: MAP_STYLE,
+            center: [-98.5795, 39.8283],
+            zoom: 4
+        });
 
         // Handle map clicks for marker placement
         this.map.on('click', async (e) => {
-            const { lat, lng } = e.latlng;
+            const { lng, lat } = e.lngLat;
             this.currentLat = lat;
             this.currentLng = lng;
 
             // Remove old marker
             if (this.marker) {
-                this.map.removeLayer(this.marker);
+                this.marker.remove();
             }
 
             // Add new marker
-            this.marker = L.marker([lat, lng]).addTo(this.map);
+            this.marker = new maplibregl.Marker().setLngLat([lng, lat]).addTo(this.map);
 
             // Geocode the location
             try {
@@ -311,11 +312,12 @@ const PostUI = {
 
         // Initialize map if not done
         if (!this.photoMap) {
-            this.photoMap = L.map('photoMap');
-            L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                maxZoom: 19,
-                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-            }).addTo(this.photoMap);
+            this.photoMap = new maplibregl.Map({
+                container: 'photoMap',
+                style: MAP_STYLE,
+                center: [-98.5795, 39.8283],
+                zoom: 4
+            });
         }
 
         // Add markers with carousel sync
@@ -391,7 +393,7 @@ const PostUI = {
         }
 
         // Recalculate map size after container is visible
-        setTimeout(() => this.photoMap.invalidateSize(), 100);
+        setTimeout(() => this.photoMap.resize(), 100);
     },
 
     setupRouteToggle(photos) {
