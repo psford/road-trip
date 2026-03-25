@@ -355,10 +355,10 @@ const PostUI = {
                         e.stopPropagation();
                         this.showFullscreenImage(photo.displayUrl);
                     });
-                    // Leaflet's _adjustPan measures the popup before it's
-                    // fully laid out. After a short delay (to let both
-                    // the image render and any initial pan complete),
-                    // check if the popup overflows and correct.
+                    // TODO(Phase 2): Re-evaluate this popup pan workaround with MapLibre.
+                    // Currently measures the popup before it's fully laid out.
+                    // After a short delay (to let both the image render and any
+                    // initial pan complete), check if the popup overflows and correct.
                     setTimeout(() => {
                         const map = marker._map;
                         const popup = marker.getPopup();

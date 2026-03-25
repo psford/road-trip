@@ -1,6 +1,6 @@
 /**
  * Road Trip Map UI Layer
- * Leaflet-specific rendering for map view — web-only, native apps would replace with MapKit/Google Maps
+ * MapLibre GL JS rendering for map view — web-only, native apps would replace with MapKit/Google Maps
  * All data comes from MapService; UI handles DOM rendering and user interactions
  */
 
@@ -50,7 +50,7 @@ const MapUI = {
     },
 
     /**
-     * Render Leaflet map with photo pins
+     * Render map with photo pins
      * @param {Array} photos - Array of PhotoResponse objects
      */
     renderMap(photos) {
