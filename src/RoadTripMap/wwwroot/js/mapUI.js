@@ -4,6 +4,9 @@
  * All data comes from MapService; UI handles DOM rendering and user interactions
  */
 
+const MAPTILER_KEY = 'uctgdtdamYqEtDUPiPHB';
+const MAP_STYLE = `https://api.maptiler.com/maps/streets-v2/style.json?key=${MAPTILER_KEY}`;
+
 const MapUI = {
     map: null,
     markers: [],
@@ -51,21 +54,17 @@ const MapUI = {
      * @param {Array} photos - Array of PhotoResponse objects
      */
     renderMap(photos) {
-        // Initialize Leaflet map with smooth panning
-        this.map = L.map('map', {
-            panAnimation: true,
-            easeLinearity: 0.25
+        // Initialize MapLibre map
+        this.map = new maplibregl.Map({
+            container: 'map',
+            style: MAP_STYLE,
+            center: [-98.5795, 39.8283],
+            zoom: 4
         });
-
-        // Add OpenStreetMap tiles
-        L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            maxZoom: 19,
-            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-        }).addTo(this.map);
 
         // Handle empty trip
         if (photos.length === 0) {
-            this.map.setView([39.8, -98.6], 4); // Center of USA
+            this.map.jumpTo({ center: [-98.6, 39.8], zoom: 4 }); // Center of USA
             const emptyMsg = document.getElementById('emptyMessage');
             if (emptyMsg) {
                 emptyMsg.style.display = 'block';
