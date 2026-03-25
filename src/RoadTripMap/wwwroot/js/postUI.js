@@ -332,13 +332,13 @@ const PostUI = {
                     ${escapedCaption ? `<div class="photo-popup-caption">${escapedCaption}</div>` : ''}
                     <div class="photo-popup-date">${date}</div>
                 </div>
-                <button class="photo-popup-delete" data-photo-id="${photo.id}">✕</button>
             </div>`;
 
             const popup = new maplibregl.Popup({
                 offset: 25,
                 closeButton: false,
-                maxWidth: 'none'
+                maxWidth: 'none',
+                className: 'photo-map-popup'
             }).setHTML(popupHtml);
 
             popup.on('open', () => {
@@ -408,10 +408,10 @@ const PostUI = {
             });
         };
 
-        if (this.photoMap.loaded()) {
+        if (this.photoMap.isStyleLoaded()) {
             addRoute();
         } else {
-            this.photoMap.on('load', addRoute);
+            this.photoMap.once('idle', addRoute);
         }
 
         const btn = document.getElementById('routeToggle');

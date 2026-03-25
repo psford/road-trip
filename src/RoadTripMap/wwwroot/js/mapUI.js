@@ -80,7 +80,8 @@ const MapUI = {
             const popup = new maplibregl.Popup({
                 offset: 25,
                 closeButton: false,
-                maxWidth: 'none'
+                maxWidth: 'none',
+                className: 'photo-map-popup'
             }).setHTML(this.createPopupHtml(photo));
 
             popup.on('open', () => {
@@ -214,10 +215,10 @@ const MapUI = {
             });
         };
 
-        if (this.map.loaded()) {
+        if (this.map.isStyleLoaded()) {
             addRoute();
         } else {
-            this.map.on('load', addRoute);
+            this.map.once('idle', addRoute);
         }
 
         const routeToggleBtn = document.getElementById('routeToggle');
