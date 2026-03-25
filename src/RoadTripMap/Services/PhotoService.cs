@@ -19,15 +19,22 @@ public class PhotoService : IPhotoService
         var containerClient = _blobServiceClient.GetBlobContainerClient(ContainerName);
         await containerClient.CreateIfNotExistsAsync(Azure.Storage.Blobs.Models.PublicAccessType.None);
 
-        // Decode the image from stream
+        // Read EXIF orientation before decoding
+        imageStream.Position = 0;
+        using var codec = SKCodec.Create(imageStream);
+        if (codec == null)
+            throw new InvalidOperationException("Failed to decode image");
+
+        var orientation = codec.EncodedOrigin;
+
         imageStream.Position = 0;
         using var bitmap = SKBitmap.Decode(imageStream);
 
         if (bitmap == null)
             throw new InvalidOperationException("Failed to decode image");
 
-        // Apply EXIF rotation if needed
-        var rotated = ApplyExifRotation(bitmap);
+        // Apply EXIF rotation so stored images are always upright
+        var rotated = ApplyExifRotation(bitmap, orientation);
 
         // Upload original tier: strip EXIF by re-encoding at original dimensions with max quality (no resize)
         var blobPath = await UploadPhotoTierAsync(containerClient, rotated, tripId, photoId, "original", maxWidth: null, 100);
@@ -68,16 +75,48 @@ public class PhotoService : IPhotoService
         }
     }
 
-    private SKBitmap ApplyExifRotation(SKBitmap bitmap)
+    private SKBitmap ApplyExifRotation(SKBitmap bitmap, SKEncodedOrigin orientation)
     {
-        // SKCodec.EncodedOrigin indicates EXIF rotation in the image metadata.
-        // When we re-encode to JPEG, EXIF is stripped, so we must apply the rotation
-        // to the bitmap data before encoding. For now, re-encode with quality 100 on original
-        // which preserves image quality while removing EXIF. Portrait orientation photos
-        // are corrected by the browser's automatic EXIF handling on display, but we should
-        // ideally store them in canonical (upright) form for consistency.
-        // TODO: Implement actual rotation transformation if EXIF orientation is detected
-        return bitmap;
+        if (orientation == SKEncodedOrigin.Default || orientation == SKEncodedOrigin.TopLeft)
+            return bitmap;
+
+        SKBitmap rotated;
+        switch (orientation)
+        {
+            case SKEncodedOrigin.RightTop: // 90° CW (most common for portrait photos)
+                rotated = new SKBitmap(bitmap.Height, bitmap.Width);
+                using (var canvas = new SKCanvas(rotated))
+                {
+                    canvas.Translate(rotated.Width, 0);
+                    canvas.RotateDegrees(90);
+                    canvas.DrawBitmap(bitmap, 0, 0);
+                }
+                return rotated;
+
+            case SKEncodedOrigin.BottomRight: // 180°
+                rotated = new SKBitmap(bitmap.Width, bitmap.Height);
+                using (var canvas = new SKCanvas(rotated))
+                {
+                    canvas.Translate(rotated.Width, rotated.Height);
+                    canvas.RotateDegrees(180);
+                    canvas.DrawBitmap(bitmap, 0, 0);
+                }
+                return rotated;
+
+            case SKEncodedOrigin.LeftBottom: // 270° CW (90° CCW)
+                rotated = new SKBitmap(bitmap.Height, bitmap.Width);
+                using (var canvas = new SKCanvas(rotated))
+                {
+                    canvas.Translate(0, rotated.Height);
+                    canvas.RotateDegrees(270);
+                    canvas.DrawBitmap(bitmap, 0, 0);
+                }
+                return rotated;
+
+            default:
+                // Other orientations (mirrored) are rare — return as-is
+                return bitmap;
+        }
     }
 
     private async Task<string> UploadPhotoTierAsync(BlobContainerClient containerClient, SKBitmap bitmap, int tripId, int photoId, string tier, int? maxWidth, int quality)
