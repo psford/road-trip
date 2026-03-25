@@ -78,25 +78,25 @@ const MapUI = {
         // Build markerLookup and create markers for each photo
         this.markerLookup = new Map();
         photos.forEach(photo => {
-            const marker = L.marker([photo.lat, photo.lng]);
-            marker.bindPopup(this.createPopupHtml(photo), {
-                autoPan: true,
-                autoPanPaddingTopLeft: L.point(10, headerHeight + 20),
-                autoPanPaddingBottomRight: L.point(10, 20),
-                autoPanAnimation: true
-            });
-            marker.addTo(this.map);
-            this.markers.push(marker);
+            const popup = new maplibregl.Popup({
+                offset: 25,
+                closeButton: false,
+                maxWidth: 'none'
+            }).setHTML(this.createPopupHtml(photo));
 
-            // Build markerLookup for carousel-to-map sync
-            this.markerLookup.set(photo.id, marker);
-
-            // Add popupopen handler for map-to-carousel sync
-            marker.on('popupopen', () => {
+            popup.on('open', () => {
                 if (this.carousel) {
                     this.carousel.selectPhoto(photo.id);
                 }
             });
+
+            const marker = new maplibregl.Marker()
+                .setLngLat([photo.lng, photo.lat])
+                .setPopup(popup)
+                .addTo(this.map);
+
+            this.markers.push(marker);
+            this.markerLookup.set(photo.id, marker);
         });
 
         // Initialize carousel BEFORE single-photo early return
@@ -139,7 +139,7 @@ const MapUI = {
         const escapedCaption = this.escapeHtml(photo.caption);
         const saveBtn = this.createSaveButton(photo);
         return `<div class="photo-popup">
-            <img src="${photo.displayUrl}" class="photo-popup-img" loading="lazy">
+            <img src="${photo.displayUrl}" class="photo-popup-img">
             <div class="photo-popup-info">
                 <div class="photo-popup-place">${escapedPlaceName}</div>
                 ${escapedCaption ? `<div class="photo-popup-caption">${escapedCaption}</div>` : ''}
