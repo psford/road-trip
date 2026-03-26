@@ -409,7 +409,7 @@ app.MapDelete("/api/trips/{secretToken}/photos/{id:int}", async (string secretTo
 });
 
 // GET /api/photos/{tripId}/{photoId}/{size} — Serve Photo
-app.MapGet("/api/photos/{tripId:int}/{photoId:int}/{size}", async (int tripId, int photoId, string size, RoadTripDbContext db, IPhotoService photoService) =>
+app.MapGet("/api/photos/{tripId:int}/{photoId:int}/{size}", async (int tripId, int photoId, string size, RoadTripDbContext db, IPhotoService photoService, HttpContext context) =>
 {
     // Validate size parameter
     var validSizes = new[] { "original", "display", "thumb" };
@@ -424,7 +424,8 @@ app.MapGet("/api/photos/{tripId:int}/{photoId:int}/{size}", async (int tripId, i
     // Get photo stream from blob storage
     var stream = await photoService.GetPhotoAsync(tripId, photoId, size);
 
-    // Return as JPEG image
+    // Photos are immutable — cache aggressively (1 year)
+    context.Response.Headers.CacheControl = "public, max-age=31536000, immutable";
     return Results.File(stream, "image/jpeg");
 });
 
