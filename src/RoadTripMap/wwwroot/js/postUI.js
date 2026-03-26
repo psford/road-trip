@@ -107,16 +107,19 @@ const PostUI = {
         const files = Array.from(fileList);
         this.showToast(`Processing ${files.length} photos...`, 'info');
 
-        // Extract metadata for all files
+        // Extract metadata for all files (sequential to avoid iOS file handle issues)
         const withMetadata = [];
         for (const file of files) {
             try {
+                console.log(`[BulkUpload] Processing ${file.name} (${file.size} bytes, type: ${file.type})`);
                 const metadata = await PostService.extractPhotoMetadata(file);
+                console.log(`[BulkUpload] ${file.name}: gps=${metadata.gps ? 'yes' : 'no'}, place=${metadata.placeName}`);
                 withMetadata.push({ file, metadata });
             } catch (err) {
-                console.warn('Failed to extract metadata from', file.name, err);
+                console.warn(`[BulkUpload] Failed to extract metadata from ${file.name}:`, err);
             }
         }
+        console.log(`[BulkUpload] Triage: ${withMetadata.filter(f => f.metadata.gps).length} GPS, ${withMetadata.filter(f => !f.metadata.gps).length} no-GPS`);
 
         // Triage: split into GPS-tagged and untagged
         const gpsFiles = withMetadata.filter(f => f.metadata.gps);
