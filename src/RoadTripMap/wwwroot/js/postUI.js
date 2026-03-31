@@ -20,6 +20,7 @@ const PostUI = {
     currentLng: null,
     carousel: null,
     markerLookup: new Map(),
+    _refreshTimer: null,
 
     init(secretToken) {
         this.secretToken = secretToken;
@@ -328,8 +329,9 @@ const PostUI = {
         }
     },
 
-    async refreshPhotoList() {
-        await this.loadPhotoList();
+    refreshPhotoList() {
+        clearTimeout(this._refreshTimer);
+        this._refreshTimer = setTimeout(() => this.loadPhotoList(), 500);
     },
 
     async loadPhotoList() {
