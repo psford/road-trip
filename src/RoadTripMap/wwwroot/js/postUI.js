@@ -86,18 +86,8 @@ const PostUI = {
 
         const overlay = document.createElement('div');
         overlay.className = 'homescreen-modal-overlay';
-        overlay.innerHTML = `
-            <div class="homescreen-modal">
-                <h2>Save to Home Screen</h2>
-                <p>This page works better on mobile if you save it to your Home Screen. You'll get quick access without remembering the URL.</p>
-                <ol class="homescreen-steps">
-                    <li>Tap the <strong>Share</strong> button <span class="share-icon">&#xFEFF;<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg></span> at the bottom of your screen</li>
-                    <li>Scroll down and tap <strong>Add to Home Screen</strong></li>
-                    <li>Tap <strong>Add</strong></li>
-                </ol>
-                <button class="button button-primary homescreen-dismiss">Got it</button>
-            </div>
-        `;
+        overlay.innerHTML = this._homeScreenModalHTML(true);
+
 
         overlay.querySelector('.homescreen-dismiss').addEventListener('click', () => {
             localStorage.setItem('roadtripmap_homescreen_dismissed', 'true');
@@ -114,20 +104,53 @@ const PostUI = {
         document.body.appendChild(overlay);
     },
 
+    _homeScreenModalHTML(showIntro) {
+        const intro = showIntro
+            ? '<p>This page works better on mobile if you save it to your Home Screen. You\'ll get quick access without remembering the URL.</p>'
+            : '';
+        const btnText = showIntro ? 'Got it' : 'Close';
+        return `
+            <div class="homescreen-modal">
+                <h2>Save to Home Screen</h2>
+                ${intro}
+                <div class="homescreen-diagram">
+                    <div class="homescreen-step">
+                        <div class="homescreen-step-icon">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2.5"/><circle cx="12" cy="12" r="2.5"/><circle cx="19" cy="12" r="2.5"/></svg>
+                        </div>
+                        <div class="homescreen-step-label">Tap <strong>&#x22EF;</strong></div>
+                    </div>
+                    <div class="homescreen-step-arrow">&#x203A;</div>
+                    <div class="homescreen-step">
+                        <div class="homescreen-step-icon">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="4" y="8" width="16" height="14" rx="2"/><polyline points="15 4 12 1 9 4"/><line x1="12" y1="1" x2="12" y2="14"/></svg>
+                        </div>
+                        <div class="homescreen-step-label">Tap <strong>Share</strong></div>
+                    </div>
+                    <div class="homescreen-step-arrow">&#x203A;</div>
+                    <div class="homescreen-step">
+                        <div class="homescreen-step-icon">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="7 10 12 15 17 10"/></svg>
+                        </div>
+                        <div class="homescreen-step-label">Tap <strong>More</strong></div>
+                    </div>
+                    <div class="homescreen-step-arrow">&#x203A;</div>
+                    <div class="homescreen-step">
+                        <div class="homescreen-step-icon">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="3"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+                        </div>
+                        <div class="homescreen-step-label"><strong>Add to Home Screen</strong></div>
+                    </div>
+                </div>
+                <button class="button button-primary homescreen-dismiss">${btnText}</button>
+            </div>
+        `;
+    },
+
     showHomeScreenInstructions() {
         const overlay = document.createElement('div');
         overlay.className = 'homescreen-modal-overlay';
-        overlay.innerHTML = `
-            <div class="homescreen-modal">
-                <h2>Save to Home Screen</h2>
-                <ol class="homescreen-steps">
-                    <li>Tap the <strong>Share</strong> button <span class="share-icon">&#xFEFF;<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg></span> at the bottom of your screen</li>
-                    <li>Scroll down and tap <strong>Add to Home Screen</strong></li>
-                    <li>Tap <strong>Add</strong></li>
-                </ol>
-                <button class="button button-primary homescreen-dismiss">Close</button>
-            </div>
-        `;
+        overlay.innerHTML = this._homeScreenModalHTML(false);
 
         overlay.querySelector('.homescreen-dismiss').addEventListener('click', () => overlay.remove());
         overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
