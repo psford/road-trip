@@ -11,6 +11,9 @@ Server-side check after upload: if a new photo's GPS is a large deviation from t
 ### Desktop carousel scroll
 Carousel thumbnail strip doesn't scroll on desktop (no touch/swipe). Add horizontal scroll buttons or mouse wheel support.
 
+### Local test environment
+Localhost currently points at the StockAnalyzer database, not a road-trip DB. Need a reliable local dev environment that mirrors prod. Options to evaluate: local SQL with road-trip schema + Azurite for blob storage, Docker Compose with full stack, or a dedicated Azure dev environment. Goal: stop testing in production.
+
 ## Medium Priority
 
 ### Android PWA install prompt
