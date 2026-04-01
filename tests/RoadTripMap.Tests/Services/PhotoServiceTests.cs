@@ -189,7 +189,7 @@ public class PhotoServiceTests
 
         // Act & Assert
         await Assert.ThrowsAsync<ArgumentException>(
-            () => service.GetPhotoAsync(1, 1, "invalid-size"));
+            () => service.GetPhotoAsync("1/1.jpg", "invalid-size"));
     }
 
     [Fact]
@@ -205,7 +205,7 @@ public class PhotoServiceTests
         // (actual method will throw when trying to fetch, but that's OK for validation)
         foreach (var size in validSizes)
         {
-            var ex = await Record.ExceptionAsync(() => service.GetPhotoAsync(1, 1, size));
+            var ex = await Record.ExceptionAsync(() => service.GetPhotoAsync("1/1.jpg", size));
             // Should throw something, but NOT ArgumentException for the size
             if (ex is ArgumentException argEx)
             {
