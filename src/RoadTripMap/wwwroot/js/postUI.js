@@ -49,9 +49,89 @@ const PostUI = {
             this.onPostConfirm();
         });
 
+        // Save trip to localStorage for My Trips
+        TripStorage.saveFromPostPage(this.secretToken);
+
+        // Show home screen prompt for iOS Safari (first visit only)
+        this.maybeShowHomeScreenPrompt();
+
+        // Show persistent home screen link for iOS Safari
+        if (this.isIOSSafari()) {
+            const link = document.getElementById('homescreenLink');
+            if (link) {
+                link.style.display = '';
+                document.getElementById('homescreenLinkBtn').addEventListener('click', (e) => {
+                    e.preventDefault();
+                    this.showHomeScreenInstructions();
+                });
+            }
+        }
+
         // Load trip info and existing photos
         this.loadTripInfo();
         this.loadPhotoList();
+    },
+
+    isIOSSafari() {
+        const ua = navigator.userAgent;
+        const isIOS = /iPhone|iPad|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+        const isSafari = /Safari/.test(ua) && !/CriOS|FxiOS|OPiOS|EdgiOS/.test(ua);
+        const isStandalone = window.navigator.standalone === true;
+        return isIOS && isSafari && !isStandalone;
+    },
+
+    maybeShowHomeScreenPrompt() {
+        if (!this.isIOSSafari()) return;
+        if (localStorage.getItem('roadtripmap_homescreen_dismissed')) return;
+
+        const overlay = document.createElement('div');
+        overlay.className = 'homescreen-modal-overlay';
+        overlay.innerHTML = `
+            <div class="homescreen-modal">
+                <h2>Save to Home Screen</h2>
+                <p>This page works better on mobile if you save it to your Home Screen. You'll get quick access without remembering the URL.</p>
+                <ol class="homescreen-steps">
+                    <li>Tap the <strong>Share</strong> button <span class="share-icon">&#xFEFF;<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg></span> at the bottom of your screen</li>
+                    <li>Scroll down and tap <strong>Add to Home Screen</strong></li>
+                    <li>Tap <strong>Add</strong></li>
+                </ol>
+                <button class="button button-primary homescreen-dismiss">Got it</button>
+            </div>
+        `;
+
+        overlay.querySelector('.homescreen-dismiss').addEventListener('click', () => {
+            localStorage.setItem('roadtripmap_homescreen_dismissed', 'true');
+            overlay.remove();
+        });
+
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay) {
+                localStorage.setItem('roadtripmap_homescreen_dismissed', 'true');
+                overlay.remove();
+            }
+        });
+
+        document.body.appendChild(overlay);
+    },
+
+    showHomeScreenInstructions() {
+        const overlay = document.createElement('div');
+        overlay.className = 'homescreen-modal-overlay';
+        overlay.innerHTML = `
+            <div class="homescreen-modal">
+                <h2>Save to Home Screen</h2>
+                <ol class="homescreen-steps">
+                    <li>Tap the <strong>Share</strong> button <span class="share-icon">&#xFEFF;<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg></span> at the bottom of your screen</li>
+                    <li>Scroll down and tap <strong>Add to Home Screen</strong></li>
+                    <li>Tap <strong>Add</strong></li>
+                </ol>
+                <button class="button button-primary homescreen-dismiss">Close</button>
+            </div>
+        `;
+
+        overlay.querySelector('.homescreen-dismiss').addEventListener('click', () => overlay.remove());
+        overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+        document.body.appendChild(overlay);
     },
 
     async loadTripInfo() {

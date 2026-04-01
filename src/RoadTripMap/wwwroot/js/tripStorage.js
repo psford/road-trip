@@ -56,10 +56,7 @@ const TripStorage = {
 
         try {
             const trip = await API.getTripInfoBySecret(secretToken);
-            // We need the view URL — get it from the trip info
-            // The API doesn't return viewUrl from the secret endpoint,
-            // so we store what we have and update later if needed
-            this.saveTrip(trip.name, postUrl, '');
+            this.saveTrip(trip.name, postUrl, trip.viewUrl || '');
         } catch {
             // Can't fetch trip info — don't save
         }

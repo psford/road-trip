@@ -15,6 +15,11 @@
             <a href="/create" class="button-hero">Create a Trip</a>
         </div>
 
+        <div id="myTripsSection" class="my-trips-section" style="display:none;">
+            <h2>My Trips</h2>
+            <div id="myTripsList" class="my-trips-list"></div>
+        </div>
+
         <div class="card">
             <h2>How It Works</h2>
             <ul class="steps">
@@ -25,6 +30,24 @@
             </ul>
         </div>
     </div>
+
+    <script src="/js/tripStorage.js"></script>
+    <script>
+        const trips = TripStorage.getTrips();
+        if (trips.length > 0) {
+            const section = document.getElementById('myTripsSection');
+            const list = document.getElementById('myTripsList');
+            section.style.display = '';
+
+            trips.forEach(trip => {
+                const card = document.createElement('a');
+                card.href = trip.postUrl;
+                card.className = 'my-trip-card';
+                card.innerHTML = `<span class="my-trip-name">${trip.name}</span><span class="my-trip-arrow">&#8250;</span>`;
+                list.appendChild(card);
+            });
+        }
+    </script>
 
     <footer class="site-footer">
         <p>&copy; 2026 Patrick Ford &middot; <a href="https://github.com/psford">GitHub</a> &middot; <a href="mailto:patrick@psford.com">Contact</a></p>

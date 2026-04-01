@@ -294,42 +294,119 @@ textarea {
 }
 
 /* My Trips (Homepage) */
-.my-trip-item {
+.my-trips-section {
+  margin-bottom: var(--space-lg);
+}
+
+.my-trips-section h2 {
+  margin-bottom: var(--space-sm);
+}
+
+.my-trips-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.my-trip-card {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--space-sm);
-  padding: var(--space-sm) 0;
-  border-bottom: 1px solid var(--color-border);
+  padding: var(--space-sm) var(--space-md);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  text-decoration: none;
+  color: var(--color-text);
+  box-shadow: var(--shadow);
+  transition: border-color 0.15s;
 }
 
-.my-trip-item:last-child {
-  border-bottom: none;
-  padding-bottom: 0;
-}
-
-.my-trip-item:first-child {
-  padding-top: 0;
+.my-trip-card:hover {
+  border-color: var(--color-primary);
 }
 
 .my-trip-name {
   font-weight: 600;
-  color: var(--color-text);
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.my-trip-links {
-  display: flex;
-  gap: var(--space-xs);
+.my-trip-arrow {
+  font-size: 1.2rem;
+  color: var(--color-text-light);
   flex-shrink: 0;
 }
 
-.my-trip-link {
-  padding: var(--space-xs) var(--space-sm);
-  font-size: 0.8rem;
+/* Home Screen Modal */
+.homescreen-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+  padding: var(--space-md);
+}
+
+.homescreen-modal {
+  background: var(--color-surface);
+  border-radius: var(--radius);
+  padding: var(--space-lg);
+  max-width: 360px;
+  width: 100%;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+}
+
+.homescreen-modal h2 {
+  margin-bottom: var(--space-sm);
+  font-size: 1.2rem;
+}
+
+.homescreen-modal p {
+  margin-bottom: var(--space-md);
+  color: var(--color-text-light);
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+.homescreen-steps {
+  margin: 0 0 var(--space-lg) var(--space-md);
+  padding: 0;
+}
+
+.homescreen-steps li {
+  margin-bottom: var(--space-sm);
+  line-height: 1.5;
+}
+
+.homescreen-steps .share-icon {
+  display: inline-flex;
+  vertical-align: middle;
+  color: var(--color-primary);
+}
+
+.homescreen-dismiss {
+  width: 100%;
+}
+
+/* Persistent Home Screen Link */
+.homescreen-link {
+  text-align: center;
+  padding: var(--space-sm) 0;
+}
+
+.homescreen-link a {
+  color: var(--color-text-light);
+  font-size: 0.9rem;
+  text-decoration: underline;
+}
+
+.homescreen-link a:hover {
+  color: var(--color-primary);
 }
 
 /* Hero Section (Homepage) */
