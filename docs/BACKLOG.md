@@ -14,6 +14,9 @@ Carousel thumbnail strip doesn't scroll on desktop (no touch/swipe). Add horizon
 ### Local test environment
 Localhost currently points at the StockAnalyzer database, not a road-trip DB. Need a reliable local dev environment that mirrors prod. Options to evaluate: local SQL with road-trip schema + Azurite for blob storage, Docker Compose with full stack, or a dedicated Azure dev environment. Goal: stop testing in production.
 
+### Whimsical route lines
+Replace straight lines between photos with curved/weaving dotted lines. Look into Bezier curve interpolation or spline algorithms to give routes a hand-drawn, playful feel instead of rigid point-to-point segments.
+
 ## Medium Priority
 
 ### Android PWA install prompt
