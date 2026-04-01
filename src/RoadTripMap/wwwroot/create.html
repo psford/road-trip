@@ -49,6 +49,7 @@
     </div>
 
     <script src="/js/api.js"></script>
+    <script src="/js/tripStorage.js"></script>
     <script>
         document.getElementById('createTripForm').addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -70,6 +71,9 @@
                 btn.textContent = 'Creating...';
 
                 const result = await API.createTrip(name, description || null);
+
+                // Save trip to localStorage for My Trips
+                TripStorage.saveTrip(name, result.postUrl, result.viewUrl || '');
 
                 // Redirect straight to the post page
                 window.location.href = result.postUrl;
