@@ -399,7 +399,7 @@ app.MapDelete("/api/trips/{secretToken}/photos/{id:int}", async (string secretTo
         return Results.NotFound(new { error = "Photo not found" });
 
     // Delete from blob storage
-    await photoService.DeletePhotoAsync(trip.Id, photo.Id, photo.BlobPath);
+    await photoService.DeletePhotoAsync(photo.BlobPath);
 
     // Delete from database
     db.Photos.Remove(photo);
@@ -421,8 +421,8 @@ app.MapGet("/api/photos/{tripId:int}/{photoId:int}/{size}", async (int tripId, i
     if (photo == null)
         return Results.NotFound(new { error = "Photo not found" });
 
-    // Get photo stream from blob storage
-    var stream = await photoService.GetPhotoAsync(tripId, photoId, size);
+    // Get photo stream from blob storage using stored path
+    var stream = await photoService.GetPhotoAsync(photo.BlobPath, size);
 
     // Photos are immutable — cache aggressively (1 year)
     context.Response.Headers.CacheControl = "public, max-age=31536000, immutable";

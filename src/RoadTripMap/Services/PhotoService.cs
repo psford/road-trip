@@ -46,7 +46,7 @@ public class PhotoService : IPhotoService
         return new PhotoUploadResult(blobPath);
     }
 
-    public async Task<Stream> GetPhotoAsync(int tripId, int photoId, string size)
+    public async Task<Stream> GetPhotoAsync(string blobPath, string size)
     {
         var validSizes = new[] { "original", "display", "thumb" };
         if (!validSizes.Contains(size))
@@ -54,22 +54,23 @@ public class PhotoService : IPhotoService
 
         var containerClient = _blobServiceClient.GetBlobContainerClient(ContainerName);
         var suffix = size == "original" ? "" : $"_{size}";
-        var blobPath = $"{tripId}/{photoId}{suffix}.jpg";
-        var blobClient = containerClient.GetBlobClient(blobPath);
+        // blobPath is "{tripId}/{photoId}.jpg" — insert size suffix before extension
+        var sizedPath = blobPath.Replace(".jpg", $"{suffix}.jpg");
+        var blobClient = containerClient.GetBlobClient(sizedPath);
 
         var download = await blobClient.DownloadAsync();
         return download.Value.Content;
     }
 
-    public async Task DeletePhotoAsync(int tripId, int photoId, string blobPath)
+    public async Task DeletePhotoAsync(string blobPath)
     {
         var containerClient = _blobServiceClient.GetBlobContainerClient(ContainerName);
 
-        // Delete all three tiers
+        // Delete all three tiers based on stored blobPath
         var suffixes = new[] { "", "_display", "_thumb" };
         foreach (var suffix in suffixes)
         {
-            var path = $"{tripId}/{photoId}{suffix}.jpg";
+            var path = blobPath.Replace(".jpg", $"{suffix}.jpg");
             var blobClient = containerClient.GetBlobClient(path);
             await blobClient.DeleteIfExistsAsync();
         }
