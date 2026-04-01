@@ -1035,8 +1035,18 @@ body.map-page .maplibregl-ctrl-top-left {
   scrollbar-width: none;
 }
 
-.carousel-strip::-webkit-scrollbar {
-  display: none;
+.carousel-strip {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border) transparent;
+}
+
+@media (pointer: coarse) {
+  .carousel-strip {
+    scrollbar-width: none;
+  }
+  .carousel-strip::-webkit-scrollbar {
+    display: none;
+  }
 }
 
 .carousel-item {
