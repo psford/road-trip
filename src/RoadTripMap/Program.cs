@@ -408,6 +408,48 @@ app.MapDelete("/api/trips/{secretToken}/photos/{id:int}", async (string secretTo
     return Results.NoContent();
 });
 
+// PATCH /api/trips/{secretToken}/photos/{id}/location — Update photo location
+app.MapPatch("/api/trips/{secretToken}/photos/{id:int}/location", async (string secretToken, int id, UpdateLocationRequest request, RoadTripDbContext db, IAuthStrategy authStrategy, IGeocodingService geocodingService, HttpContext context) =>
+{
+    var trip = await db.Trips.FirstOrDefaultAsync(t => t.SecretToken == secretToken);
+    if (trip == null)
+        return Results.NotFound(new { error = "Trip not found" });
+
+    var authResult = await authStrategy.ValidatePostAccess(context, trip);
+    if (!authResult.IsAuthorized)
+        return Results.Unauthorized();
+
+    if (request.Lat < -90 || request.Lat > 90)
+        return Results.BadRequest(new { error = "Invalid coordinates: latitude must be between -90 and 90" });
+    if (request.Lng < -180 || request.Lng > 180)
+        return Results.BadRequest(new { error = "Invalid coordinates: longitude must be between -180 and 180" });
+
+    var photo = await db.Photos.FirstOrDefaultAsync(p => p.Id == id && p.TripId == trip.Id);
+    if (photo == null)
+        return Results.NotFound(new { error = "Photo not found" });
+
+    photo.Latitude = request.Lat;
+    photo.Longitude = request.Lng;
+
+    var placeName = await geocodingService.ReverseGeocodeAsync(request.Lat, request.Lng);
+    photo.PlaceName = placeName ?? "Unknown location";
+
+    await db.SaveChangesAsync();
+
+    return Results.Ok(new PhotoResponse
+    {
+        Id = photo.Id,
+        ThumbnailUrl = $"/api/photos/{trip.Id}/{photo.Id}/thumb",
+        DisplayUrl = $"/api/photos/{trip.Id}/{photo.Id}/display",
+        OriginalUrl = $"/api/photos/{trip.Id}/{photo.Id}/original",
+        Lat = photo.Latitude,
+        Lng = photo.Longitude,
+        PlaceName = photo.PlaceName ?? "",
+        Caption = photo.Caption,
+        TakenAt = photo.TakenAt
+    });
+});
+
 // GET /api/photos/{tripId}/{photoId}/{size} — Serve Photo
 app.MapGet("/api/photos/{tripId:int}/{photoId:int}/{size}", async (int tripId, int photoId, string size, RoadTripDbContext db, IPhotoService photoService, HttpContext context) =>
 {

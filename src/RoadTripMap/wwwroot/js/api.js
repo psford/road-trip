@@ -80,6 +80,27 @@ const API = {
     },
 
     /**
+     * Update photo location
+     * @param {string} secretToken - Trip secret token
+     * @param {number} photoId - Photo ID
+     * @param {number} lat - New latitude
+     * @param {number} lng - New longitude
+     * @returns {Promise<PhotoResponse>}
+     */
+    async updatePhotoLocation(secretToken, photoId, lat, lng) {
+        const response = await fetch(`${this.baseUrl}/trips/${secretToken}/photos/${photoId}/location`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ lat, lng })
+        });
+        if (!response.ok) {
+            const err = await response.json();
+            throw new Error(err.error || 'Failed to update location');
+        }
+        return response.json();
+    },
+
+    /**
      * List all photos for a trip (authenticated, for post page)
      * @param {string} secretToken - Trip secret token
      * @returns {Promise<PhotoResponse[]>}

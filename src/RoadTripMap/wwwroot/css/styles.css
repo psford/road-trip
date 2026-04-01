@@ -417,6 +417,40 @@ textarea {
   margin-top: 0.75rem;
 }
 
+/* Edit Location Modal */
+.edit-location-modal {
+  background: var(--color-surface);
+  border-radius: var(--radius);
+  padding: var(--space-lg);
+  max-width: 500px;
+  width: 100%;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+}
+
+.edit-location-modal h2 {
+  margin-bottom: var(--space-xs);
+  font-size: 1.2rem;
+}
+
+.edit-location-modal p {
+  color: var(--color-text-light);
+  font-size: 0.9rem;
+  margin-bottom: var(--space-sm);
+}
+
+.edit-location-map {
+  width: 100%;
+  height: 300px;
+  border-radius: var(--radius);
+  margin-bottom: var(--space-md);
+}
+
+.edit-location-actions {
+  display: flex;
+  gap: var(--space-sm);
+  justify-content: flex-end;
+}
+
 .homescreen-dismiss {
   width: 100%;
 }
@@ -1159,6 +1193,23 @@ body.map-page .maplibregl-ctrl-top-left {
   position: absolute;
   top: var(--space-md);
   right: var(--space-md);
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.fullscreen-actions {
+  position: absolute;
+  top: var(--space-md);
+  right: var(--space-md);
+  display: flex;
+  gap: var(--space-xs);
+}
+
+.fullscreen-action-btn {
   width: 40px;
   height: 40px;
   padding: 0;
