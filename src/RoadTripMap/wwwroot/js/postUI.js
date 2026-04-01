@@ -351,8 +351,12 @@ const PostUI = {
             photoList.classList.remove('empty');
             photoMapSection.classList.add('visible');
 
-            // Render photo map
-            this.renderPhotoMap(photos);
+            // Render photo map (graceful degradation if WebGL unavailable)
+            try {
+                this.renderPhotoMap(photos);
+            } catch (mapErr) {
+                console.warn('Map render failed:', mapErr.message);
+            }
 
             // Initialize or update the carousel
             const container = document.getElementById('photoCarousel');
