@@ -467,6 +467,7 @@ const PostUI = {
             this.carousel = PhotoCarousel.init(container, photos, {
                 canDelete: true,
                 onDelete: (photo) => this.onDeleteFromCarousel(photo),
+                onEditLocation: (photo) => this.onEditLocation(photo),
                 onSelect: (photo) => this.onCarouselSelect(photo)
             });
         } catch (err) {
@@ -658,6 +659,98 @@ const PostUI = {
         } catch (err) {
             this.showToast('Failed to delete photo', 'error');
         }
+    },
+
+    onEditLocation(photo) {
+        // Create modal overlay with pin-drop map
+        const overlay = document.createElement('div');
+        overlay.className = 'homescreen-modal-overlay';
+        overlay.innerHTML = `
+            <div class="edit-location-modal">
+                <h2>Edit Location</h2>
+                <p id="editLocationPlace">${photo.placeName || 'Unknown location'}</p>
+                <div id="editLocationMap" class="edit-location-map"></div>
+                <div class="edit-location-actions">
+                    <button class="button button-secondary" id="editLocationCancel">Cancel</button>
+                    <button class="button button-primary" id="editLocationSave" disabled>Save Location</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(overlay);
+
+        // Initialize map centered on photo's current location
+        const center = (photo.lat && photo.lng) ? [photo.lng, photo.lat] : [-98.5795, 39.8283];
+        const zoom = (photo.lat && photo.lng) ? 12 : 4;
+
+        const map = new maplibregl.Map({
+            container: 'editLocationMap',
+            style: MAP_STYLE,
+            center: center,
+            zoom: zoom
+        });
+
+        let marker = null;
+        let newLat = null;
+        let newLng = null;
+        const saveBtn = document.getElementById('editLocationSave');
+        const placeEl = document.getElementById('editLocationPlace');
+
+        // Show existing location marker
+        if (photo.lat && photo.lng) {
+            marker = new maplibregl.Marker().setLngLat([photo.lng, photo.lat]).addTo(map);
+        }
+
+        // Handle map clicks
+        map.on('click', async (e) => {
+            const { lng, lat } = e.lngLat;
+            newLat = lat;
+            newLng = lng;
+
+            if (marker) marker.remove();
+            marker = new maplibregl.Marker().setLngLat([lng, lat]).addTo(map);
+            saveBtn.disabled = false;
+
+            try {
+                const result = await API.geocode(lat, lng);
+                placeEl.textContent = result.placeName || 'Location set';
+            } catch {
+                placeEl.textContent = 'Location set';
+            }
+        });
+
+        // Cancel
+        document.getElementById('editLocationCancel').addEventListener('click', () => {
+            map.remove();
+            overlay.remove();
+        });
+
+        // Save
+        saveBtn.addEventListener('click', async () => {
+            saveBtn.disabled = true;
+            saveBtn.textContent = 'Saving...';
+            try {
+                await API.updatePhotoLocation(this.secretToken, photo.id, newLat, newLng);
+                this.showToast('Location updated', 'success');
+                map.remove();
+                overlay.remove();
+                this.refreshPhotoList();
+            } catch (err) {
+                this.showToast('Failed to update location', 'error');
+                saveBtn.disabled = false;
+                saveBtn.textContent = 'Save Location';
+            }
+        });
+
+        // Close on backdrop click
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay) {
+                map.remove();
+                overlay.remove();
+            }
+        });
+
+        // Resize map after modal is visible
+        setTimeout(() => map.resize(), 100);
     },
 
     hidePhotoMap() {

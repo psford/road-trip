@@ -73,14 +73,16 @@ const PhotoCarousel = {
         const actions = document.createElement('div');
         actions.className = 'carousel-item-actions';
 
-        // Save button
-        const saveBtn = this.createSaveButton(photo);
-        actions.appendChild(saveBtn);
-
-        // Delete button (only if config allows)
         if (this.config.canDelete) {
+            // Post page: show edit location + delete (no download)
+            const editLocBtn = this.createEditLocationButton(photo);
+            actions.appendChild(editLocBtn);
             const deleteBtn = this.createDeleteButton(photo);
             actions.appendChild(deleteBtn);
+        } else {
+            // View page: show download only
+            const saveBtn = this.createSaveButton(photo);
+            actions.appendChild(saveBtn);
         }
 
         // Assemble item
@@ -165,6 +167,31 @@ const PhotoCarousel = {
             e.stopPropagation();
             if (this.config.onDelete) {
                 this.config.onDelete(photo);
+            }
+        });
+
+        return btn;
+    },
+
+    /**
+     * Create edit location button
+     * @param {Object} photo - Photo object
+     * @returns {HTMLElement} - Edit location button element
+     */
+    createEditLocationButton(photo) {
+        const btn = document.createElement('button');
+        btn.className = 'carousel-action-btn';
+        btn.type = 'button';
+        btn.setAttribute('aria-label', 'Edit location');
+        btn.title = 'Edit location';
+
+        // Map pin icon SVG
+        btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>';
+
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (this.config.onEditLocation) {
+                this.config.onEditLocation(photo);
             }
         });
 
@@ -267,24 +294,59 @@ const PhotoCarousel = {
         img.src = photo.displayUrl;
         img.alt = photo.placeName || 'Photo';
 
-        // Create save button in top-right
+        // Action buttons container
+        const actions = document.createElement('div');
+        actions.className = 'fullscreen-actions';
+
+        // Save/download button (always shown)
         const saveBtn = document.createElement('button');
-        saveBtn.className = 'fullscreen-save carousel-action-btn';
+        saveBtn.className = 'fullscreen-action-btn carousel-action-btn';
         saveBtn.type = 'button';
         saveBtn.setAttribute('aria-label', 'Save photo');
         saveBtn.title = 'Save or share';
-        // Reuse the same download icon SVG
         saveBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>';
-
-        // Handle save button click
         saveBtn.addEventListener('click', (e) => {
             e.stopPropagation();
             PhotoCarousel.handleSave(photo);
         });
+        actions.appendChild(saveBtn);
+
+        // Edit location + delete (post page only)
+        if (this.config.canDelete) {
+            const editLocBtn = document.createElement('button');
+            editLocBtn.className = 'fullscreen-action-btn carousel-action-btn';
+            editLocBtn.type = 'button';
+            editLocBtn.setAttribute('aria-label', 'Edit location');
+            editLocBtn.title = 'Edit location';
+            editLocBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>';
+            editLocBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                overlay.remove();
+                if (this.config.onEditLocation) {
+                    this.config.onEditLocation(photo);
+                }
+            });
+            actions.appendChild(editLocBtn);
+
+            const deleteBtn = document.createElement('button');
+            deleteBtn.className = 'fullscreen-action-btn carousel-action-btn';
+            deleteBtn.type = 'button';
+            deleteBtn.setAttribute('aria-label', 'Delete photo');
+            deleteBtn.title = 'Delete';
+            deleteBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>';
+            deleteBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                overlay.remove();
+                if (this.config.onDelete) {
+                    this.config.onDelete(photo);
+                }
+            });
+            actions.appendChild(deleteBtn);
+        }
 
         // Assemble overlay
         overlay.appendChild(img);
-        overlay.appendChild(saveBtn);
+        overlay.appendChild(actions);
 
         // Handle close on background click (not on image or save button)
         const closeOverlay = () => {
