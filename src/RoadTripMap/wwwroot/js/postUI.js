@@ -185,6 +185,11 @@ const PostUI = {
         }
     },
 
+    isFreshCameraCapture(file) {
+        // Camera captures on iOS have lastModified within seconds of now
+        return (Date.now() - file.lastModified) < 30000;
+    },
+
     async onFileSelected(file) {
         try {
             // Extract metadata (EXIF + geocoding)
@@ -197,8 +202,35 @@ const PostUI = {
                 this.currentLat = metadata.gps.latitude;
                 this.currentLng = metadata.gps.longitude;
                 this.showPreview(file, metadata);
+            } else if (this.isFreshCameraCapture(file)) {
+                // Fresh camera capture with no EXIF GPS (iOS strips it)
+                // Use device geolocation as the photo was just taken here
+                try {
+                    const pos = await new Promise((resolve, reject) => {
+                        navigator.geolocation.getCurrentPosition(resolve, reject, {
+                            enableHighAccuracy: true,
+                            timeout: 10000
+                        });
+                    });
+                    metadata.gps = {
+                        latitude: pos.coords.latitude,
+                        longitude: pos.coords.longitude
+                    };
+                    // Geocode the location
+                    try {
+                        const result = await API.geocode(pos.coords.latitude, pos.coords.longitude);
+                        metadata.placeName = result.placeName;
+                    } catch { /* geocode failure is non-fatal */ }
+
+                    this.currentLat = pos.coords.latitude;
+                    this.currentLng = pos.coords.longitude;
+                    this.showPreview(file, metadata);
+                } catch {
+                    // Geolocation denied or failed — fall back to pin-drop
+                    this.showPinDropMap(file, metadata);
+                }
             } else {
-                // No GPS - show pin-drop map for manual location
+                // Library photo with no GPS - show pin-drop map
                 this.showPinDropMap(file, metadata);
             }
         } catch (err) {
