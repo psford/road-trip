@@ -185,6 +185,60 @@ const PostUI = {
         }
     },
 
+    showLocationPrompt(file, metadata) {
+        const overlay = document.createElement('div');
+        overlay.className = 'homescreen-modal-overlay';
+        overlay.innerHTML = `
+            <div class="homescreen-modal">
+                <h2>Add Location</h2>
+                <p>This photo doesn't have location data. Use your current location?</p>
+                <div class="edit-location-actions">
+                    <button class="button button-secondary" id="locationPromptPin">Set on map</button>
+                    <button class="button button-primary" id="locationPromptUse">Use my location</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(overlay);
+
+        document.getElementById('locationPromptUse').addEventListener('click', () => {
+            overlay.remove();
+            navigator.geolocation.getCurrentPosition(
+                async (pos) => {
+                    metadata.gps = {
+                        latitude: pos.coords.latitude,
+                        longitude: pos.coords.longitude
+                    };
+                    try {
+                        const result = await API.geocode(pos.coords.latitude, pos.coords.longitude);
+                        metadata.placeName = result.placeName;
+                    } catch { /* geocode failure is non-fatal */ }
+                    this.currentFile = file;
+                    this.currentMetadata = metadata;
+                    this.currentLat = pos.coords.latitude;
+                    this.currentLng = pos.coords.longitude;
+                    this.showPreview(file, metadata);
+                },
+                () => {
+                    this.showToast('Location access denied — set location on map', 'error');
+                    this.showPinDropMap(file, metadata);
+                },
+                { enableHighAccuracy: true, timeout: 10000 }
+            );
+        });
+
+        document.getElementById('locationPromptPin').addEventListener('click', () => {
+            overlay.remove();
+            this.showPinDropMap(file, metadata);
+        });
+
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay) {
+                overlay.remove();
+                this.showPinDropMap(file, metadata);
+            }
+        });
+    },
+
     isFreshCameraCapture(file) {
         // Camera captures on iOS have lastModified within seconds of now
         return (Date.now() - file.lastModified) < 30000;
@@ -204,31 +258,9 @@ const PostUI = {
                 this.showPreview(file, metadata);
             } else if (this.isFreshCameraCapture(file)) {
                 // Fresh camera capture with no EXIF GPS (iOS strips it)
-                // Use device geolocation as the photo was just taken here
-                try {
-                    const pos = await new Promise((resolve, reject) => {
-                        navigator.geolocation.getCurrentPosition(resolve, reject, {
-                            enableHighAccuracy: true,
-                            timeout: 10000
-                        });
-                    });
-                    metadata.gps = {
-                        latitude: pos.coords.latitude,
-                        longitude: pos.coords.longitude
-                    };
-                    // Geocode the location
-                    try {
-                        const result = await API.geocode(pos.coords.latitude, pos.coords.longitude);
-                        metadata.placeName = result.placeName;
-                    } catch { /* geocode failure is non-fatal */ }
-
-                    this.currentLat = pos.coords.latitude;
-                    this.currentLng = pos.coords.longitude;
-                    this.showPreview(file, metadata);
-                } catch {
-                    // Geolocation denied or failed — fall back to pin-drop
-                    this.showPinDropMap(file, metadata);
-                }
+                // Prompt user to use device location — must be a direct user gesture
+                this.showLocationPrompt(file, metadata);
+                return;
             } else {
                 // Library photo with no GPS - show pin-drop map
                 this.showPinDropMap(file, metadata);
