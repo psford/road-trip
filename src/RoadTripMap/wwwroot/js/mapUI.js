@@ -210,6 +210,7 @@ const MapUI = {
         if (photos.length < 2) return;
         const latLngCoords = MapService.getRouteCoordinates(photos);
         const coords = latLngCoords.map(([lat, lng]) => [lng, lat]);
+        const smoothCoords = MapService.smoothRoute(coords);
 
         const addRoute = () => {
             if (this.map.getSource('route')) return;
@@ -217,7 +218,7 @@ const MapUI = {
                 type: 'geojson',
                 data: {
                     type: 'Feature',
-                    geometry: { type: 'LineString', coordinates: coords }
+                    geometry: { type: 'LineString', coordinates: smoothCoords }
                 }
             });
             this.map.addLayer({
@@ -226,9 +227,10 @@ const MapUI = {
                 source: 'route',
                 layout: { visibility: 'none' },
                 paint: {
-                    'line-color': '#3388ff',
-                    'line-width': 3,
-                    'line-opacity': 0.8
+                    'line-color': '#2a9d8f',
+                    'line-width': 2.5,
+                    'line-opacity': 0.7,
+                    'line-dasharray': [3, 2]
                 }
             });
         };
