@@ -640,6 +640,7 @@ const PostUI = {
     setupRouteToggle(photos) {
         if (photos.length < 2) return;
         const coords = photos.map(p => [p.lng, p.lat]);
+        const smoothCoords = MapService.smoothRoute(coords);
 
         const addRoute = () => {
             if (this.photoMap.getSource('route')) return;
@@ -647,7 +648,7 @@ const PostUI = {
                 type: 'geojson',
                 data: {
                     type: 'Feature',
-                    geometry: { type: 'LineString', coordinates: coords }
+                    geometry: { type: 'LineString', coordinates: smoothCoords }
                 }
             });
             this.photoMap.addLayer({
@@ -656,9 +657,10 @@ const PostUI = {
                 source: 'route',
                 layout: { visibility: 'none' },
                 paint: {
-                    'line-color': '#3388ff',
-                    'line-width': 3,
-                    'line-opacity': 0.8
+                    'line-color': '#2a9d8f',
+                    'line-width': 2.5,
+                    'line-opacity': 0.7,
+                    'line-dasharray': [3, 2]
                 }
             });
         };
