@@ -219,7 +219,7 @@ const PostUI = {
                     this.showPreview(file, metadata);
                 },
                 () => {
-                    this.showToast('Location access denied — set location on map', 'error');
+                    this.showToast('Location denied. Check Settings → Privacy → Location Services → Safari Websites', 'error', 6000);
                     this.showPinDropMap(file, metadata);
                 },
                 { enableHighAccuracy: true, timeout: 10000 }
@@ -824,7 +824,7 @@ const PostUI = {
         if (btn) btn.style.display = 'none';
     },
 
-    showToast(message, type) {
+    showToast(message, type, duration) {
         const container = document.getElementById('toastContainer');
 
         const toast = document.createElement('div');
@@ -833,13 +833,12 @@ const PostUI = {
 
         container.appendChild(toast);
 
-        // Auto-dismiss after 3 seconds
         setTimeout(() => {
             toast.classList.add('dismissing');
             setTimeout(() => {
                 toast.remove();
             }, 300);
-        }, 3000);
+        }, duration || 3000);
     }
 };
 
