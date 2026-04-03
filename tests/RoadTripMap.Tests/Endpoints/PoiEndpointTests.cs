@@ -22,7 +22,7 @@ public class PoiEndpointTests : IAsyncLifetime
     private HttpClient? _client;
     private SqliteConnection? _connection;
 
-    public async Task InitializeAsync()
+    public Task InitializeAsync()
     {
         // SQLite in-memory connection (kept open for test lifetime)
         _connection = new SqliteConnection("DataSource=:memory:");
@@ -44,19 +44,19 @@ public class PoiEndpointTests : IAsyncLifetime
             });
 
         _client = _factory.CreateClient();
-        await Task.CompletedTask;
+        return Task.CompletedTask;
     }
 
-    public async Task DisposeAsync()
+    public Task DisposeAsync()
     {
         _client?.Dispose();
         _factory?.Dispose();
         _connection?.Dispose();
-        await Task.CompletedTask;
+        return Task.CompletedTask;
     }
 
     /// <summary>
-    /// Seed test POIs directly into the database and return the context for assertions.
+    /// Seed test POIs directly into the database.
     /// </summary>
     private async Task SeedPoisAsync(params PoiEntity[] pois)
     {
