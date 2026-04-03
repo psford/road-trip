@@ -471,6 +471,50 @@ app.MapGet("/api/photos/{tripId:int}/{photoId:int}/{size}", async (int tripId, i
     return Results.File(stream, "image/jpeg");
 });
 
+// GET /api/poi — Get points of interest filtered by viewport and zoom level
+app.MapGet("/api/poi", async (double? minLat, double? maxLat, double? minLng, double? maxLng, int? zoom, RoadTripDbContext db) =>
+{
+    // Validate all 5 parameters are present
+    if (!minLat.HasValue || !maxLat.HasValue || !minLng.HasValue || !maxLng.HasValue || !zoom.HasValue)
+        return Results.BadRequest(new { error = "Missing required parameters: minLat, maxLat, minLng, maxLng, zoom" });
+
+    // Validate latitude range
+    if (minLat < -90 || minLat > 90 || maxLat < -90 || maxLat > 90)
+        return Results.BadRequest(new { error = "Invalid coordinates: latitude must be between -90 and 90" });
+
+    // Validate longitude range
+    if (minLng < -180 || minLng > 180 || maxLng < -180 || maxLng > 180)
+        return Results.BadRequest(new { error = "Invalid coordinates: longitude must be between -180 and 180" });
+
+    // Validate zoom >= 0
+    if (zoom < 0)
+        return Results.BadRequest(new { error = "Invalid zoom level: zoom must be >= 0" });
+
+    // Determine allowed categories based on zoom
+    var allowedCategories = zoom < 7
+        ? new[] { "national_park" }
+        : zoom < 10
+            ? new[] { "national_park", "state_park", "natural_feature" }
+            : new[] { "national_park", "state_park", "natural_feature", "historic_site", "tourism" };
+
+    // Query POIs with viewport and category filtering, cap at 200 results
+    var pois = await db.PointsOfInterest
+        .Where(p => p.Latitude >= minLat && p.Latitude <= maxLat && p.Longitude >= minLng && p.Longitude <= maxLng)
+        .Where(p => allowedCategories.Contains(p.Category))
+        .Take(200)
+        .Select(p => new PoiResponse
+        {
+            Id = p.Id,
+            Name = p.Name,
+            Category = p.Category,
+            Lat = p.Latitude,
+            Lng = p.Longitude
+        })
+        .ToListAsync();
+
+    return Results.Ok(pois);
+});
+
 app.Run();
 
 // Make Program public for WebApplicationFactory in tests
