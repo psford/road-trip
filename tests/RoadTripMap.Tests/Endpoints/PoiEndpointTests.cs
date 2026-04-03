@@ -1,8 +1,12 @@
 using FluentAssertions;
+using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using RoadTripMap.Data;
 using RoadTripMap.Entities;
 using RoadTripMap.Models;
+using System.Text.Json;
 using Xunit;
 
 namespace RoadTripMap.Tests.Endpoints;
@@ -10,15 +14,72 @@ namespace RoadTripMap.Tests.Endpoints;
 /// <summary>
 /// Tests for the GET /api/poi endpoint.
 /// Verifies viewport filtering (AC1.4) and zoom-based category filtering (AC4.1-4.4).
+/// Uses WebApplicationFactory to test the actual HTTP endpoint with an in-memory SQLite database.
 /// </summary>
-public class PoiEndpointTests
+public class PoiEndpointTests : IAsyncLifetime
 {
-    private RoadTripDbContext CreateInMemoryContext()
+    private WebApplicationFactory<Program>? _factory;
+    private HttpClient? _client;
+    private SqliteConnection? _connection;
+
+    public async Task InitializeAsync()
     {
-        var options = new DbContextOptionsBuilder<RoadTripDbContext>()
-            .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
-            .Options;
-        return new RoadTripDbContext(options);
+        // SQLite in-memory connection (kept open for test lifetime)
+        _connection = new SqliteConnection("DataSource=:memory:");
+        _connection.Open();
+
+        _factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.ConfigureServices(services =>
+                {
+                    // Replace SQL Server with SQLite for tests
+                    var descriptor = services.SingleOrDefault(
+                        d => d.ServiceType == typeof(DbContextOptions<RoadTripDbContext>));
+                    if (descriptor != null) services.Remove(descriptor);
+
+                    services.AddDbContext<RoadTripDbContext>(options =>
+                        options.UseSqlite(_connection));
+                });
+            });
+
+        _client = _factory.CreateClient();
+        await Task.CompletedTask;
+    }
+
+    public async Task DisposeAsync()
+    {
+        _client?.Dispose();
+        _factory?.Dispose();
+        _connection?.Dispose();
+        await Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Seed test POIs directly into the database and return the context for assertions.
+    /// </summary>
+    private async Task SeedPoisAsync(params PoiEntity[] pois)
+    {
+        using var context = new RoadTripDbContext(new DbContextOptionsBuilder<RoadTripDbContext>()
+            .UseSqlite(_connection!)
+            .Options);
+
+        await context.PointsOfInterest.AddRangeAsync(pois);
+        await context.SaveChangesAsync();
+    }
+
+    private List<T> ParseJsonResponse<T>(string json)
+    {
+        var options = new System.Text.Json.JsonSerializerOptions
+        {
+            PropertyNameCaseInsensitive = true
+        };
+
+        using var doc = JsonDocument.Parse(json);
+        return doc.RootElement
+            .EnumerateArray()
+            .Select(elem => System.Text.Json.JsonSerializer.Deserialize<T>(elem.GetRawText(), options)!)
+            .ToList();
     }
 
     // ============================================================
@@ -28,56 +89,22 @@ public class PoiEndpointTests
     [Fact]
     public async Task GetPoi_WithPoisInViewport_ReturnsPoisWithinBoundingBox()
     {
-        // Arrange
-        using var context = CreateInMemoryContext();
+        // Arrange - Seed POIs in different locations
+        await SeedPoisAsync(
+            new PoiEntity { Name = "Yellowstone", Category = "national_park", Latitude = 44.4, Longitude = -110.8, Source = "nps" },
+            new PoiEntity { Name = "Grand Teton", Category = "national_park", Latitude = 43.7, Longitude = -110.7, Source = "nps" },
+            new PoiEntity { Name = "Moab Site", Category = "national_park", Latitude = 38.5, Longitude = -109.6, Source = "nps" }
+        );
 
-        // Create POIs in different locations
-        var poi1 = new PoiEntity
-        {
-            Name = "Yellowstone",
-            Category = "national_park",
-            Latitude = 44.4,
-            Longitude = -110.8,
-            Source = "nps"
-        };
+        // Act - Call endpoint with viewport containing Yellowstone and Grand Teton but not Moab
+        var response = await _client!.GetAsync("/api/poi?minLat=43.0&maxLat=45.0&minLng=-111.5&maxLng=-110.0&zoom=5");
 
-        var poi2 = new PoiEntity
-        {
-            Name = "Grand Teton",
-            Category = "national_park",
-            Latitude = 43.7,
-            Longitude = -110.7,
-            Source = "nps"
-        };
+        // Assert - Verify HTTP response is successful
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
 
-        var poi3 = new PoiEntity
-        {
-            Name = "Moab Site",
-            Category = "national_park",
-            Latitude = 38.5,
-            Longitude = -109.6,
-            Source = "nps"
-        };
+        var json = await response.Content.ReadAsStringAsync();
+        var result = ParseJsonResponse<PoiResponse>(json);
 
-        context.PointsOfInterest.AddRange(poi1, poi2, poi3);
-        await context.SaveChangesAsync();
-
-        // Act - Query viewport containing Yellowstone and Grand Teton but not Moab
-        var result = await context.PointsOfInterest
-            .Where(p => p.Latitude >= 43.0 && p.Latitude <= 45.0 &&
-                        p.Longitude >= -111.5 && p.Longitude <= -110.0)
-            .Where(p => p.Category == "national_park")
-            .Select(p => new PoiResponse
-            {
-                Id = p.Id,
-                Name = p.Name,
-                Category = p.Category,
-                Lat = p.Latitude,
-                Lng = p.Longitude
-            })
-            .ToListAsync();
-
-        // Assert
         result.Should().HaveCount(2);
         result.Should().Contain(p => p.Name == "Yellowstone");
         result.Should().Contain(p => p.Name == "Grand Teton");
@@ -87,37 +114,20 @@ public class PoiEndpointTests
     [Fact]
     public async Task GetPoi_WithNoPoisInViewport_ReturnsEmptyList()
     {
-        // Arrange
-        using var context = CreateInMemoryContext();
+        // Arrange - Seed POI outside the query viewport
+        await SeedPoisAsync(
+            new PoiEntity { Name = "Yellowstone", Category = "national_park", Latitude = 44.4, Longitude = -110.8, Source = "nps" }
+        );
 
-        var poi = new PoiEntity
-        {
-            Name = "Yellowstone",
-            Category = "national_park",
-            Latitude = 44.4,
-            Longitude = -110.8,
-            Source = "nps"
-        };
-
-        context.PointsOfInterest.Add(poi);
-        await context.SaveChangesAsync();
-
-        // Act - Query viewport that excludes the POI
-        var result = await context.PointsOfInterest
-            .Where(p => p.Latitude >= 30.0 && p.Latitude <= 35.0 &&
-                        p.Longitude >= -100.0 && p.Longitude <= -95.0)
-            .Where(p => p.Category == "national_park")
-            .Select(p => new PoiResponse
-            {
-                Id = p.Id,
-                Name = p.Name,
-                Category = p.Category,
-                Lat = p.Latitude,
-                Lng = p.Longitude
-            })
-            .ToListAsync();
+        // Act - Call endpoint with viewport that excludes the POI
+        var response = await _client!.GetAsync("/api/poi?minLat=30.0&maxLat=35.0&minLng=-100.0&maxLng=-95.0&zoom=5");
 
         // Assert
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
+
+        var json = await response.Content.ReadAsStringAsync();
+        var result = ParseJsonResponse<PoiResponse>(json);
+
         result.Should().BeEmpty();
     }
 
@@ -126,47 +136,53 @@ public class PoiEndpointTests
     // ============================================================
 
     [Fact]
-    public async Task GetPoi_WithZoomLessThan7_ReturnsOnlyNationalParks()
+    public async Task GetPoi_WithZoom5_ReturnsOnlyNationalParks()
     {
-        // Arrange
-        using var context = CreateInMemoryContext();
-
-        var pois = new[]
-        {
+        // Arrange - Seed POIs with all categories
+        await SeedPoisAsync(
             new PoiEntity { Name = "Yellowstone", Category = "national_park", Latitude = 44.4, Longitude = -110.8, Source = "nps" },
             new PoiEntity { Name = "Grand Canyon", Category = "national_park", Latitude = 36.1, Longitude = -112.1, Source = "nps" },
             new PoiEntity { Name = "Moab Site", Category = "state_park", Latitude = 38.5, Longitude = -109.6, Source = "pad_us" },
             new PoiEntity { Name = "Natural Rock", Category = "natural_feature", Latitude = 40.0, Longitude = -105.0, Source = "osm" },
             new PoiEntity { Name = "Historic Fort", Category = "historic_site", Latitude = 39.0, Longitude = -105.0, Source = "osm" },
             new PoiEntity { Name = "Museum", Category = "tourism", Latitude = 41.0, Longitude = -105.0, Source = "osm" }
-        };
+        );
 
-        context.PointsOfInterest.AddRange(pois);
-        await context.SaveChangesAsync();
-
-        // Act
-        var zoom = 5;
-        var allowedCategories = zoom < 7
-            ? new[] { "national_park" }
-            : zoom < 10
-                ? new[] { "national_park", "state_park", "natural_feature" }
-                : new[] { "national_park", "state_park", "natural_feature", "historic_site", "tourism" };
-
-        var result = await context.PointsOfInterest
-            .Where(p => p.Latitude >= 30.0 && p.Latitude <= 45.0 &&
-                        p.Longitude >= -115.0 && p.Longitude <= -100.0)
-            .Where(p => allowedCategories.Contains(p.Category))
-            .Select(p => new PoiResponse
-            {
-                Id = p.Id,
-                Name = p.Name,
-                Category = p.Category,
-                Lat = p.Latitude,
-                Lng = p.Longitude
-            })
-            .ToListAsync();
+        // Act - Call endpoint with zoom=5 (< 7)
+        var response = await _client!.GetAsync("/api/poi?minLat=30.0&maxLat=45.0&minLng=-115.0&maxLng=-100.0&zoom=5");
 
         // Assert
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
+
+        var json = await response.Content.ReadAsStringAsync();
+        var result = ParseJsonResponse<PoiResponse>(json);
+
+        result.Should().HaveCount(2);
+        result.Should().AllSatisfy(p => p.Category.Should().Be("national_park"));
+    }
+
+    [Fact]
+    public async Task GetPoi_WithZoom6_ReturnsOnlyNationalParks()
+    {
+        // Arrange - Seed POIs with all categories (boundary test for zoom 6, last value < 7)
+        await SeedPoisAsync(
+            new PoiEntity { Name = "Yellowstone", Category = "national_park", Latitude = 44.4, Longitude = -110.8, Source = "nps" },
+            new PoiEntity { Name = "Grand Canyon", Category = "national_park", Latitude = 36.1, Longitude = -112.1, Source = "nps" },
+            new PoiEntity { Name = "Moab Site", Category = "state_park", Latitude = 38.5, Longitude = -109.6, Source = "pad_us" },
+            new PoiEntity { Name = "Natural Rock", Category = "natural_feature", Latitude = 40.0, Longitude = -105.0, Source = "osm" },
+            new PoiEntity { Name = "Historic Fort", Category = "historic_site", Latitude = 39.0, Longitude = -105.0, Source = "osm" },
+            new PoiEntity { Name = "Museum", Category = "tourism", Latitude = 41.0, Longitude = -105.0, Source = "osm" }
+        );
+
+        // Act - Call endpoint with zoom=6 (still < 7, boundary case)
+        var response = await _client!.GetAsync("/api/poi?minLat=30.0&maxLat=45.0&minLng=-115.0&maxLng=-100.0&zoom=6");
+
+        // Assert
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
+
+        var json = await response.Content.ReadAsStringAsync();
+        var result = ParseJsonResponse<PoiResponse>(json);
+
         result.Should().HaveCount(2);
         result.Should().AllSatisfy(p => p.Category.Should().Be("national_park"));
     }
@@ -176,46 +192,55 @@ public class PoiEndpointTests
     // ============================================================
 
     [Fact]
-    public async Task GetPoi_WithZoom8_ReturnsNationalParksStateParksAndNaturalFeatures()
+    public async Task GetPoi_WithZoom7_ReturnsNationalParksStateParksAndNaturalFeatures()
     {
-        // Arrange
-        using var context = CreateInMemoryContext();
-
-        var pois = new[]
-        {
+        // Arrange - Seed POIs with all categories (boundary test for zoom 7, first value in 7-9)
+        await SeedPoisAsync(
             new PoiEntity { Name = "Yellowstone", Category = "national_park", Latitude = 44.4, Longitude = -110.8, Source = "nps" },
             new PoiEntity { Name = "Moab Site", Category = "state_park", Latitude = 38.5, Longitude = -109.6, Source = "pad_us" },
             new PoiEntity { Name = "Natural Rock", Category = "natural_feature", Latitude = 40.0, Longitude = -105.0, Source = "osm" },
             new PoiEntity { Name = "Historic Fort", Category = "historic_site", Latitude = 39.0, Longitude = -105.0, Source = "osm" },
             new PoiEntity { Name = "Museum", Category = "tourism", Latitude = 41.0, Longitude = -105.0, Source = "osm" }
-        };
+        );
 
-        context.PointsOfInterest.AddRange(pois);
-        await context.SaveChangesAsync();
-
-        // Act
-        var zoom = 8;
-        var allowedCategories = zoom < 7
-            ? new[] { "national_park" }
-            : zoom < 10
-                ? new[] { "national_park", "state_park", "natural_feature" }
-                : new[] { "national_park", "state_park", "natural_feature", "historic_site", "tourism" };
-
-        var result = await context.PointsOfInterest
-            .Where(p => p.Latitude >= 35.0 && p.Latitude <= 45.0 &&
-                        p.Longitude >= -115.0 && p.Longitude <= -100.0)
-            .Where(p => allowedCategories.Contains(p.Category))
-            .Select(p => new PoiResponse
-            {
-                Id = p.Id,
-                Name = p.Name,
-                Category = p.Category,
-                Lat = p.Latitude,
-                Lng = p.Longitude
-            })
-            .ToListAsync();
+        // Act - Call endpoint with zoom=7 (first value in 7-9 range, boundary case)
+        var response = await _client!.GetAsync("/api/poi?minLat=35.0&maxLat=45.0&minLng=-115.0&maxLng=-100.0&zoom=7");
 
         // Assert
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
+
+        var json = await response.Content.ReadAsStringAsync();
+        var result = ParseJsonResponse<PoiResponse>(json);
+
+        result.Should().HaveCount(3);
+        result.Should().Contain(p => p.Category == "national_park");
+        result.Should().Contain(p => p.Category == "state_park");
+        result.Should().Contain(p => p.Category == "natural_feature");
+        result.Should().NotContain(p => p.Category == "historic_site");
+        result.Should().NotContain(p => p.Category == "tourism");
+    }
+
+    [Fact]
+    public async Task GetPoi_WithZoom8_ReturnsNationalParksStateParksAndNaturalFeatures()
+    {
+        // Arrange
+        await SeedPoisAsync(
+            new PoiEntity { Name = "Yellowstone", Category = "national_park", Latitude = 44.4, Longitude = -110.8, Source = "nps" },
+            new PoiEntity { Name = "Moab Site", Category = "state_park", Latitude = 38.5, Longitude = -109.6, Source = "pad_us" },
+            new PoiEntity { Name = "Natural Rock", Category = "natural_feature", Latitude = 40.0, Longitude = -105.0, Source = "osm" },
+            new PoiEntity { Name = "Historic Fort", Category = "historic_site", Latitude = 39.0, Longitude = -105.0, Source = "osm" },
+            new PoiEntity { Name = "Museum", Category = "tourism", Latitude = 41.0, Longitude = -105.0, Source = "osm" }
+        );
+
+        // Act - Call endpoint with zoom=8 (middle of 7-9 range)
+        var response = await _client!.GetAsync("/api/poi?minLat=35.0&maxLat=45.0&minLng=-115.0&maxLng=-100.0&zoom=8");
+
+        // Assert
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
+
+        var json = await response.Content.ReadAsStringAsync();
+        var result = ParseJsonResponse<PoiResponse>(json);
+
         result.Should().HaveCount(3);
         result.Should().Contain(p => p.Category == "national_park");
         result.Should().Contain(p => p.Category == "state_park");
@@ -229,46 +254,55 @@ public class PoiEndpointTests
     // ============================================================
 
     [Fact]
-    public async Task GetPoi_WithZoom12_ReturnsAllCategories()
+    public async Task GetPoi_WithZoom10_ReturnsAllCategories()
     {
-        // Arrange
-        using var context = CreateInMemoryContext();
-
-        var pois = new[]
-        {
+        // Arrange - Seed POIs with all categories (boundary test for zoom 10, first value >= 10)
+        await SeedPoisAsync(
             new PoiEntity { Name = "Yellowstone", Category = "national_park", Latitude = 44.4, Longitude = -110.8, Source = "nps" },
             new PoiEntity { Name = "Moab Site", Category = "state_park", Latitude = 38.5, Longitude = -109.6, Source = "pad_us" },
             new PoiEntity { Name = "Natural Rock", Category = "natural_feature", Latitude = 40.0, Longitude = -105.0, Source = "osm" },
             new PoiEntity { Name = "Historic Fort", Category = "historic_site", Latitude = 39.0, Longitude = -105.0, Source = "osm" },
             new PoiEntity { Name = "Museum", Category = "tourism", Latitude = 41.0, Longitude = -105.0, Source = "osm" }
-        };
+        );
 
-        context.PointsOfInterest.AddRange(pois);
-        await context.SaveChangesAsync();
-
-        // Act
-        var zoom = 12;
-        var allowedCategories = zoom < 7
-            ? new[] { "national_park" }
-            : zoom < 10
-                ? new[] { "national_park", "state_park", "natural_feature" }
-                : new[] { "national_park", "state_park", "natural_feature", "historic_site", "tourism" };
-
-        var result = await context.PointsOfInterest
-            .Where(p => p.Latitude >= 35.0 && p.Latitude <= 45.0 &&
-                        p.Longitude >= -115.0 && p.Longitude <= -100.0)
-            .Where(p => allowedCategories.Contains(p.Category))
-            .Select(p => new PoiResponse
-            {
-                Id = p.Id,
-                Name = p.Name,
-                Category = p.Category,
-                Lat = p.Latitude,
-                Lng = p.Longitude
-            })
-            .ToListAsync();
+        // Act - Call endpoint with zoom=10 (first value >= 10, boundary case)
+        var response = await _client!.GetAsync("/api/poi?minLat=35.0&maxLat=45.0&minLng=-115.0&maxLng=-100.0&zoom=10");
 
         // Assert
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
+
+        var json = await response.Content.ReadAsStringAsync();
+        var result = ParseJsonResponse<PoiResponse>(json);
+
+        result.Should().HaveCount(5);
+        result.Should().Contain(p => p.Category == "national_park");
+        result.Should().Contain(p => p.Category == "state_park");
+        result.Should().Contain(p => p.Category == "natural_feature");
+        result.Should().Contain(p => p.Category == "historic_site");
+        result.Should().Contain(p => p.Category == "tourism");
+    }
+
+    [Fact]
+    public async Task GetPoi_WithZoom12_ReturnsAllCategories()
+    {
+        // Arrange
+        await SeedPoisAsync(
+            new PoiEntity { Name = "Yellowstone", Category = "national_park", Latitude = 44.4, Longitude = -110.8, Source = "nps" },
+            new PoiEntity { Name = "Moab Site", Category = "state_park", Latitude = 38.5, Longitude = -109.6, Source = "pad_us" },
+            new PoiEntity { Name = "Natural Rock", Category = "natural_feature", Latitude = 40.0, Longitude = -105.0, Source = "osm" },
+            new PoiEntity { Name = "Historic Fort", Category = "historic_site", Latitude = 39.0, Longitude = -105.0, Source = "osm" },
+            new PoiEntity { Name = "Museum", Category = "tourism", Latitude = 41.0, Longitude = -105.0, Source = "osm" }
+        );
+
+        // Act - Call endpoint with zoom=12 (high zoom level)
+        var response = await _client!.GetAsync("/api/poi?minLat=35.0&maxLat=45.0&minLng=-115.0&maxLng=-100.0&zoom=12");
+
+        // Assert
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
+
+        var json = await response.Content.ReadAsStringAsync();
+        var result = ParseJsonResponse<PoiResponse>(json);
+
         result.Should().HaveCount(5);
         result.Should().Contain(p => p.Category == "national_park");
         result.Should().Contain(p => p.Category == "state_park");
@@ -284,9 +318,7 @@ public class PoiEndpointTests
     [Fact]
     public async Task GetPoi_With250PoisInViewport_ReturnMaxOf200()
     {
-        // Arrange
-        using var context = CreateInMemoryContext();
-
+        // Arrange - Seed 250 POIs in the same bounding box
         var pois = new List<PoiEntity>();
         for (int i = 0; i < 250; i++)
         {
@@ -299,65 +331,136 @@ public class PoiEndpointTests
                 Source = "nps"
             });
         }
+        await SeedPoisAsync(pois.ToArray());
 
-        context.PointsOfInterest.AddRange(pois);
-        await context.SaveChangesAsync();
-
-        // Act
-        var result = await context.PointsOfInterest
-            .Where(p => p.Latitude >= 39.0 && p.Latitude <= 42.0 &&
-                        p.Longitude >= -106.0 && p.Longitude <= -104.0)
-            .Where(p => p.Category == "national_park")
-            .Take(200)
-            .Select(p => new PoiResponse
-            {
-                Id = p.Id,
-                Name = p.Name,
-                Category = p.Category,
-                Lat = p.Latitude,
-                Lng = p.Longitude
-            })
-            .ToListAsync();
+        // Act - Call endpoint that would match all 250 POIs
+        var response = await _client!.GetAsync("/api/poi?minLat=39.0&maxLat=42.0&minLng=-106.0&maxLng=-104.0&zoom=5");
 
         // Assert
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
+
+        var json = await response.Content.ReadAsStringAsync();
+        var result = ParseJsonResponse<PoiResponse>(json);
+
         result.Should().HaveCount(200);
     }
 
     // ============================================================
-    // Edge cases and validation
+    // Validation tests
+    // ============================================================
+
+    [Fact]
+    public async Task GetPoi_WithMissingMinLatParameter_Returns400()
+    {
+        // Arrange - Seed a POI
+        await SeedPoisAsync(
+            new PoiEntity { Name = "Test POI", Category = "national_park", Latitude = 40.0, Longitude = -105.0, Source = "nps" }
+        );
+
+        // Act - Call endpoint without minLat parameter
+        var response = await _client!.GetAsync("/api/poi?maxLat=45.0&minLng=-110.0&maxLng=-100.0&zoom=5");
+
+        // Assert - Should return 400 Bad Request
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task GetPoi_WithMissingMaxLatParameter_Returns400()
+    {
+        // Arrange - Seed a POI
+        await SeedPoisAsync(
+            new PoiEntity { Name = "Test POI", Category = "national_park", Latitude = 40.0, Longitude = -105.0, Source = "nps" }
+        );
+
+        // Act - Call endpoint without maxLat parameter
+        var response = await _client!.GetAsync("/api/poi?minLat=30.0&minLng=-110.0&maxLng=-100.0&zoom=5");
+
+        // Assert - Should return 400 Bad Request
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task GetPoi_WithMissingZoomParameter_Returns400()
+    {
+        // Arrange - Seed a POI
+        await SeedPoisAsync(
+            new PoiEntity { Name = "Test POI", Category = "national_park", Latitude = 40.0, Longitude = -105.0, Source = "nps" }
+        );
+
+        // Act - Call endpoint without zoom parameter
+        var response = await _client!.GetAsync("/api/poi?minLat=30.0&maxLat=45.0&minLng=-110.0&maxLng=-100.0");
+
+        // Assert - Should return 400 Bad Request
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task GetPoi_WithInvalidLatitudeRange_Returns400()
+    {
+        // Arrange - Seed a POI
+        await SeedPoisAsync(
+            new PoiEntity { Name = "Test POI", Category = "national_park", Latitude = 40.0, Longitude = -105.0, Source = "nps" }
+        );
+
+        // Act - Call endpoint with latitude > 90 (invalid)
+        var response = await _client!.GetAsync("/api/poi?minLat=30.0&maxLat=95.0&minLng=-110.0&maxLng=-100.0&zoom=5");
+
+        // Assert - Should return 400 Bad Request
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task GetPoi_WithInvalidLongitudeRange_Returns400()
+    {
+        // Arrange - Seed a POI
+        await SeedPoisAsync(
+            new PoiEntity { Name = "Test POI", Category = "national_park", Latitude = 40.0, Longitude = -105.0, Source = "nps" }
+        );
+
+        // Act - Call endpoint with longitude > 180 (invalid)
+        var response = await _client!.GetAsync("/api/poi?minLat=30.0&maxLat=45.0&minLng=-110.0&maxLng=185.0&zoom=5");
+
+        // Assert - Should return 400 Bad Request
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task GetPoi_WithNegativeZoom_Returns400()
+    {
+        // Arrange - Seed a POI
+        await SeedPoisAsync(
+            new PoiEntity { Name = "Test POI", Category = "national_park", Latitude = 40.0, Longitude = -105.0, Source = "nps" }
+        );
+
+        // Act - Call endpoint with negative zoom
+        var response = await _client!.GetAsync("/api/poi?minLat=30.0&maxLat=45.0&minLng=-110.0&maxLng=-100.0&zoom=-1");
+
+        // Assert - Should return 400 Bad Request
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.BadRequest);
+    }
+
+    // ============================================================
+    // Edge cases
     // ============================================================
 
     [Fact]
     public async Task GetPoi_WithMultiplePoisAtSameCoordinates_ReturnsAll()
     {
         // Arrange - Multiple POIs at the same location (not unique)
-        using var context = CreateInMemoryContext();
-
-        var pois = new[]
-        {
+        await SeedPoisAsync(
             new PoiEntity { Name = "Grand Canyon NP", Category = "national_park", Latitude = 36.1, Longitude = -112.1, Source = "nps" },
             new PoiEntity { Name = "Grand Canyon Overlook", Category = "tourism", Latitude = 36.1, Longitude = -112.1, Source = "osm" }
-        };
+        );
 
-        context.PointsOfInterest.AddRange(pois);
-        await context.SaveChangesAsync();
-
-        // Act
-        var result = await context.PointsOfInterest
-            .Where(p => p.Latitude >= 36.0 && p.Latitude <= 36.2 &&
-                        p.Longitude >= -112.2 && p.Longitude <= -112.0)
-            .Where(p => new[] { "national_park", "tourism" }.Contains(p.Category))
-            .Select(p => new PoiResponse
-            {
-                Id = p.Id,
-                Name = p.Name,
-                Category = p.Category,
-                Lat = p.Latitude,
-                Lng = p.Longitude
-            })
-            .ToListAsync();
+        // Act - Call endpoint with zoom=12 to include both categories
+        var response = await _client!.GetAsync("/api/poi?minLat=36.0&maxLat=36.2&minLng=-112.2&maxLng=-112.0&zoom=12");
 
         // Assert
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
+
+        var json = await response.Content.ReadAsStringAsync();
+        var result = ParseJsonResponse<PoiResponse>(json);
+
         result.Should().HaveCount(2);
         result.Should().Contain(p => p.Name == "Grand Canyon NP");
         result.Should().Contain(p => p.Name == "Grand Canyon Overlook");
@@ -367,36 +470,23 @@ public class PoiEndpointTests
     public async Task GetPoi_WithPoisAtViewportBoundaries_IncludesPoisOnEdges()
     {
         // Arrange - POIs exactly on viewport boundaries
-        using var context = CreateInMemoryContext();
-
-        var pois = new[]
-        {
+        await SeedPoisAsync(
             new PoiEntity { Name = "North Edge", Category = "national_park", Latitude = 45.0, Longitude = -110.0, Source = "nps" },
             new PoiEntity { Name = "South Edge", Category = "national_park", Latitude = 40.0, Longitude = -110.0, Source = "nps" },
             new PoiEntity { Name = "East Edge", Category = "national_park", Latitude = 42.5, Longitude = -100.0, Source = "nps" },
             new PoiEntity { Name = "West Edge", Category = "national_park", Latitude = 42.5, Longitude = -115.0, Source = "nps" },
             new PoiEntity { Name = "Inside", Category = "national_park", Latitude = 42.5, Longitude = -110.0, Source = "nps" }
-        };
+        );
 
-        context.PointsOfInterest.AddRange(pois);
-        await context.SaveChangesAsync();
-
-        // Act
-        var result = await context.PointsOfInterest
-            .Where(p => p.Latitude >= 40.0 && p.Latitude <= 45.0 &&
-                        p.Longitude >= -115.0 && p.Longitude <= -100.0)
-            .Where(p => p.Category == "national_park")
-            .Select(p => new PoiResponse
-            {
-                Id = p.Id,
-                Name = p.Name,
-                Category = p.Category,
-                Lat = p.Latitude,
-                Lng = p.Longitude
-            })
-            .ToListAsync();
+        // Act - Call endpoint with bounding box that includes all edges
+        var response = await _client!.GetAsync("/api/poi?minLat=40.0&maxLat=45.0&minLng=-115.0&maxLng=-100.0&zoom=5");
 
         // Assert
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
+
+        var json = await response.Content.ReadAsStringAsync();
+        var result = ParseJsonResponse<PoiResponse>(json);
+
         result.Should().HaveCount(5);
         result.Should().Contain(p => p.Name == "North Edge");
         result.Should().Contain(p => p.Name == "South Edge");
@@ -409,34 +499,21 @@ public class PoiEndpointTests
     public async Task GetPoi_WithNegativeCoordinates_FiltersCorrectly()
     {
         // Arrange - Test with negative coordinates (Southern and Western hemispheres)
-        using var context = CreateInMemoryContext();
-
-        var pois = new[]
-        {
+        await SeedPoisAsync(
             new PoiEntity { Name = "Sydney", Category = "tourism", Latitude = -33.9, Longitude = 151.2, Source = "osm" },
             new PoiEntity { Name = "Buenos Aires", Category = "tourism", Latitude = -34.6, Longitude = -58.4, Source = "osm" },
             new PoiEntity { Name = "Cape Town", Category = "tourism", Latitude = -33.9, Longitude = 18.4, Source = "osm" }
-        };
+        );
 
-        context.PointsOfInterest.AddRange(pois);
-        await context.SaveChangesAsync();
-
-        // Act - Query around Buenos Aires (South America)
-        var result = await context.PointsOfInterest
-            .Where(p => p.Latitude >= -35.0 && p.Latitude <= -34.0 &&
-                        p.Longitude >= -60.0 && p.Longitude <= -56.0)
-            .Where(p => p.Category == "tourism")
-            .Select(p => new PoiResponse
-            {
-                Id = p.Id,
-                Name = p.Name,
-                Category = p.Category,
-                Lat = p.Latitude,
-                Lng = p.Longitude
-            })
-            .ToListAsync();
+        // Act - Query around Buenos Aires (South America) with zoom=12 to include tourism
+        var response = await _client!.GetAsync("/api/poi?minLat=-35.0&maxLat=-34.0&minLng=-60.0&maxLng=-56.0&zoom=12");
 
         // Assert
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
+
+        var json = await response.Content.ReadAsStringAsync();
+        var result = ParseJsonResponse<PoiResponse>(json);
+
         result.Should().HaveCount(1);
         result[0].Name.Should().Be("Buenos Aires");
     }
@@ -444,134 +521,29 @@ public class PoiEndpointTests
     [Fact]
     public async Task GetPoi_WithZoom9_IncludesNationalParkStateParkNaturalFeatureButNotHistoricOrTourism()
     {
-        // Arrange - Test the boundary case at zoom 9
-        using var context = CreateInMemoryContext();
-
-        var pois = new[]
-        {
+        // Arrange - Test the boundary case at zoom 9 (last value in 7-9 range)
+        await SeedPoisAsync(
             new PoiEntity { Name = "National Park", Category = "national_park", Latitude = 40.0, Longitude = -105.0, Source = "nps" },
             new PoiEntity { Name = "State Park", Category = "state_park", Latitude = 40.0, Longitude = -105.0, Source = "pad_us" },
             new PoiEntity { Name = "Natural Feature", Category = "natural_feature", Latitude = 40.0, Longitude = -105.0, Source = "osm" },
             new PoiEntity { Name = "Historic Site", Category = "historic_site", Latitude = 40.0, Longitude = -105.0, Source = "osm" },
             new PoiEntity { Name = "Tourism", Category = "tourism", Latitude = 40.0, Longitude = -105.0, Source = "osm" }
-        };
+        );
 
-        context.PointsOfInterest.AddRange(pois);
-        await context.SaveChangesAsync();
-
-        // Act
-        var zoom = 9;
-        var allowedCategories = zoom < 7
-            ? new[] { "national_park" }
-            : zoom < 10
-                ? new[] { "national_park", "state_park", "natural_feature" }
-                : new[] { "national_park", "state_park", "natural_feature", "historic_site", "tourism" };
-
-        var result = await context.PointsOfInterest
-            .Where(p => p.Latitude >= 39.0 && p.Latitude <= 41.0 &&
-                        p.Longitude >= -106.0 && p.Longitude <= -104.0)
-            .Where(p => allowedCategories.Contains(p.Category))
-            .Select(p => new PoiResponse
-            {
-                Id = p.Id,
-                Name = p.Name,
-                Category = p.Category,
-                Lat = p.Latitude,
-                Lng = p.Longitude
-            })
-            .ToListAsync();
+        // Act - Call endpoint with zoom=9
+        var response = await _client!.GetAsync("/api/poi?minLat=39.0&maxLat=41.0&minLng=-106.0&maxLng=-104.0&zoom=9");
 
         // Assert
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
+
+        var json = await response.Content.ReadAsStringAsync();
+        var result = ParseJsonResponse<PoiResponse>(json);
+
         result.Should().HaveCount(3);
         result.Should().Contain(p => p.Category == "national_park");
         result.Should().Contain(p => p.Category == "state_park");
         result.Should().Contain(p => p.Category == "natural_feature");
         result.Should().NotContain(p => p.Category == "historic_site");
         result.Should().NotContain(p => p.Category == "tourism");
-    }
-
-    [Fact]
-    public async Task GetPoi_WithZoom10_IncludesAllCategories()
-    {
-        // Arrange - Test the boundary case at zoom 10
-        using var context = CreateInMemoryContext();
-
-        var pois = new[]
-        {
-            new PoiEntity { Name = "National Park", Category = "national_park", Latitude = 40.0, Longitude = -105.0, Source = "nps" },
-            new PoiEntity { Name = "State Park", Category = "state_park", Latitude = 40.0, Longitude = -105.0, Source = "pad_us" },
-            new PoiEntity { Name = "Natural Feature", Category = "natural_feature", Latitude = 40.0, Longitude = -105.0, Source = "osm" },
-            new PoiEntity { Name = "Historic Site", Category = "historic_site", Latitude = 40.0, Longitude = -105.0, Source = "osm" },
-            new PoiEntity { Name = "Tourism", Category = "tourism", Latitude = 40.0, Longitude = -105.0, Source = "osm" }
-        };
-
-        context.PointsOfInterest.AddRange(pois);
-        await context.SaveChangesAsync();
-
-        // Act
-        var zoom = 10;
-        var allowedCategories = zoom < 7
-            ? new[] { "national_park" }
-            : zoom < 10
-                ? new[] { "national_park", "state_park", "natural_feature" }
-                : new[] { "national_park", "state_park", "natural_feature", "historic_site", "tourism" };
-
-        var result = await context.PointsOfInterest
-            .Where(p => p.Latitude >= 39.0 && p.Latitude <= 41.0 &&
-                        p.Longitude >= -106.0 && p.Longitude <= -104.0)
-            .Where(p => allowedCategories.Contains(p.Category))
-            .Select(p => new PoiResponse
-            {
-                Id = p.Id,
-                Name = p.Name,
-                Category = p.Category,
-                Lat = p.Latitude,
-                Lng = p.Longitude
-            })
-            .ToListAsync();
-
-        // Assert
-        result.Should().HaveCount(5);
-        result.Should().Contain(p => p.Category == "national_park");
-        result.Should().Contain(p => p.Category == "state_park");
-        result.Should().Contain(p => p.Category == "natural_feature");
-        result.Should().Contain(p => p.Category == "historic_site");
-        result.Should().Contain(p => p.Category == "tourism");
-    }
-
-    [Fact]
-    public async Task PoiResponse_MapsLatLngCorrectly()
-    {
-        // Arrange - Verify that PoiResponse maps Latitude/Longitude to Lat/Lng
-        using var context = CreateInMemoryContext();
-
-        var poi = new PoiEntity
-        {
-            Name = "Test POI",
-            Category = "national_park",
-            Latitude = 45.5,
-            Longitude = -122.7,
-            Source = "nps"
-        };
-
-        context.PointsOfInterest.Add(poi);
-        await context.SaveChangesAsync();
-
-        // Act
-        var response = await context.PointsOfInterest
-            .Select(p => new PoiResponse
-            {
-                Id = p.Id,
-                Name = p.Name,
-                Category = p.Category,
-                Lat = p.Latitude,
-                Lng = p.Longitude
-            })
-            .FirstOrDefaultAsync();
-
-        // Assert
-        response.Should().NotBeNull();
-        response!.Lat.Should().Be(45.5);
-        response.Lng.Should().Be(-122.7);
     }
 }
