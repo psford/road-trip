@@ -11,6 +11,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{F9CEE785
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RoadTripMap.Tests", "tests\RoadTripMap.Tests\RoadTripMap.Tests.csproj", "{06904707-22AA-43BB-B8A7-113F1C54D933}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RoadTripMap.PoiSeeder", "src\RoadTripMap.PoiSeeder\RoadTripMap.PoiSeeder.csproj", "{E328BD27-9523-43F2-819F-9CCC615D6BBB}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -28,9 +30,14 @@ Global
 		{06904707-22AA-43BB-B8A7-113F1C54D933}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{06904707-22AA-43BB-B8A7-113F1C54D933}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{06904707-22AA-43BB-B8A7-113F1C54D933}.Release|Any CPU.Build.0 = Release|Any CPU
+		{E328BD27-9523-43F2-819F-9CCC615D6BBB}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{E328BD27-9523-43F2-819F-9CCC615D6BBB}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{E328BD27-9523-43F2-819F-9CCC615D6BBB}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{E328BD27-9523-43F2-819F-9CCC615D6BBB}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{D00DF36A-649E-4A2E-A5D4-22813DC4B40C} = {245EC845-E0FE-4F8B-9C1F-F5EAB10C5131}
 		{06904707-22AA-43BB-B8A7-113F1C54D933} = {F9CEE785-E201-4FBC-9F4C-3334942CE1CB}
+		{E328BD27-9523-43F2-819F-9CCC615D6BBB} = {245EC845-E0FE-4F8B-9C1F-F5EAB10C5131}
 	EndGlobalSection
 EndGlobal
