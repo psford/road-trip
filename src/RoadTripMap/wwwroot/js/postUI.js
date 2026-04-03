@@ -414,6 +414,11 @@ const PostUI = {
             zoom: 4
         });
 
+        // Apply park restyling when map style loads
+        this.map.on('load', () => {
+            applyParkStyling(this.map);
+        });
+
         // Handle map clicks for marker placement
         this.map.on('click', async (e) => {
             const { lng, lat } = e.lngLat;
@@ -565,6 +570,11 @@ const PostUI = {
                 style: MAP_STYLE,
                 center: [-98.5795, 39.8283],
                 zoom: 4
+            });
+
+            // Apply park restyling when map style loads
+            this.photoMap.on('load', () => {
+                applyParkStyling(this.photoMap);
             });
         }
 
