@@ -27,7 +27,10 @@ public class Deduplicator
 
         try
         {
-            // Fetch all POIs from database
+            // Fetch all POIs from database into memory.
+            // NOTE: This approach loads all POIs into memory for deduplication.
+            // Works well for data volumes under ~100,000 POIs (~50-100MB memory).
+            // For larger datasets, consider streaming dedup by geographic regions.
             var allPois = await _context.PointsOfInterest.ToListAsync();
 
             if (allPois.Count == 0)

@@ -121,8 +121,9 @@ public class PadUsImporter
 
             return true;
         }
-        catch
+        catch (Exception ex)
         {
+            Console.Error.WriteLine($"Error parsing PAD-US feature data: {ex.Message}");
             return false;
         }
     }
@@ -212,8 +213,9 @@ public class PadUsImporter
 
             return false;
         }
-        catch
+        catch (Exception ex)
         {
+            Console.Error.WriteLine($"Error extracting centroid from PAD-US geometry: {ex.Message}");
             return false;
         }
     }
@@ -322,19 +324,6 @@ public class PadUsImporter
 
     private async Task UpsertPoiAsync(PoiEntity newPoi)
     {
-        var existing = await _context.PointsOfInterest
-            .FirstOrDefaultAsync(p => p.Source == newPoi.Source && p.SourceId == newPoi.SourceId);
-
-        if (existing == null)
-        {
-            _context.PointsOfInterest.Add(newPoi);
-        }
-        else
-        {
-            existing.Name = newPoi.Name;
-            existing.Latitude = newPoi.Latitude;
-            existing.Longitude = newPoi.Longitude;
-            _context.PointsOfInterest.Update(existing);
-        }
+        await PoiUpsertHelper.UpsertPoiAsync(_context, newPoi);
     }
 }

@@ -154,8 +154,9 @@ out body;",
 
             return true;
         }
-        catch
+        catch (Exception ex)
         {
+            Console.Error.WriteLine($"Error parsing Overpass element data: {ex.Message}");
             return false;
         }
     }
@@ -182,19 +183,6 @@ out body;",
 
     private async Task UpsertPoiAsync(PoiEntity newPoi)
     {
-        var existing = await _context.PointsOfInterest
-            .FirstOrDefaultAsync(p => p.Source == newPoi.Source && p.SourceId == newPoi.SourceId);
-
-        if (existing == null)
-        {
-            _context.PointsOfInterest.Add(newPoi);
-        }
-        else
-        {
-            existing.Name = newPoi.Name;
-            existing.Latitude = newPoi.Latitude;
-            existing.Longitude = newPoi.Longitude;
-            _context.PointsOfInterest.Update(existing);
-        }
+        await PoiUpsertHelper.UpsertPoiAsync(_context, newPoi);
     }
 }

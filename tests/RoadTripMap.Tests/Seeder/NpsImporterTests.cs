@@ -22,8 +22,6 @@ public class NpsImporterTests
     public async Task ImportAsync_WithValidNpsData_CreatesPoisWithCorrectProperties()
     {
         // Arrange
-        Environment.SetEnvironmentVariable("NPS_API_KEY", "test-api-key");
-
         using var context = CreateInMemoryContext();
         var httpHandler = new NpsImporterMockHttpHandler(new[]
         {
@@ -35,7 +33,7 @@ public class NpsImporterTests
         var importer = new NpsImporter(httpClient, context);
 
         // Act
-        var result = await importer.ImportAsync();
+        var result = await importer.ImportAsync("test-api-key");
 
         // Assert
         result.ProcessedCount.Should().Be(3);
@@ -56,8 +54,6 @@ public class NpsImporterTests
     public async Task ImportAsync_WithMissingCoordinates_SkipsEntry()
     {
         // Arrange
-        Environment.SetEnvironmentVariable("NPS_API_KEY", "test-api-key");
-
         using var context = CreateInMemoryContext();
         var httpHandler = new NpsImporterMockHttpHandler(new[]
         {
@@ -68,7 +64,7 @@ public class NpsImporterTests
         var importer = new NpsImporter(httpClient, context);
 
         // Act
-        var result = await importer.ImportAsync();
+        var result = await importer.ImportAsync("test-api-key");
 
         // Assert
         result.ProcessedCount.Should().Be(1);
@@ -81,8 +77,6 @@ public class NpsImporterTests
     public async Task ImportAsync_WithDuplicateSourceId_UpdatesExisting()
     {
         // Arrange
-        Environment.SetEnvironmentVariable("NPS_API_KEY", "test-api-key");
-
         using var context = CreateInMemoryContext();
 
         // Pre-populate with existing POI
@@ -106,7 +100,7 @@ public class NpsImporterTests
         var importer = new NpsImporter(httpClient, context);
 
         // Act
-        var result = await importer.ImportAsync();
+        var result = await importer.ImportAsync("test-api-key");
 
         // Assert
         result.ProcessedCount.Should().Be(1);
@@ -122,15 +116,12 @@ public class NpsImporterTests
         // Arrange
         using var context = CreateInMemoryContext();
 
-        // Ensure API key is not set
-        Environment.SetEnvironmentVariable("NPS_API_KEY", null);
-
         var httpHandler = new NpsImporterMockHttpHandler(Array.Empty<NpsParkData>());
         var httpClient = new HttpClient(httpHandler);
         var importer = new NpsImporter(httpClient, context);
 
         // Act
-        var result = await importer.ImportAsync();
+        var result = await importer.ImportAsync(string.Empty);
 
         // Assert
         result.SkippedCount.Should().Be(-1); // Indicates API key missing

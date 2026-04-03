@@ -20,10 +20,9 @@ public class NpsImporter
         _context = context ?? throw new ArgumentNullException(nameof(context));
     }
 
-    public async Task<ImportResult> ImportAsync()
+    public async Task<ImportResult> ImportAsync(string apiKey)
     {
         var result = new ImportResult();
-        var apiKey = Environment.GetEnvironmentVariable("NPS_API_KEY");
 
         if (string.IsNullOrEmpty(apiKey))
         {
@@ -36,7 +35,7 @@ public class NpsImporter
             var total = 0;
             var processed = 0;
 
-            // Get total count first
+            // Fetch first page to get total count and parse initial parks
             var firstPageUri = BuildUri(apiKey, 0);
             var firstPageResponse = await _httpClient.GetAsync(firstPageUri);
             firstPageResponse.EnsureSuccessStatusCode();
@@ -48,9 +47,34 @@ public class NpsImporter
                 total = totalElement.GetInt32();
             }
 
-            // Paginate through all parks
-            for (int offset = 0; offset < total; offset += PageSize)
+            // Process parks from first page
+            if (firstPageDoc.RootElement.TryGetProperty("data", out var firstPageDataArray))
             {
+                foreach (var park in firstPageDataArray.EnumerateArray())
+                {
+                    if (TryParsePark(park, out var poi))
+                    {
+                        await UpsertPoiAsync(poi);
+                        processed++;
+
+                        // Batch save every 50 records
+                        if (processed % 50 == 0)
+                        {
+                            await _context.SaveChangesAsync();
+                        }
+                    }
+                    else
+                    {
+                        result.SkippedCount++;
+                    }
+                }
+            }
+
+            // Paginate through remaining pages (start at PageSize offset)
+            for (int offset = PageSize; offset < total; offset += PageSize)
+            {
+                await Task.Delay(RateLimitDelayMs); // Rate limit before each request
+
                 var uri = BuildUri(apiKey, offset);
                 var response = await _httpClient.GetAsync(uri);
                 response.EnsureSuccessStatusCode();
@@ -78,12 +102,6 @@ public class NpsImporter
                             result.SkippedCount++;
                         }
                     }
-                }
-
-                // Rate limiting between paginated requests
-                if (offset + PageSize < total)
-                {
-                    await Task.Delay(RateLimitDelayMs);
                 }
             }
 
@@ -145,8 +163,9 @@ public class NpsImporter
 
             return true;
         }
-        catch
+        catch (Exception ex)
         {
+            Console.Error.WriteLine($"Error parsing NPS park data: {ex.Message}");
             return false;
         }
     }
@@ -176,25 +195,6 @@ public class NpsImporter
 
     private async Task UpsertPoiAsync(PoiEntity newPoi)
     {
-        var existing = await _context.PointsOfInterest
-            .FirstOrDefaultAsync(p => p.Source == newPoi.Source && p.SourceId == newPoi.SourceId);
-
-        if (existing == null)
-        {
-            _context.PointsOfInterest.Add(newPoi);
-        }
-        else
-        {
-            existing.Name = newPoi.Name;
-            existing.Latitude = newPoi.Latitude;
-            existing.Longitude = newPoi.Longitude;
-            _context.PointsOfInterest.Update(existing);
-        }
+        await PoiUpsertHelper.UpsertPoiAsync(_context, newPoi);
     }
-}
-
-public class ImportResult
-{
-    public int ProcessedCount { get; set; }
-    public int SkippedCount { get; set; }
 }

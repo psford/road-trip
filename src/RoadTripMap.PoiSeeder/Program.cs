@@ -30,7 +30,7 @@ public static class Program
             // Create HttpClient with user agent and polite rate limiting
             using var httpClient = new HttpClient();
             httpClient.DefaultRequestHeaders.Add("User-Agent", "RoadTripMap/1.0");
-            httpClient.Timeout = TimeSpan.FromSeconds(30);
+            httpClient.Timeout = TimeSpan.FromSeconds(180);
 
             Console.WriteLine("POI Seeder starting...\n");
 
@@ -40,10 +40,11 @@ public static class Program
             if (!overpassOnly && !padUsOnly)
             {
                 Console.WriteLine("Running NPS importer...");
+                var npsApiKey = Environment.GetEnvironmentVariable("NPS_API_KEY") ?? string.Empty;
                 var npsImporter = new NpsImporter(httpClient, context);
                 try
                 {
-                    var npsResult = await npsImporter.ImportAsync();
+                    var npsResult = await npsImporter.ImportAsync(npsApiKey);
                     results["NPS"] = (npsResult.ProcessedCount, npsResult.SkippedCount);
                     Console.WriteLine($"  NPS: {npsResult.ProcessedCount} processed, {npsResult.SkippedCount} skipped\n");
                 }
