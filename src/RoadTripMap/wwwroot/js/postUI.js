@@ -707,18 +707,19 @@ const PostUI = {
             this.markerLookup.set(photo.id, marker);
         });
 
-        // Fit bounds
-        if (photos.length === 1) {
-            this.photoMap.jumpTo({ center: [photos[0].lng, photos[0].lat], zoom: 13 });
-        } else {
-            const bounds = new maplibregl.LngLatBounds();
-            photos.forEach(p => bounds.extend([p.lng, p.lat]));
-            this.photoMap.fitBounds(bounds, { padding: 50, maxZoom: 15 });
-            this.setupRouteToggle(photos);
-        }
+        // Resize first (container may have just become visible), then fit bounds
+        setTimeout(() => {
+            this.photoMap.resize();
 
-        // Recalculate map size after container is visible
-        setTimeout(() => this.photoMap.resize(), 100);
+            if (photos.length === 1) {
+                this.photoMap.jumpTo({ center: [photos[0].lng, photos[0].lat], zoom: 13 });
+            } else {
+                const bounds = new maplibregl.LngLatBounds();
+                photos.forEach(p => bounds.extend([p.lng, p.lat]));
+                this.photoMap.fitBounds(bounds, { padding: 50, maxZoom: 15 });
+                this.setupRouteToggle(photos);
+            }
+        }, 150);
     },
 
     setupRouteToggle(photos) {
