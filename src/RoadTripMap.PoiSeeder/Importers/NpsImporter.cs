@@ -44,7 +44,10 @@ public class NpsImporter
 
             if (firstPageDoc.RootElement.TryGetProperty("total", out var totalElement))
             {
-                total = totalElement.GetInt32();
+                // NPS API returns total as a string ("474"), not an integer
+                total = totalElement.ValueKind == JsonValueKind.String
+                    ? int.Parse(totalElement.GetString()!)
+                    : totalElement.GetInt32();
             }
 
             // Process parks from first page
