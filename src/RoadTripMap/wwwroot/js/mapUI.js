@@ -61,6 +61,12 @@ const MapUI = {
             zoom: 4
         });
 
+        // Apply park restyling when map style loads
+        this.map.on('load', () => {
+            applyParkStyling(this.map);
+            PoiLayer.init(this.map);
+        });
+
         // Handle empty trip
         if (photos.length === 0) {
             this.map.jumpTo({ center: [-98.6, 39.8], zoom: 4 }); // Center of USA
@@ -245,6 +251,15 @@ const MapUI = {
         if (routeToggleBtn) {
             routeToggleBtn.style.display = 'block';
             routeToggleBtn.addEventListener('click', () => this.toggleRoute());
+        }
+
+        // POI toggle
+        const poiBtn = document.getElementById('poiToggle');
+        if (poiBtn) {
+            poiBtn.addEventListener('click', () => {
+                const visible = PoiLayer.toggle(this.map);
+                poiBtn.textContent = visible ? 'Hide POIs' : 'Show POIs';
+            });
         }
     },
 

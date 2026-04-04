@@ -10,6 +10,7 @@ public class RoadTripDbContext : DbContext
     public DbSet<TripEntity> Trips => Set<TripEntity>();
     public DbSet<PhotoEntity> Photos => Set<PhotoEntity>();
     public DbSet<GeoCacheEntity> GeoCache => Set<GeoCacheEntity>();
+    public DbSet<PoiEntity> PointsOfInterest => Set<PoiEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -52,6 +53,19 @@ public class RoadTripDbContext : DbContext
             entity.Property(e => e.PlaceName).HasMaxLength(500).IsRequired();
             entity.Property(e => e.CachedAt).HasDefaultValueSql("GETUTCDATE()");
             entity.HasIndex(e => new { e.LatRounded, e.LngRounded }).IsUnique();
+        });
+
+        modelBuilder.Entity<PoiEntity>(entity =>
+        {
+            entity.ToTable("PointsOfInterest");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Name).HasMaxLength(300).IsRequired();
+            entity.Property(e => e.Category).HasMaxLength(50).IsRequired();
+            entity.Property(e => e.Source).HasMaxLength(50).IsRequired();
+            entity.Property(e => e.SourceId).HasMaxLength(200);
+            entity.HasIndex(e => new { e.Latitude, e.Longitude });
+            entity.HasIndex(e => e.SourceId);
+            entity.HasIndex(e => e.Category);
         });
     }
 }

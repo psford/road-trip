@@ -33,6 +33,10 @@ builder.Services.AddSingleton<INominatimRateLimiter, NominatimRateLimiter>();
 builder.Services.AddScoped<IAuthStrategy, SecretTokenAuthStrategy>();
 builder.Services.AddScoped<IPhotoService, PhotoService>();
 builder.Services.AddHttpClient<NominatimGeocodingService>();
+builder.Services.AddHttpClient("Overpass", c => {
+    c.DefaultRequestHeaders.Add("User-Agent", "RoadTripMap/1.0");
+    c.Timeout = TimeSpan.FromSeconds(20);
+});
 builder.Services.AddScoped<IGeocodingService, NominatimGeocodingService>();
 
 var app = builder.Build();
@@ -470,6 +474,195 @@ app.MapGet("/api/photos/{tripId:int}/{photoId:int}/{size}", async (int tripId, i
     context.Response.Headers.CacheControl = "public, max-age=31536000, immutable";
     return Results.File(stream, "image/jpeg");
 });
+
+// GET /api/poi — Get points of interest filtered by viewport and zoom level
+app.MapGet("/api/poi", async (double? minLat, double? maxLat, double? minLng, double? maxLng, int? zoom, RoadTripDbContext db, IHttpClientFactory httpClientFactory) =>
+{
+    // Validate all 5 parameters are present
+    if (!minLat.HasValue || !maxLat.HasValue || !minLng.HasValue || !maxLng.HasValue || !zoom.HasValue)
+        return Results.BadRequest(new { error = "Missing required parameters: minLat, maxLat, minLng, maxLng, zoom" });
+
+    // Validate latitude range
+    if (minLat < -90 || minLat > 90 || maxLat < -90 || maxLat > 90)
+        return Results.BadRequest(new { error = "Invalid coordinates: latitude must be between -90 and 90" });
+
+    // Validate longitude range
+    if (minLng < -180 || minLng > 180 || maxLng < -180 || maxLng > 180)
+        return Results.BadRequest(new { error = "Invalid coordinates: longitude must be between -180 and 180" });
+
+    // Validate zoom >= 0
+    if (zoom < 0)
+        return Results.BadRequest(new { error = "Invalid zoom level: zoom must be >= 0" });
+
+    // All categories at all zoom levels — let the grid sampling handle density
+    var allowedCategories = zoom < 7
+        ? new[] { "national_park" }
+        : new[] { "national_park", "state_park", "natural_feature", "historic_site", "tourism" };
+
+    // Fetch candidates from DB
+    var candidates = await db.PointsOfInterest
+        .Where(p => p.Latitude >= minLat && p.Latitude <= maxLat && p.Longitude >= minLng && p.Longitude <= maxLng)
+        .Where(p => allowedCategories.Contains(p.Category))
+        .Select(p => new PoiResponse
+        {
+            Id = p.Id,
+            Name = p.Name,
+            Category = p.Category,
+            Lat = p.Latitude,
+            Lng = p.Longitude
+        })
+        .ToListAsync();
+
+    // If DB has zero OSM data for this viewport, backfill from Overpass in real-time.
+    // Only backfill if we have literally nothing — avoids re-querying on every pan.
+    var hasOsmData = candidates.Any() || await db.PointsOfInterest
+        .AnyAsync(p => p.Source == "osm" &&
+            p.Latitude >= minLat && p.Latitude <= maxLat &&
+            p.Longitude >= minLng && p.Longitude <= maxLng);
+    if (!hasOsmData && zoom >= 8)
+    {
+        try
+        {
+            var overpassPois = await FetchOverpassForViewport(
+                httpClientFactory, db,
+                minLat.Value, maxLat.Value, minLng.Value, maxLng.Value);
+            if (overpassPois > 0)
+            {
+                // Re-query DB after backfill
+                candidates = await db.PointsOfInterest
+                    .Where(p => p.Latitude >= minLat && p.Latitude <= maxLat && p.Longitude >= minLng && p.Longitude <= maxLng)
+                    .Where(p => allowedCategories.Contains(p.Category))
+                    .Select(p => new PoiResponse
+                    {
+                        Id = p.Id,
+                        Name = p.Name,
+                        Category = p.Category,
+                        Lat = p.Latitude,
+                        Lng = p.Longitude
+                    })
+                    .ToListAsync();
+            }
+        }
+        catch
+        {
+            // Overpass unavailable — return whatever we have from DB
+        }
+    }
+
+    // Spatial grid sampling: divide viewport into cells, pick best POI per cell.
+    var targetCount = zoom >= 14 ? 30 : 40;
+    var gridCols = 7;
+    var gridRows = 6;
+
+    var latRange = maxLat.Value - minLat.Value;
+    var lngRange = maxLng.Value - minLng.Value;
+
+    if (latRange <= 0 || lngRange <= 0 || candidates.Count == 0)
+        return Results.Ok(candidates.Take(targetCount));
+
+    var cellLat = latRange / gridRows;
+    var cellLng = lngRange / gridCols;
+
+    int CategoryPriority(string cat) => cat switch
+    {
+        "national_park" => 0,
+        "state_park" => 1,
+        "historic_site" => 2,
+        "natural_feature" => 3,
+        "tourism" => 4,
+        _ => 5
+    };
+
+    var sampled = new List<PoiResponse>();
+    var usedCells = new HashSet<string>();
+    var sorted = candidates.OrderBy(p => CategoryPriority(p.Category)).ToList();
+
+    foreach (var poi in sorted)
+    {
+        var row = Math.Min((int)((poi.Lat - minLat.Value) / cellLat), gridRows - 1);
+        var col = Math.Min((int)((poi.Lng - minLng.Value) / cellLng), gridCols - 1);
+        var cellKey = $"{row}_{col}";
+
+        if (usedCells.Contains(cellKey))
+            continue;
+
+        usedCells.Add(cellKey);
+        sampled.Add(poi);
+
+        if (sampled.Count >= targetCount)
+            break;
+    }
+
+    return Results.Ok(sampled);
+});
+
+// Live Overpass backfill — queries Overpass for a viewport and caches results in DB
+async Task<int> FetchOverpassForViewport(
+    IHttpClientFactory clientFactory, RoadTripDbContext dbCtx,
+    double south, double north, double west, double east)
+{
+    var bbox = $"({south},{west},{north},{east})";
+    var queries = new Dictionary<string, string>
+    {
+        ["tourism"] = $"[out:json][timeout:15];node[\"tourism\"~\"attraction|museum|viewpoint\"]{bbox};out body;",
+        ["historic"] = $"[out:json][timeout:15];node[\"historic\"~\"monument|memorial|castle|ruins\"]{bbox};out body;",
+    };
+
+    var client = clientFactory.CreateClient("Overpass");
+    int totalInserted = 0;
+
+    foreach (var (qtype, query) in queries)
+    {
+        try
+        {
+            var content = new FormUrlEncodedContent(new[] { new KeyValuePair<string, string>("data", query) });
+            var response = await client.PostAsync("https://overpass-api.de/api/interpreter", content);
+            if (!response.IsSuccessStatusCode) continue;
+
+            var json = await response.Content.ReadAsStringAsync();
+            using var doc = System.Text.Json.JsonDocument.Parse(json);
+            if (!doc.RootElement.TryGetProperty("elements", out var elements)) continue;
+
+            foreach (var el in elements.EnumerateArray())
+            {
+                if (el.TryGetProperty("type", out var typeEl) && typeEl.GetString() != "node") continue;
+                if (!el.TryGetProperty("tags", out var tags)) continue;
+                if (!tags.TryGetProperty("name", out var nameEl)) continue;
+                var name = nameEl.GetString();
+                if (string.IsNullOrEmpty(name)) continue;
+
+                var lat = el.GetProperty("lat").GetDouble();
+                var lon = el.GetProperty("lon").GetDouble();
+                var sourceId = el.GetProperty("id").GetInt64().ToString();
+
+                var category = qtype == "historic" ? "historic_site" : "tourism";
+
+                // Upsert
+                var existing = await dbCtx.PointsOfInterest
+                    .FirstOrDefaultAsync(p => p.Source == "osm" && p.SourceId == sourceId);
+                if (existing == null)
+                {
+                    dbCtx.PointsOfInterest.Add(new RoadTripMap.Entities.PoiEntity
+                    {
+                        Name = name, Category = category,
+                        Latitude = lat, Longitude = lon,
+                        Source = "osm", SourceId = sourceId
+                    });
+                    totalInserted++;
+                }
+            }
+
+            await dbCtx.SaveChangesAsync();
+            await Task.Delay(2000); // rate limit between queries
+        }
+        catch
+        {
+            // Overpass query failed — skip this query type
+        }
+    }
+
+    return totalInserted;
+}
 
 app.Run();
 

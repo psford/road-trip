@@ -11,6 +11,7 @@ const PostUI = {
     secretToken: null,
     map: null,
     marker: null,
+    poiPopup: null,
     photoMap: null,
     photoMapMarkers: [],
     routeVisible: false,
@@ -20,6 +21,7 @@ const PostUI = {
     currentLng: null,
     carousel: null,
     markerLookup: new Map(),
+    photos: [],
     _refreshTimer: null,
 
     init(secretToken) {
@@ -251,7 +253,16 @@ const PostUI = {
             this.currentFile = file;
             this.currentMetadata = metadata;
 
-            if (metadata.gps) {
+            if (this.pendingPoiLocation) {
+                // User selected a POI location before choosing a photo — use it
+                const { lat, lng, name } = this.pendingPoiLocation;
+                this.pendingPoiLocation = null;
+                this.currentLat = lat;
+                this.currentLng = lng;
+                metadata.gps = { latitude: lat, longitude: lng };
+                metadata.placeName = name;
+                this.showPreview(file, metadata);
+            } else if (metadata.gps) {
                 // Has GPS data - show preview directly
                 this.currentLat = metadata.gps.latitude;
                 this.currentLng = metadata.gps.longitude;
@@ -379,6 +390,9 @@ const PostUI = {
         placeNameEl.textContent = 'Tap map to set location';
         placeNameEl.classList.add('no-gps');
 
+        // Hide photo map when pin-drop opens (avoid two maps on screen)
+        document.getElementById('photoMapSection')?.classList.remove('visible');
+
         // Show map section
         document.getElementById('mapSection').classList.add('visible');
 
@@ -387,8 +401,17 @@ const PostUI = {
             this.initializePinDropMap();
         }
 
-        // Center map on default location (USA center)
-        this.map.jumpTo({ center: [-98.5795, 39.8283], zoom: 4 });
+        // If user came from "Pick nearby spot", center on that POI area
+        // Otherwise use default (last photo or USA center)
+        let center, zoom;
+        if (this.pendingPoiZoom) {
+            center = [this.pendingPoiZoom.lng, this.pendingPoiZoom.lat];
+            zoom = 13;
+            this.pendingPoiZoom = null;
+        } else {
+            ({ center, zoom } = this.getDefaultMapCenter());
+        }
+        this.map.jumpTo({ center, zoom });
         if (this.marker) {
             this.marker.remove();
         }
@@ -406,16 +429,128 @@ const PostUI = {
         }, 100);
     },
 
+    _poiActionOptions() {
+        return {
+            onPoiSelect: (lat, lng, name) => {
+                // Store POI location for the next photo upload
+                this.pendingPoiLocation = { lat, lng, name };
+                this.currentLat = lat;
+                this.currentLng = lng;
+
+                // Check if pin-drop map is actively visible (not just initialized)
+                const mapSection = document.getElementById('mapSection');
+                const pinDropVisible = mapSection && mapSection.classList.contains('visible');
+
+                if (pinDropVisible && this.map) {
+                    // Pin-drop map is open — place marker there
+                    if (this.marker) this.marker.remove();
+                    this.marker = new maplibregl.Marker()
+                        .setLngLat([lng, lat])
+                        .addTo(this.map);
+                    this.setLocationFromPoi(lat, lng, name);
+                } else {
+                    // Photo map context — open Add Photo flow with this location
+                    this.showToast(`Location set: ${name}. Select a photo to post here.`, 'success');
+                    document.getElementById('addPhotoButton')?.click();
+                }
+            },
+            onPoiZoom: (lat, lng) => {
+                if (this.map) {
+                    // Pin-drop map already open: just zoom in for precise placement
+                    this.map.flyTo({ center: [lng, lat], zoom: 13 });
+                } else {
+                    // Photo map: hide it and open pin-drop map centered on the POI area
+                    document.getElementById('photoMapSection')?.classList.remove('visible');
+                    document.getElementById('mapSection').classList.add('visible');
+                    document.getElementById('previewSection').classList.add('visible');
+
+                    // Set place name hint
+                    const placeNameEl = document.getElementById('placeNameDisplay');
+                    if (placeNameEl) {
+                        placeNameEl.textContent = 'Tap map to set location';
+                        placeNameEl.classList.add('no-gps');
+                    }
+
+                    if (!this.map) {
+                        this.initializePinDropMap();
+                    }
+
+                    this.map.jumpTo({ center: [lng, lat], zoom: 13 });
+                    if (this.marker) this.marker.remove();
+                    this.map.resize();
+
+                    // Initialize metadata so the click handler doesn't crash
+                    if (!this.currentMetadata) {
+                        this.currentMetadata = { gps: null, placeName: null };
+                    }
+
+                    // Mark that we're in "pick nearby" mode — next map tap places a pin
+                    // and opens the file picker
+                    this.pendingNearbyPinDrop = true;
+                }
+            }
+        };
+    },
+
+    setLocationFromPoi(lat, lng, name) {
+        // Update current coordinates
+        this.currentLat = lat;
+        this.currentLng = lng;
+
+        // Update metadata with place name
+        if (this.currentMetadata) {
+            this.currentMetadata.placeName = name;
+        }
+
+        // Update place name display
+        const placeNameEl = document.getElementById('placeNameDisplay');
+        if (placeNameEl) {
+            placeNameEl.textContent = name;
+            placeNameEl.classList.remove('no-gps');
+        }
+    },
+
+    getDefaultMapCenter() {
+        // Determine map center and zoom level based on existing photos
+        // Returns { center: [lng, lat], zoom: number }
+        let center = [-98.5795, 39.8283];  // Center of US fallback
+        let zoom = 4;
+
+        if (this.photos && this.photos.length > 0) {
+            const lastPhoto = this.photos[this.photos.length - 1];
+            // Use explicit null/undefined checks to handle lat/lng of 0
+            if (lastPhoto.lat != null && lastPhoto.lng != null) {
+                center = [lastPhoto.lng, lastPhoto.lat];
+                zoom = 10;
+            }
+        }
+
+        return { center, zoom };
+    },
+
     initializePinDropMap() {
+        // Get default center and zoom from helper
+        const { center, zoom } = this.getDefaultMapCenter();
+
         this.map = new maplibregl.Map({
             container: 'pinDropMap',
             style: MAP_STYLE,
-            center: [-98.5795, 39.8283],
-            zoom: 4
+            center: center,
+            zoom: zoom
+        });
+
+        // Apply park restyling and POI layer with tap-to-pin actions
+        this.map.on('load', () => {
+            applyParkStyling(this.map);
+            PoiLayer.init(this.map, this._poiActionOptions());
         });
 
         // Handle map clicks for marker placement
         this.map.on('click', async (e) => {
+            // Skip if click was on a POI marker (handled by POI click handler)
+            const poiFeatures = this.map.queryRenderedFeatures(e.point, { layers: ['poi-markers'] });
+            if (poiFeatures.length > 0) return;
+
             const { lng, lat } = e.lngLat;
             this.currentLat = lat;
             this.currentLng = lng;
@@ -434,12 +569,22 @@ const PostUI = {
                 const placeNameEl = document.getElementById('placeNameDisplay');
                 placeNameEl.textContent = result.placeName || 'Location set';
                 placeNameEl.classList.remove('no-gps');
-                this.currentMetadata.placeName = result.placeName;
+                if (this.currentMetadata) {
+                    this.currentMetadata.placeName = result.placeName;
+                }
             } catch (err) {
                 console.warn('Failed to geocode:', err);
                 const placeNameEl = document.getElementById('placeNameDisplay');
                 placeNameEl.textContent = 'Location set';
                 placeNameEl.classList.remove('no-gps');
+            }
+
+            // If we came from "Pick nearby spot", open file picker after pin placement
+            if (this.pendingNearbyPinDrop) {
+                this.pendingNearbyPinDrop = false;
+                // Store location so onFileSelected uses it
+                this.pendingPoiLocation = { lat, lng, name: document.getElementById('placeNameDisplay')?.textContent || 'Location set' };
+                document.getElementById('fileInput')?.click();
             }
         });
     },
@@ -504,6 +649,14 @@ const PostUI = {
     async loadPhotoList() {
         try {
             const photos = await PostService.listPhotos(this.secretToken);
+            this.photos = photos;
+
+            // If pin-drop map is currently visible, update its center to reflect newly loaded photos
+            const mapSection = document.getElementById('mapSection');
+            if (this.map && mapSection && mapSection.classList.contains('visible')) {
+                const { center, zoom } = this.getDefaultMapCenter();
+                this.map.jumpTo({ center, zoom });
+            }
 
             const photoList = document.getElementById('photoList');
             const photoMapSection = document.getElementById('photoMapSection');
@@ -566,6 +719,12 @@ const PostUI = {
                 center: [-98.5795, 39.8283],
                 zoom: 4
             });
+
+            // Apply park restyling and POI layer with tap-to-pin on photo map too
+            this.photoMap.on('load', () => {
+                applyParkStyling(this.photoMap);
+                PoiLayer.init(this.photoMap, this._poiActionOptions());
+            });
         }
 
         // Add markers with carousel sync
@@ -623,18 +782,33 @@ const PostUI = {
             this.markerLookup.set(photo.id, marker);
         });
 
-        // Fit bounds
-        if (photos.length === 1) {
-            this.photoMap.jumpTo({ center: [photos[0].lng, photos[0].lat], zoom: 13 });
-        } else {
-            const bounds = new maplibregl.LngLatBounds();
-            photos.forEach(p => bounds.extend([p.lng, p.lat]));
-            this.photoMap.fitBounds(bounds, { padding: 50, maxZoom: 15 });
-            this.setupRouteToggle(photos);
-        }
+        // Resize first (container may have just become visible), then fit bounds
+        // Also reload POIs for the new viewport
+        setTimeout(() => {
+            this.photoMap.resize();
 
-        // Recalculate map size after container is visible
-        setTimeout(() => this.photoMap.resize(), 100);
+            if (photos.length === 1) {
+                this.photoMap.jumpTo({ center: [photos[0].lng, photos[0].lat], zoom: 13 });
+            } else {
+                const bounds = new maplibregl.LngLatBounds();
+                photos.forEach(p => bounds.extend([p.lng, p.lat]));
+                this.photoMap.fitBounds(bounds, { padding: 50, maxZoom: 15 });
+                this.setupRouteToggle(photos);
+            }
+
+            // Reload POIs for the new viewport
+            PoiLayer.loadPois(this.photoMap);
+        }, 150);
+
+        // Setup POI toggle button
+        const poiBtn = document.getElementById('poiToggle');
+        if (poiBtn && !poiBtn.dataset.bound) {
+            poiBtn.dataset.bound = 'true';
+            poiBtn.onclick = () => {
+                const visible = PoiLayer.toggle(this.photoMap);
+                poiBtn.textContent = visible ? 'Hide POIs' : 'Show POIs';
+            };
+        }
     },
 
     setupRouteToggle(photos) {

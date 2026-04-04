@@ -57,7 +57,10 @@
         <div id="photoMapSection" class="photo-map-section">
             <h3>Map</h3>
             <div id="photoMap" class="post-photo-map"></div>
-            <button id="routeToggle" class="button button-secondary" style="display:none;margin-top:var(--space-sm);width:100%;">Show Route</button>
+            <div class="map-toggle-row" style="display:flex;gap:8px;margin-top:var(--space-sm);">
+                <button id="routeToggle" class="button button-secondary" style="display:none;flex:1;">Show Route</button>
+                <button id="poiToggle" class="button button-secondary" style="flex:1;">Hide POIs</button>
+            </div>
         </div>
 
         <!-- Posted Photos List -->
@@ -93,6 +96,8 @@
     <script src="https://unpkg.com/maplibre-gl@5.21.0/dist/maplibre-gl.js"
         integrity="sha256-qbkAeuPV31m78vg62R7iyGWC6hUsCZAM1MhPYwevvJs=" crossorigin="anonymous"></script>
     <script src="/js/mapService.js"></script>
+    <script src="/js/poiLayer.js"></script>
+    <script src="/js/parkStyle.js"></script>
     <script src="/js/photoCarousel.js"></script>
     <script src="/js/uploadQueue.js"></script>
     <script src="/js/postUI.js"></script>

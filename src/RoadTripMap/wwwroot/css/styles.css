@@ -1052,6 +1052,53 @@ body.map-page .maplibregl-ctrl-top-left {
   background: rgba(211, 47, 47, 0.9);
 }
 
+/* POI action popup — tap-to-pin interaction */
+.poi-action-popup {
+  padding: 8px;
+  text-align: center;
+}
+
+.poi-action-name {
+  font-weight: 600;
+  margin-bottom: 8px;
+  font-size: 14px;
+  color: #333;
+}
+
+.poi-action-btn {
+  display: block;
+  width: 100%;
+  padding: 8px 12px;
+  margin-bottom: 6px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.poi-action-btn:last-child {
+  margin-bottom: 0;
+}
+
+.poi-use-location {
+  background: #2d6a4f;
+  color: white;
+}
+
+.poi-use-location:hover {
+  background: #1e5631;
+}
+
+.poi-pick-nearby {
+  background: #e9ecef;
+  color: #333;
+}
+
+.poi-pick-nearby:hover {
+  background: #dee2e6;
+}
+
 /* Floating carousel on view page */
 .view-carousel-container {
   position: fixed;
@@ -1082,6 +1129,9 @@ body.map-page .maplibregl-ctrl-top-left {
 @media (max-width: 480px) {
   .photo-map-popup .maplibregl-popup-content {
     min-width: 180px;
+  }
+  .map-toggle-row {
+    flex-direction: column !important;
   }
 }
 

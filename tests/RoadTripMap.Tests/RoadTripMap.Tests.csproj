@@ -28,6 +28,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\RoadTripMap\RoadTripMap.csproj" />
+    <ProjectReference Include="..\..\src\RoadTripMap.PoiSeeder\RoadTripMap.PoiSeeder.csproj" />
   </ItemGroup>
 
 </Project>
