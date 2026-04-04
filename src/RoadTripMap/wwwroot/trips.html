@@ -15,7 +15,10 @@
         <span id="tripName"></span>
     </div>
     <div id="map" class="map-container"></div>
-    <button id="routeToggle" class="map-control" style="display:none;">Show Route</button>
+    <div class="map-toggle-row" style="display:flex;gap:8px;padding:8px 0;">
+        <button id="routeToggle" class="map-control" style="display:none;flex:1;">Show Route</button>
+        <button id="poiToggle" class="map-control" style="flex:1;">Hide POIs</button>
+    </div>
     <div id="emptyMessage" class="map-empty" style="display:none;">No photos yet</div>
     <div id="viewCarousel" class="view-carousel-container"></div>
 

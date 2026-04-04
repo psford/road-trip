@@ -799,6 +799,16 @@ const PostUI = {
             // Reload POIs for the new viewport
             PoiLayer.loadPois(this.photoMap);
         }, 150);
+
+        // Setup POI toggle button
+        const poiBtn = document.getElementById('poiToggle');
+        if (poiBtn && !poiBtn.dataset.bound) {
+            poiBtn.dataset.bound = 'true';
+            poiBtn.onclick = () => {
+                const visible = PoiLayer.toggle(this.photoMap);
+                poiBtn.textContent = visible ? 'Hide POIs' : 'Show POIs';
+            };
+        }
     },
 
     setupRouteToggle(photos) {

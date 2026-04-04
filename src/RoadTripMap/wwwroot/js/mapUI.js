@@ -252,6 +252,15 @@ const MapUI = {
             routeToggleBtn.style.display = 'block';
             routeToggleBtn.addEventListener('click', () => this.toggleRoute());
         }
+
+        // POI toggle
+        const poiBtn = document.getElementById('poiToggle');
+        if (poiBtn) {
+            poiBtn.addEventListener('click', () => {
+                const visible = PoiLayer.toggle(this.map);
+                poiBtn.textContent = visible ? 'Hide POIs' : 'Show POIs';
+            });
+        }
     },
 
     /**

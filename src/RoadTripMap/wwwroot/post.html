@@ -57,7 +57,10 @@
         <div id="photoMapSection" class="photo-map-section">
             <h3>Map</h3>
             <div id="photoMap" class="post-photo-map"></div>
-            <button id="routeToggle" class="button button-secondary" style="display:none;margin-top:var(--space-sm);width:100%;">Show Route</button>
+            <div class="map-toggle-row" style="display:flex;gap:8px;margin-top:var(--space-sm);">
+                <button id="routeToggle" class="button button-secondary" style="display:none;flex:1;">Show Route</button>
+                <button id="poiToggle" class="button button-secondary" style="flex:1;">Hide POIs</button>
+            </div>
         </div>
 
         <!-- Posted Photos List -->

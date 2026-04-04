@@ -1130,6 +1130,9 @@ body.map-page .maplibregl-ctrl-top-left {
   .photo-map-popup .maplibregl-popup-content {
     min-width: 180px;
   }
+  .map-toggle-row {
+    flex-direction: column !important;
+  }
 }
 
 /* Photo Carousel - Horizontal scrollable thumbnail strip */

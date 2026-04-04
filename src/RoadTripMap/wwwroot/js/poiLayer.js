@@ -169,11 +169,36 @@ const PoiLayer = {
     },
 
     /**
+     * Toggle POI layer visibility
+     */
+    show(map) {
+        if (map.getLayer('poi-markers')) map.setLayoutProperty('poi-markers', 'visibility', 'visible');
+        if (map.getLayer('poi-labels')) map.setLayoutProperty('poi-labels', 'visibility', 'visible');
+    },
+
+    hide(map) {
+        if (map.getLayer('poi-markers')) map.setLayoutProperty('poi-markers', 'visibility', 'none');
+        if (map.getLayer('poi-labels')) map.setLayoutProperty('poi-labels', 'visibility', 'none');
+    },
+
+    isVisible(map) {
+        const layer = map.getLayer('poi-markers');
+        if (!layer) return false;
+        return map.getLayoutProperty('poi-markers', 'visibility') !== 'none';
+    },
+
+    toggle(map) {
+        if (this.isVisible(map)) {
+            this.hide(map);
+        } else {
+            this.show(map);
+            this.loadPois(map);
+        }
+        return this.isVisible(map);
+    },
+
+    /**
      * Fetch POIs for current map viewport and update the GeoJSON source
-     * Converts API response to GeoJSON FeatureCollection and updates the map source
-     *
-     * @param {maplibregl.Map} map - MapLibre GL JS map instance
-     * @returns {Promise<void>}
      */
     async loadPois(map) {
         try {

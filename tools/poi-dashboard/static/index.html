@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>POI Seeder Dashboard</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #1a1a2e; color: #eee; }
+
+        .header {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 16px 24px; background: #16213e; border-bottom: 2px solid #0f3460;
+        }
+        .header h1 { font-size: 20px; font-weight: 600; }
+        .header-stats { display: flex; gap: 24px; font-size: 14px; }
+        .stat { text-align: center; }
+        .stat-value { font-size: 24px; font-weight: 700; color: #e94560; }
+        .stat-label { color: #888; font-size: 11px; text-transform: uppercase; }
+
+        .controls {
+            display: flex; gap: 12px; align-items: center;
+            padding: 12px 24px; background: #1a1a2e; border-bottom: 1px solid #333;
+        }
+        .controls button {
+            padding: 8px 16px; border: none; border-radius: 6px;
+            font-size: 13px; font-weight: 500; cursor: pointer;
+        }
+        .btn-primary { background: #0f3460; color: #fff; }
+        .btn-primary:hover { background: #1a4a8a; }
+        .btn-danger { background: #e94560; color: #fff; }
+        .btn-danger:hover { background: #c33; }
+        .btn-secondary { background: #333; color: #ccc; }
+        .btn-secondary:hover { background: #444; }
+
+        .status-indicator {
+            display: inline-flex; align-items: center; gap: 6px;
+            padding: 6px 12px; border-radius: 12px; font-size: 13px;
+        }
+        .status-dot {
+            width: 10px; height: 10px; border-radius: 50%;
+        }
+        .status-up { background: rgba(39, 174, 96, 0.2); color: #27ae60; }
+        .status-up .status-dot { background: #27ae60; }
+        .status-down { background: rgba(233, 69, 96, 0.2); color: #e94560; }
+        .status-down .status-dot { background: #e94560; }
+
+        .map-container {
+            position: relative; width: 100%; max-width: 1200px;
+            margin: 20px auto; padding: 0 24px;
+        }
+
+        .map-wrapper {
+            position: relative; width: 100%;
+            background: #0a1628; border-radius: 12px; border: 1px solid #333;
+            overflow: hidden;
+        }
+
+        /* US map proportions: lat 25-50 (25 deg), lng -125 to -65 (60 deg) */
+        /* Aspect ratio: 60/25 = 2.4 */
+        .tile-grid {
+            display: grid;
+            /* 12 columns (60 deg / 5 deg) x 5 rows (25 deg / 5 deg) */
+            grid-template-columns: repeat(12, 1fr);
+            grid-template-rows: repeat(5, 1fr);
+            aspect-ratio: 2.4;
+            gap: 2px; padding: 2px;
+        }
+
+        .tile {
+            position: relative; border-radius: 4px;
+            cursor: pointer; transition: all 0.2s;
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            font-size: 10px; padding: 4px;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+        .tile:hover { transform: scale(1.05); z-index: 10; border-color: #fff; }
+
+        .tile-pending { background: #2d2d3d; }
+        .tile-success { background: #1e5631; }
+        .tile-failed { background: #7b2d26; }
+        .tile-fetching { background: #1a4a8a; animation: pulse 1.5s infinite; }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .tile-count { font-weight: 700; font-size: 14px; }
+        .tile-label { color: rgba(255,255,255,0.6); font-size: 9px; margin-top: 2px; }
+        .tile-coords { color: rgba(255,255,255,0.3); font-size: 8px; }
+
+        .log-panel {
+            max-width: 1200px; margin: 20px auto; padding: 0 24px;
+        }
+        .log-panel h3 { font-size: 14px; color: #888; margin-bottom: 8px; }
+        .log {
+            background: #111; border-radius: 8px; padding: 12px;
+            max-height: 200px; overflow-y: auto; font-family: monospace;
+            font-size: 12px; line-height: 1.6;
+        }
+        .log-entry { color: #8f8; }
+        .log-error { color: #f88; }
+        .log-info { color: #88f; }
+
+        .legend {
+            display: flex; gap: 16px; font-size: 12px; color: #888;
+            padding: 8px 24px;
+        }
+        .legend-item { display: flex; align-items: center; gap: 6px; }
+        .legend-swatch {
+            width: 14px; height: 14px; border-radius: 3px;
+        }
+
+        .tooltip {
+            display: none; position: absolute;
+            background: #222; border: 1px solid #555; border-radius: 6px;
+            padding: 8px 12px; font-size: 12px; z-index: 100;
+            pointer-events: none; white-space: nowrap;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>POI Seeder Dashboard</h1>
+        <div class="header-stats">
+            <div class="stat">
+                <div class="stat-value" id="totalPois">-</div>
+                <div class="stat-label">Total POIs</div>
+            </div>
+            <div class="stat">
+                <div class="stat-value" id="npsPois">-</div>
+                <div class="stat-label">NPS</div>
+            </div>
+            <div class="stat">
+                <div class="stat-value" id="osmPois">-</div>
+                <div class="stat-label">Overpass</div>
+            </div>
+            <div class="stat">
+                <div class="stat-value" id="tilesComplete">-</div>
+                <div class="stat-label">Tiles Done</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="controls">
+        <div id="overpassStatus" class="status-indicator status-down">
+            <div class="status-dot"></div>
+            <span>Overpass: checking...</span>
+        </div>
+        <button class="btn-secondary" onclick="checkOverpass()">Check Now</button>
+        <button class="btn-primary" id="seedAllBtn" onclick="seedAll()">Seed All Tiles</button>
+        <button class="btn-danger" id="stopBtn" onclick="stopPolling()" style="display:none">Stop</button>
+        <button class="btn-secondary" onclick="refresh()">Refresh</button>
+    </div>
+
+    <div class="legend">
+        <div class="legend-item"><div class="legend-swatch" style="background:#2d2d3d"></div> Pending</div>
+        <div class="legend-item"><div class="legend-swatch" style="background:#1e5631"></div> Has Data</div>
+        <div class="legend-item"><div class="legend-swatch" style="background:#7b2d26"></div> Failed</div>
+        <div class="legend-item"><div class="legend-swatch" style="background:#1a4a8a"></div> Fetching</div>
+    </div>
+
+    <div class="map-container">
+        <div class="map-wrapper">
+            <div class="tile-grid" id="tileGrid"></div>
+        </div>
+        <div class="tooltip" id="tooltip"></div>
+    </div>
+
+    <div class="log-panel">
+        <h3>Activity Log</h3>
+        <div class="log" id="log"></div>
+    </div>
+
+    <script>
+        let tiles = [];
+        let polling = false;
+
+        const REGION_LABELS = {
+            '45_-125': 'WA/OR', '45_-120': 'WA/ID', '45_-115': 'MT', '45_-110': 'MT/WY',
+            '45_-105': 'ND/SD', '45_-100': 'MN', '45_-95': 'MN/WI', '45_-90': 'WI/MI',
+            '45_-85': 'MI', '45_-80': 'NY', '45_-75': 'VT/NH', '45_-70': 'ME',
+            '40_-125': 'N.CA', '40_-120': 'NV', '40_-115': 'UT', '40_-110': 'CO/WY',
+            '40_-105': 'NE/KS', '40_-100': 'IA/MO', '40_-95': 'IL/IN', '40_-90': 'OH',
+            '40_-85': 'PA', '40_-80': 'PA/NJ', '40_-75': 'CT/MA', '40_-70': 'MA/RI',
+            '35_-125': 'CA', '35_-120': 'CA/AZ', '35_-115': 'AZ/NM', '35_-110': 'NM',
+            '35_-105': 'TX/OK', '35_-100': 'AR/MS', '35_-95': 'TN/AL', '35_-90': 'GA',
+            '35_-85': 'NC/SC', '35_-80': 'VA', '35_-75': 'NC', '35_-70': 'Atlantic',
+            '30_-125': 'Pacific', '30_-120': 'S.CA', '30_-115': 'AZ', '30_-110': 'S.NM',
+            '30_-105': 'S.TX', '30_-100': 'S.TX', '30_-95': 'LA', '30_-90': 'LA/MS',
+            '30_-85': 'FL', '30_-80': 'FL', '30_-75': 'Atlantic', '30_-70': 'Atlantic',
+            '25_-125': 'Pacific', '25_-120': 'Pacific', '25_-115': 'Baja', '25_-110': 'Mexico',
+            '25_-105': 'Gulf', '25_-100': 'Gulf', '25_-95': 'Gulf', '25_-90': 'Gulf',
+            '25_-85': 'S.FL', '25_-80': 'S.FL', '25_-75': 'Bahamas', '25_-70': 'Atlantic',
+        };
+
+        function log(msg, type = 'info') {
+            const el = document.getElementById('log');
+            const cls = type === 'error' ? 'log-error' : type === 'success' ? 'log-entry' : 'log-info';
+            const time = new Date().toLocaleTimeString();
+            el.innerHTML = `<div class="${cls}">[${time}] ${msg}</div>` + el.innerHTML;
+            if (el.children.length > 100) el.removeChild(el.lastChild);
+        }
+
+        function renderTiles() {
+            const grid = document.getElementById('tileGrid');
+            grid.innerHTML = '';
+
+            // Tiles are stored south-to-north, but we render north-to-south (top=north)
+            // Sort: highest lat first, then west-to-east
+            const sorted = [...tiles].sort((a, b) => {
+                if (a.south !== b.south) return b.south - a.south;
+                return a.west - b.west;
+            });
+
+            for (const tile of sorted) {
+                const div = document.createElement('div');
+                div.className = `tile tile-${tile.status}`;
+                div.dataset.tileId = tile.id;
+
+                const label = REGION_LABELS[tile.id] || '';
+                const count = tile.poi_count || 0;
+
+                div.innerHTML = `
+                    <div class="tile-count">${count > 0 ? count : ''}</div>
+                    <div class="tile-label">${label}</div>
+                `;
+
+                div.addEventListener('click', () => seedTile(tile.id));
+                div.addEventListener('mouseenter', (e) => showTooltip(e, tile));
+                div.addEventListener('mouseleave', hideTooltip);
+
+                grid.appendChild(div);
+            }
+
+            // Update stats
+            const complete = tiles.filter(t => t.status === 'success').length;
+            document.getElementById('tilesComplete').textContent = `${complete}/${tiles.length}`;
+        }
+
+        function showTooltip(e, tile) {
+            const tt = document.getElementById('tooltip');
+            const label = REGION_LABELS[tile.id] || 'Unknown';
+            let html = `<strong>${label}</strong> (${tile.south},${tile.west} to ${tile.north},${tile.east})<br>`;
+            html += `Status: ${tile.status} | POIs: ${tile.poi_count || 0}`;
+            if (tile.error) html += `<br>Error: ${tile.error}`;
+            if (tile.last_attempt) html += `<br>Last attempt: ${new Date(tile.last_attempt).toLocaleTimeString()}`;
+            html += `<br><em>Click to seed this tile</em>`;
+            tt.innerHTML = html;
+            tt.style.display = 'block';
+            tt.style.left = (e.pageX + 15) + 'px';
+            tt.style.top = (e.pageY - 10) + 'px';
+        }
+
+        function hideTooltip() {
+            document.getElementById('tooltip').style.display = 'none';
+        }
+
+        async function refresh() {
+            try {
+                const resp = await fetch('/api/status');
+                const data = await resp.json();
+                tiles = data.tiles;
+                renderTiles();
+                updateOverpassUI(data.overpass);
+                document.getElementById('totalPois').textContent = data.poi_counts.total;
+                document.getElementById('npsPois').textContent = data.poi_counts.nps;
+                document.getElementById('osmPois').textContent = data.poi_counts.osm;
+
+                polling = data.auto_poll;
+                document.getElementById('seedAllBtn').style.display = polling ? 'none' : '';
+                document.getElementById('stopBtn').style.display = polling ? '' : 'none';
+            } catch (e) {
+                log('Failed to refresh: ' + e.message, 'error');
+            }
+        }
+
+        function updateOverpassUI(status) {
+            const el = document.getElementById('overpassStatus');
+            if (status.up) {
+                el.className = 'status-indicator status-up';
+                el.innerHTML = `<div class="status-dot"></div><span>Overpass: UP (${status.response_ms}ms)</span>`;
+            } else {
+                el.className = 'status-indicator status-down';
+                el.innerHTML = `<div class="status-dot"></div><span>Overpass: DOWN</span>`;
+            }
+        }
+
+        async function checkOverpass() {
+            log('Checking Overpass status...');
+            const resp = await fetch('/api/check-overpass');
+            const data = await resp.json();
+            updateOverpassUI(data);
+            log(data.up ? `Overpass is UP (${data.response_ms}ms)` : 'Overpass is DOWN', data.up ? 'success' : 'error');
+        }
+
+        async function seedTile(tileId) {
+            const tile = tiles.find(t => t.id === tileId);
+            const label = REGION_LABELS[tileId] || tileId;
+            log(`Seeding tile ${label}...`);
+
+            // Optimistic UI update
+            if (tile) { tile.status = 'fetching'; renderTiles(); }
+
+            try {
+                const resp = await fetch(`/api/seed-tile/${tileId}`, { method: 'POST' });
+                const data = await resp.json();
+                if (data.error) {
+                    log(`Tile ${label} failed: ${data.error}`, 'error');
+                } else {
+                    log(`Tile ${label}: ${data.count} POIs seeded`, data.count > 0 ? 'success' : 'error');
+                }
+            } catch (e) {
+                log(`Tile ${label} error: ${e.message}`, 'error');
+            }
+            refresh();
+        }
+
+        async function seedAll() {
+            log('Starting auto-seed of all tiles...');
+            await fetch('/api/seed-all', { method: 'POST' });
+            refresh();
+        }
+
+        async function stopPolling() {
+            log('Stopping auto-seed...');
+            await fetch('/api/stop', { method: 'POST' });
+            polling = false;
+            refresh();
+        }
+
+        // Initial load and auto-refresh
+        refresh();
+        setInterval(refresh, 5000);
+    </script>
+</body>
+</html>

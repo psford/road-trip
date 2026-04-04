@@ -491,17 +491,21 @@ app.MapGet("/api/poi", async (double? minLat, double? maxLat, double? minLng, do
         return Results.BadRequest(new { error = "Invalid zoom level: zoom must be >= 0" });
 
     // Determine allowed categories based on zoom
+    // Natural features (peaks, waterfalls) are dense — only show at zoom 10+
     var allowedCategories = zoom < 7
         ? new[] { "national_park" }
         : zoom < 10
-            ? new[] { "national_park", "state_park", "natural_feature" }
+            ? new[] { "national_park", "state_park" }
             : new[] { "national_park", "state_park", "natural_feature", "historic_site", "tourism" };
 
-    // Query POIs with viewport and category filtering, cap at 200 results
+    // Scale result cap by zoom — fewer results at lower zoom to prevent overcrowding
+    var maxResults = zoom < 8 ? 50 : zoom < 10 ? 100 : zoom < 12 ? 150 : 200;
+
+    // Query POIs with viewport and category filtering
     var pois = await db.PointsOfInterest
         .Where(p => p.Latitude >= minLat && p.Latitude <= maxLat && p.Longitude >= minLng && p.Longitude <= maxLng)
         .Where(p => allowedCategories.Contains(p.Category))
-        .Take(200)
+        .Take(maxResults)
         .Select(p => new PoiResponse
         {
             Id = p.Id,
