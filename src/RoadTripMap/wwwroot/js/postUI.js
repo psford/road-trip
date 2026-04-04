@@ -452,13 +452,37 @@ const PostUI = {
             },
             onPoiZoom: (lat, lng) => {
                 if (this.map) {
-                    // Pin-drop map: zoom in so user can tap for precise placement
+                    // Pin-drop map already open: just zoom in for precise placement
                     this.map.flyTo({ center: [lng, lat], zoom: 13 });
                 } else {
-                    // Photo map: store the zoom target so pin-drop map opens here
-                    this.pendingPoiZoom = { lat, lng };
-                    this.photoMap.flyTo({ center: [lng, lat], zoom: 13 });
-                    this.showToast('Zoomed in. Select a photo, then tap the map to place it.', 'success');
+                    // Photo map: hide it and open pin-drop map centered on the POI area
+                    document.getElementById('photoMapSection')?.classList.remove('visible');
+                    document.getElementById('mapSection').classList.add('visible');
+                    document.getElementById('previewSection').classList.add('visible');
+
+                    // Set place name hint
+                    const placeNameEl = document.getElementById('placeNameDisplay');
+                    if (placeNameEl) {
+                        placeNameEl.textContent = 'Tap map to set location';
+                        placeNameEl.classList.add('no-gps');
+                    }
+
+                    if (!this.map) {
+                        this.initializePinDropMap();
+                    }
+
+                    this.map.jumpTo({ center: [lng, lat], zoom: 13 });
+                    if (this.marker) this.marker.remove();
+                    this.map.resize();
+
+                    // Initialize metadata so the click handler doesn't crash
+                    if (!this.currentMetadata) {
+                        this.currentMetadata = { gps: null, placeName: null };
+                    }
+
+                    // Mark that we're in "pick nearby" mode — next map tap places a pin
+                    // and opens the file picker
+                    this.pendingNearbyPinDrop = true;
                 }
             }
         };
@@ -541,12 +565,22 @@ const PostUI = {
                 const placeNameEl = document.getElementById('placeNameDisplay');
                 placeNameEl.textContent = result.placeName || 'Location set';
                 placeNameEl.classList.remove('no-gps');
-                this.currentMetadata.placeName = result.placeName;
+                if (this.currentMetadata) {
+                    this.currentMetadata.placeName = result.placeName;
+                }
             } catch (err) {
                 console.warn('Failed to geocode:', err);
                 const placeNameEl = document.getElementById('placeNameDisplay');
                 placeNameEl.textContent = 'Location set';
                 placeNameEl.classList.remove('no-gps');
+            }
+
+            // If we came from "Pick nearby spot", open file picker after pin placement
+            if (this.pendingNearbyPinDrop) {
+                this.pendingNearbyPinDrop = false;
+                // Store location so onFileSelected uses it
+                this.pendingPoiLocation = { lat, lng, name: document.getElementById('placeNameDisplay')?.textContent || 'Location set' };
+                document.getElementById('fileInput')?.click();
             }
         });
     },
