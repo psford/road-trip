@@ -440,8 +440,14 @@ const PostUI = {
                 }
             },
             onPoiZoom: (lat, lng) => {
-                const targetMap = this.map || this.photoMap;
-                targetMap.flyTo({ center: [lng, lat], zoom: 13 });
+                if (this.map) {
+                    // Pin-drop map: zoom in so user can tap for precise placement
+                    this.map.flyTo({ center: [lng, lat], zoom: 13 });
+                } else {
+                    // Photo map: zoom in and open Add Photo flow
+                    this.photoMap.flyTo({ center: [lng, lat], zoom: 13 });
+                    this.showToast('Zoomed in. Select a photo, then tap the map to place it.', 'success');
+                }
             }
         };
     },
