@@ -14,9 +14,11 @@ const PoiLayer = {
      * @returns {void}
      */
     init(map) {
-        // If style isn't loaded yet, defer until it is
+        // If style isn't loaded yet, defer with a short retry.
+        // We can't use once('styledata') because it may have already fired
+        // by the time this is called from map.on('load').
         if (!map.isStyleLoaded()) {
-            map.once('styledata', () => this.init(map));
+            setTimeout(() => this.init(map), 100);
             return;
         }
 

@@ -17,7 +17,7 @@
 const ParkStyle = {
     applyParkStyling(map) {
         if (!map.isStyleLoaded()) {
-            map.once('styledata', () => this.applyParkStyling(map));
+            setTimeout(() => this.applyParkStyling(map), 100);
             return;
         }
 
