@@ -1,20 +1,15 @@
 /**
  * Park Styling Module
  *
- * Enhances MapTiler Streets v2 park display:
- * - Makes the existing "Park" POI label layer more prominent with bolder text and lower minzoom
- * - Enhances landcover layers (Wood, Forest, Grass) with greener fill where they represent park areas
- *
- * MapTiler Streets v2 actual layer structure (verified 2026-04-04):
- * - Park labels: source-layer="poi", layer id="Park", filter=['all', ['==','class','park'], ['has','name']]
- * - Park polygons: No dedicated park fill layer. Park areas are covered by:
- *   - "Forest" (source-layer=globallandcover, class=forest/tree) - fill
- *   - "Wood" (source-layer=landcover, class=wood) - fill
- *   - "Grass" (source-layer=landcover, class=grass) - fill
- *   - "Meadow" (source-layer=globallandcover, class=grass) - fill
+ * Loads NPS national park boundary polygons from a static GeoJSON file
+ * and renders them as a fill+outline layer on MapLibre GL JS maps.
+ * Also enhances existing MapTiler park label styling.
  */
 
 const ParkStyle = {
+    _loaded: false,
+    _boundaryData: null,
+
     applyParkStyling(map) {
         if (!map.isStyleLoaded()) {
             setTimeout(() => this.applyParkStyling(map), 100);
@@ -22,50 +17,106 @@ const ParkStyle = {
         }
 
         this._enhanceParkLabels(map);
-        this._enhanceLandcoverLayers(map);
+        this._loadAndRenderBoundaries(map);
     },
 
     /**
-     * Enhance the existing "Park" POI label layer:
-     * - Lower minzoom from default (~10) to 6 so park names visible at regional zoom
-     * - Bolder text color and larger halo for readability
+     * Enhance the existing "Park" POI label layer from MapTiler
      */
     _enhanceParkLabels(map) {
         const parkLayerId = 'Park';
+        if (!map.getLayer(parkLayerId)) return;
 
-        if (!map.getLayer(parkLayerId)) {
-            console.warn('Park label layer not found in style');
-            return;
-        }
-
-        // Bolder green text with white halo (don't change zoom range — the Park layer
-        // uses a sprite icon that's only available at certain zooms; changing minzoom
-        // causes "Image could not be loaded" warnings)
         map.setPaintProperty(parkLayerId, 'text-color', '#1e5631');
         map.setPaintProperty(parkLayerId, 'text-halo-color', '#ffffff');
         map.setPaintProperty(parkLayerId, 'text-halo-width', 2);
     },
 
     /**
-     * Enhance landcover fill layers to be greener and more prominent.
-     * These layers cover forest/wood/grass areas which include parks.
-     * We make the green more vivid so park areas stand out visually.
+     * Load NPS boundary GeoJSON and add fill + outline layers
      */
-    _enhanceLandcoverLayers(map) {
-        // Enhance forest/wood fills to be more vivid green
-        const fillEnhancements = [
-            { id: 'Forest', color: '#a8d5a2', opacity: 0.6 },
-            { id: 'Wood', color: '#8fca87', opacity: 0.5 },
-            { id: 'Grass', color: '#c5e8b7', opacity: 0.5 },
-            { id: 'Meadow', color: '#d4edc9', opacity: 0.4 },
-        ];
-
-        for (const { id, color, opacity } of fillEnhancements) {
-            if (map.getLayer(id)) {
-                map.setPaintProperty(id, 'fill-color', color);
-                map.setPaintProperty(id, 'fill-opacity', opacity);
+    async _loadAndRenderBoundaries(map) {
+        try {
+            // Load boundary data (cache across multiple map instances)
+            if (!this._boundaryData) {
+                const response = await fetch('/data/nps-boundaries.geojson');
+                if (!response.ok) {
+                    console.warn('Park boundaries not available:', response.status);
+                    return;
+                }
+                this._boundaryData = await response.json();
             }
+
+            // Add source if not already present
+            if (!map.getSource('nps-boundaries')) {
+                map.addSource('nps-boundaries', {
+                    type: 'geojson',
+                    data: this._boundaryData
+                });
+            }
+
+            // Add fill layer — semi-transparent green
+            if (!map.getLayer('nps-boundary-fill')) {
+                map.addLayer({
+                    id: 'nps-boundary-fill',
+                    type: 'fill',
+                    source: 'nps-boundaries',
+                    paint: {
+                        'fill-color': '#2d6a4f',
+                        'fill-opacity': 0.15
+                    }
+                }, this._findFirstSymbolLayer(map));
+            }
+
+            // Add outline layer — solid green border
+            if (!map.getLayer('nps-boundary-outline')) {
+                map.addLayer({
+                    id: 'nps-boundary-outline',
+                    type: 'line',
+                    source: 'nps-boundaries',
+                    paint: {
+                        'line-color': '#2d6a4f',
+                        'line-width': 2,
+                        'line-opacity': 0.7
+                    }
+                }, this._findFirstSymbolLayer(map));
+            }
+
+            // Add park name labels at centroids
+            if (!map.getLayer('nps-boundary-labels')) {
+                map.addLayer({
+                    id: 'nps-boundary-labels',
+                    type: 'symbol',
+                    source: 'nps-boundaries',
+                    layout: {
+                        'text-field': ['get', 'UNIT_NAME'],
+                        'text-size': 12,
+                        'text-font': ['Open Sans Bold'],
+                        'text-allow-overlap': false,
+                        'text-padding': 10
+                    },
+                    paint: {
+                        'text-color': '#1e5631',
+                        'text-halo-color': '#ffffff',
+                        'text-halo-width': 2
+                    },
+                    minzoom: 7
+                });
+            }
+        } catch (error) {
+            console.error('Failed to load park boundaries:', error);
         }
+    },
+
+    /**
+     * Find the first symbol layer in the style to insert fill layers below labels
+     */
+    _findFirstSymbolLayer(map) {
+        const layers = map.getStyle().layers;
+        for (const layer of layers) {
+            if (layer.type === 'symbol') return layer.id;
+        }
+        return undefined;
     }
 };
 
