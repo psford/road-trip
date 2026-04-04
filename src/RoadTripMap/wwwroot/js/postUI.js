@@ -389,8 +389,9 @@ const PostUI = {
             this.initializePinDropMap();
         }
 
-        // Center map on default location (USA center)
-        this.map.jumpTo({ center: [-98.5795, 39.8283], zoom: 4 });
+        // Center map on default location (last photo or USA center)
+        const { center, zoom } = this.getDefaultMapCenter();
+        this.map.jumpTo({ center, zoom });
         if (this.marker) {
             this.marker.remove();
         }
@@ -426,18 +427,27 @@ const PostUI = {
         }
     },
 
-    initializePinDropMap() {
-        // Determine map center based on existing photos
+    getDefaultMapCenter() {
+        // Determine map center and zoom level based on existing photos
+        // Returns { center: [lng, lat], zoom: number }
         let center = [-98.5795, 39.8283];  // Center of US fallback
         let zoom = 4;
 
         if (this.photos && this.photos.length > 0) {
             const lastPhoto = this.photos[this.photos.length - 1];
-            if (lastPhoto.lat && lastPhoto.lng) {
+            // Use explicit null/undefined checks to handle lat/lng of 0
+            if (lastPhoto.lat != null && lastPhoto.lng != null) {
                 center = [lastPhoto.lng, lastPhoto.lat];
                 zoom = 10;
             }
         }
+
+        return { center, zoom };
+    },
+
+    initializePinDropMap() {
+        // Get default center and zoom from helper
+        const { center, zoom } = this.getDefaultMapCenter();
 
         this.map = new maplibregl.Map({
             container: 'pinDropMap',
@@ -609,6 +619,13 @@ const PostUI = {
         try {
             const photos = await PostService.listPhotos(this.secretToken);
             this.photos = photos;
+
+            // If pin-drop map is currently visible, update its center to reflect newly loaded photos
+            const mapSection = document.getElementById('mapSection');
+            if (this.map && mapSection && mapSection.classList.contains('visible')) {
+                const { center, zoom } = this.getDefaultMapCenter();
+                this.map.jumpTo({ center, zoom });
+            }
 
             const photoList = document.getElementById('photoList');
             const photoMapSection = document.getElementById('photoMapSection');
