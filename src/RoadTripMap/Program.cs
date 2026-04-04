@@ -604,8 +604,9 @@ async Task<int> FetchOverpassForViewport(
     var bbox = $"({south},{west},{north},{east})";
     var queries = new Dictionary<string, string>
     {
-        ["tourism"] = $"[out:json][timeout:15];node[\"tourism\"~\"attraction|museum|viewpoint\"]{bbox};out body;",
-        ["historic"] = $"[out:json][timeout:15];node[\"historic\"~\"monument|memorial|castle|ruins\"]{bbox};out body;",
+        ["tourism"] = $"[out:json][timeout:15];node[\"tourism\"~\"attraction|viewpoint\"]{bbox};out body;",
+        ["natural"] = $"[out:json][timeout:15];(node[\"natural\"=\"peak\"]{bbox};node[\"natural\"=\"waterfall\"]{bbox};node[\"natural\"=\"volcano\"]{bbox};node[\"natural\"=\"cave_entrance\"]{bbox};);out body;",
+        ["nature_reserve"] = $"[out:json][timeout:15];node[\"leisure\"=\"nature_reserve\"]{bbox};out body;",
     };
 
     var client = clientFactory.CreateClient("Overpass");
@@ -635,7 +636,11 @@ async Task<int> FetchOverpassForViewport(
                 var lon = el.GetProperty("lon").GetDouble();
                 var sourceId = el.GetProperty("id").GetInt64().ToString();
 
-                var category = qtype == "historic" ? "historic_site" : "tourism";
+                var category = qtype switch
+                {
+                    "natural" or "nature_reserve" => "natural_feature",
+                    _ => "tourism"
+                };
 
                 // Upsert
                 var existing = await dbCtx.PointsOfInterest
