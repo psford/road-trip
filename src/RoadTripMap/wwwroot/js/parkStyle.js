@@ -1,177 +1,83 @@
 /**
- * Park Polygon Restyling Module
- * Overrides MapTiler Streets v2 default park styles with bolder colors and adds park labels at lower zoom levels
- * Uses MapLibre GL JS setPaintProperty() to modify existing park layers and adds a custom symbol layer for labels
+ * Park Styling Module
+ *
+ * Enhances MapTiler Streets v2 park display:
+ * - Makes the existing "Park" POI label layer more prominent with bolder text and lower minzoom
+ * - Enhances landcover layers (Wood, Forest, Grass) with greener fill where they represent park areas
+ *
+ * MapTiler Streets v2 actual layer structure (verified 2026-04-04):
+ * - Park labels: source-layer="poi", layer id="Park", filter=['all', ['==','class','park'], ['has','name']]
+ * - Park polygons: No dedicated park fill layer. Park areas are covered by:
+ *   - "Forest" (source-layer=globallandcover, class=forest/tree) - fill
+ *   - "Wood" (source-layer=landcover, class=wood) - fill
+ *   - "Grass" (source-layer=landcover, class=grass) - fill
+ *   - "Meadow" (source-layer=globallandcover, class=grass) - fill
  */
 
 const ParkStyle = {
-    /**
-     * Apply park restyling to a MapLibre GL JS map
-     * Finds existing park layers (both park and landuse source-layers per OpenMapTiles schema),
-     * overrides their fill/line colors, and adds park labels at zoom 6+
-     *
-     * @param {maplibregl.Map} map - MapLibre GL JS map instance
-     * @returns {void}
-     */
     applyParkStyling(map) {
-        // Guard: check if style is loaded
         if (!map.isStyleLoaded()) {
             console.warn('Map style not loaded; skipping park styling');
             return;
         }
 
-        // Find vector tile source name by inspecting sources
-        const vectorSource = this._findVectorSource(map);
-        if (!vectorSource) {
-            console.warn('No vector tile source found; skipping park styling');
+        this._enhanceParkLabels(map);
+        this._enhanceLandcoverLayers(map);
+    },
+
+    /**
+     * Enhance the existing "Park" POI label layer:
+     * - Lower minzoom from default (~10) to 6 so park names visible at regional zoom
+     * - Bolder text color and larger halo for readability
+     */
+    _enhanceParkLabels(map) {
+        const parkLayerId = 'Park';
+
+        if (!map.getLayer(parkLayerId)) {
+            console.warn('Park label layer not found in style');
             return;
         }
 
-        // Get all layers and filter for park polygons
-        const parkLayers = this._findParkLayers(map);
-        if (parkLayers.length === 0) {
-            console.warn('No park layers found in map style');
-            return;
-        }
+        // Make park labels visible at lower zoom levels
+        map.setLayerZoomRange(parkLayerId, 6, 24);
 
-        // Override fill and line colors for each park layer
-        this._overrideParkLayerStyles(map, parkLayers);
+        // Bolder green text with white halo
+        map.setPaintProperty(parkLayerId, 'text-color', '#1e5631');
+        map.setPaintProperty(parkLayerId, 'text-halo-color', '#ffffff');
+        map.setPaintProperty(parkLayerId, 'text-halo-width', 2);
 
-        // Add park label layer at zoom 6+
-        this._addParkLabels(map, vectorSource);
+        // Larger text size with zoom interpolation
+        map.setLayoutProperty(parkLayerId, 'text-size', [
+            'interpolate', ['linear'], ['zoom'],
+            6, 10,
+            10, 13,
+            14, 16
+        ]);
     },
 
     /**
-     * Find the vector tile source in the map style
-     * @param {maplibregl.Map} map - MapLibre GL JS map instance
-     * @returns {string|null} - Source ID (e.g., 'maptiler_planet' or 'openmaptiles') or null if not found
+     * Enhance landcover fill layers to be greener and more prominent.
+     * These layers cover forest/wood/grass areas which include parks.
+     * We make the green more vivid so park areas stand out visually.
      */
-    _findVectorSource(map) {
-        const sources = map.getStyle().sources || {};
-        for (const [sourceId, source] of Object.entries(sources)) {
-            if (source.type === 'vector') {
-                return sourceId;
+    _enhanceLandcoverLayers(map) {
+        // Enhance forest/wood fills to be more vivid green
+        const fillEnhancements = [
+            { id: 'Forest', color: '#a8d5a2', opacity: 0.6 },
+            { id: 'Wood', color: '#8fca87', opacity: 0.5 },
+            { id: 'Grass', color: '#c5e8b7', opacity: 0.5 },
+            { id: 'Meadow', color: '#d4edc9', opacity: 0.4 },
+        ];
+
+        for (const { id, color, opacity } of fillEnhancements) {
+            if (map.getLayer(id)) {
+                map.setPaintProperty(id, 'fill-color', color);
+                map.setPaintProperty(id, 'fill-opacity', opacity);
             }
         }
-        return null;
-    },
-
-    /**
-     * Find all park layers in the style
-     * Parks may appear in either 'park' or 'landuse' (with class='park') source-layers per OpenMapTiles
-     *
-     * @param {maplibregl.Map} map - MapLibre GL JS map instance
-     * @returns {Array<Object>} - Array of layer objects with source-layer 'park' or landuse class 'park'
-     */
-    _findParkLayers(map) {
-        const allLayers = map.getStyle().layers || [];
-
-        return allLayers.filter(layer => {
-            const sourceLayer = layer['source-layer'];
-
-            // Include park source-layer
-            if (sourceLayer === 'park') {
-                return true;
-            }
-
-            // Include landuse source-layer if class filter indicates park
-            if (sourceLayer === 'landuse' && this._isParkClassFilter(layer)) {
-                return true;
-            }
-
-            return false;
-        });
-    },
-
-    /**
-     * Check if a layer's filter indicates it's a park (class='park')
-     * Filter may be in various formats: ['==', ['get', 'class'], 'park'] or similar
-     *
-     * @param {Object} layer - MapLibre GL JS layer object
-     * @returns {boolean}
-     */
-    _isParkClassFilter(layer) {
-        const filter = layer.filter;
-        if (!filter || !Array.isArray(filter)) {
-            return false;
-        }
-
-        // Check for ['==', ['get', 'class'], 'park'] pattern
-        if (filter[0] === '==' && Array.isArray(filter[1]) && filter[1][1] === 'class' && filter[2] === 'park') {
-            return true;
-        }
-
-        return false;
-    },
-
-    /**
-     * Override fill and line paint properties for park layers
-     *
-     * @param {maplibregl.Map} map - MapLibre GL JS map instance
-     * @param {Array<Object>} parkLayers - Array of park layer objects
-     * @returns {void}
-     */
-    _overrideParkLayerStyles(map, parkLayers) {
-        parkLayers.forEach(layer => {
-            const layerId = layer.id;
-            const layerType = layer.type;
-
-            // Override fill properties for fill layers
-            if (layerType === 'fill') {
-                map.setPaintProperty(layerId, 'fill-color', '#2ecc71');
-                map.setPaintProperty(layerId, 'fill-opacity', 0.35);
-            }
-
-            // Override line properties for line layers
-            if (layerType === 'line') {
-                map.setPaintProperty(layerId, 'line-color', '#1e8449');
-                map.setPaintProperty(layerId, 'line-width', 2);
-            }
-        });
-    },
-
-    /**
-     * Add a symbol layer for park labels at zoom 6+
-     * Uses text-field: ['get', 'name'] to display park names from vector tile data
-     *
-     * @param {maplibregl.Map} map - MapLibre GL JS map instance
-     * @param {string} vectorSourceId - Vector tile source ID
-     * @returns {void}
-     */
-    _addParkLabels(map, vectorSourceId) {
-        // Guard: prevent duplicate layers
-        if (map.getLayer('park-labels-custom')) {
-            return;
-        }
-
-        map.addLayer({
-            id: 'park-labels-custom',
-            type: 'symbol',
-            source: vectorSourceId,
-            'source-layer': 'park',
-            minzoom: 6,
-            maxzoom: 24,
-            layout: {
-                'text-field': ['get', 'name'],
-                'text-size': [
-                    'interpolate',
-                    ['linear'],
-                    ['zoom'],
-                    6, 10,
-                    12, 14
-                ],
-                'text-allow-overlap': false
-            },
-            paint: {
-                'text-color': '#1e5631',
-                'text-halo-color': '#ffffff',
-                'text-halo-width': 1.5
-            }
-        });
     }
 };
 
-// Export function matching expected API: applyParkStyling(map)
 function applyParkStyling(map) {
     ParkStyle.applyParkStyling(map);
 }
