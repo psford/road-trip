@@ -409,6 +409,24 @@ const PostUI = {
         }, 100);
     },
 
+    _poiActionOptions() {
+        return {
+            onPoiSelect: (lat, lng, name) => {
+                // Place marker and set location from POI
+                if (this.marker) this.marker.remove();
+                const targetMap = this.map || this.photoMap;
+                this.marker = new maplibregl.Marker()
+                    .setLngLat([lng, lat])
+                    .addTo(targetMap);
+                this.setLocationFromPoi(lat, lng, name);
+            },
+            onPoiZoom: (lat, lng) => {
+                const targetMap = this.map || this.photoMap;
+                targetMap.flyTo({ center: [lng, lat], zoom: 13 });
+            }
+        };
+    },
+
     setLocationFromPoi(lat, lng, name) {
         // Update current coordinates
         this.currentLat = lat;
@@ -456,72 +474,10 @@ const PostUI = {
             zoom: zoom
         });
 
-        // Apply park restyling when map style loads
+        // Apply park restyling and POI layer with tap-to-pin actions
         this.map.on('load', () => {
             applyParkStyling(this.map);
-            PoiLayer.init(this.map);
-        });
-
-        // POI click handler — must be added before generic click handler
-        this.map.on('click', 'poi-markers', (e) => {
-            if (!e.features || !e.features.length) return;
-
-            const feature = e.features[0];
-            const { name } = feature.properties;
-            const [lng, lat] = feature.geometry.coordinates;
-
-            // Remove any existing popup
-            if (this.poiPopup) this.poiPopup.remove();
-
-            // Create popup with two action buttons
-            // IMPORTANT: Escape name to prevent XSS — POI names come from external sources
-            const escapedName = name.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-            const popupHTML = `
-                <div class="poi-action-popup">
-                    <div class="poi-action-name">${escapedName}</div>
-                    <button class="poi-action-btn poi-use-location" data-lat="${lat}" data-lng="${lng}" data-name="${escapedName}">
-                        Use this location
-                    </button>
-                    <button class="poi-action-btn poi-pick-nearby" data-lat="${lat}" data-lng="${lng}">
-                        Pick nearby spot
-                    </button>
-                </div>
-            `;
-
-            this.poiPopup = new maplibregl.Popup({ closeOnClick: true, maxWidth: '240px' })
-                .setLngLat([lng, lat])
-                .setHTML(popupHTML)
-                .addTo(this.map);
-
-            // "Use this location" handler
-            const useBtn = this.poiPopup.getElement().querySelector('.poi-use-location');
-            useBtn.addEventListener('click', async () => {
-                this.poiPopup.remove();
-                // Place marker at POI coordinates (same as existing click handler logic)
-                if (this.marker) this.marker.remove();
-                this.marker = new maplibregl.Marker()
-                    .setLngLat([lng, lat])
-                    .addTo(this.map);
-                // Set the place name from POI name instead of geocoding
-                this.setLocationFromPoi(lat, lng, name);
-            });
-
-            // "Pick nearby spot" handler
-            const nearbyBtn = this.poiPopup.getElement().querySelector('.poi-pick-nearby');
-            nearbyBtn.addEventListener('click', () => {
-                this.poiPopup.remove();
-                // Zoom to POI area at zoom 13 for precise placement
-                this.map.flyTo({ center: [lng, lat], zoom: 13 });
-                // User then taps map normally via existing click handler
-            });
-        });
-
-        // Change cursor on POI hover
-        this.map.on('mouseenter', 'poi-markers', () => {
-            this.map.getCanvas().style.cursor = 'pointer';
-        });
-        this.map.on('mouseleave', 'poi-markers', () => {
-            this.map.getCanvas().style.cursor = '';
+            PoiLayer.init(this.map, this._poiActionOptions());
         });
 
         // Handle map clicks for marker placement
@@ -689,10 +645,10 @@ const PostUI = {
                 zoom: 4
             });
 
-            // Apply park restyling when map style loads
+            // Apply park restyling and POI layer with tap-to-pin actions
             this.photoMap.on('load', () => {
                 applyParkStyling(this.photoMap);
-                PoiLayer.init(this.photoMap);
+                PoiLayer.init(this.photoMap, this._poiActionOptions());
             });
         }
 

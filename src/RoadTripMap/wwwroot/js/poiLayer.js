@@ -13,12 +13,15 @@ const PoiLayer = {
      * @param {maplibregl.Map} map - MapLibre GL JS map instance
      * @returns {void}
      */
-    init(map) {
-        // If style isn't loaded yet, defer with a short retry.
-        // We can't use once('styledata') because it may have already fired
-        // by the time this is called from map.on('load').
+    /**
+     * @param {maplibregl.Map} map
+     * @param {Object} [options]
+     * @param {function} [options.onPoiSelect] - Called with (lat, lng, name) when user clicks "Use this location"
+     * @param {function} [options.onPoiZoom] - Called with (lat, lng) when user clicks "Pick nearby spot"
+     */
+    init(map, options) {
         if (!map.isStyleLoaded()) {
-            setTimeout(() => this.init(map), 100);
+            setTimeout(() => this.init(map, options), 100);
             return;
         }
 
@@ -82,8 +85,10 @@ const PoiLayer = {
             });
         }
 
-        // POI info popup on click — shows name and category for any map
+        // POI popup on click — info-only or with action buttons depending on options
         let poiPopup = null;
+        const hasActions = options && (options.onPoiSelect || options.onPoiZoom);
+
         map.on('click', 'poi-markers', (e) => {
             if (!e.features || !e.features.length) return;
 
@@ -96,10 +101,34 @@ const PoiLayer = {
             const escapedName = name.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
             const categoryLabel = category.replace(/_/g, ' ');
 
+            let html;
+            if (hasActions) {
+                html = `<div class="poi-action-popup">
+                    <div class="poi-action-name">${escapedName}</div>
+                    <small style="color:#666;display:block;margin-bottom:8px">${categoryLabel}</small>
+                    <button class="poi-action-btn poi-use-location">Use this location</button>
+                    <button class="poi-action-btn poi-pick-nearby">Pick nearby spot</button>
+                </div>`;
+            } else {
+                html = `<div style="padding:4px 8px"><strong>${escapedName}</strong><br><small style="color:#666">${categoryLabel}</small></div>`;
+            }
+
             poiPopup = new maplibregl.Popup({ closeOnClick: true, maxWidth: '240px' })
                 .setLngLat([lng, lat])
-                .setHTML(`<div style="padding:4px 8px"><strong>${escapedName}</strong><br><small style="color:#666">${categoryLabel}</small></div>`)
+                .setHTML(html)
                 .addTo(map);
+
+            if (hasActions) {
+                const el = poiPopup.getElement();
+                el.querySelector('.poi-use-location')?.addEventListener('click', () => {
+                    poiPopup.remove();
+                    if (options.onPoiSelect) options.onPoiSelect(lat, lng, name);
+                });
+                el.querySelector('.poi-pick-nearby')?.addEventListener('click', () => {
+                    poiPopup.remove();
+                    if (options.onPoiZoom) options.onPoiZoom(lat, lng);
+                });
+            }
         });
 
         // Pointer cursor on POI hover

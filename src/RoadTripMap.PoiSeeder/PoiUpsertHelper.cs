@@ -27,6 +27,7 @@ public static class PoiUpsertHelper
         else
         {
             existing.Name = newPoi.Name;
+            existing.Category = newPoi.Category;
             existing.Latitude = newPoi.Latitude;
             existing.Longitude = newPoi.Longitude;
             context.PointsOfInterest.Update(existing);

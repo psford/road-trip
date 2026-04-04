@@ -154,10 +154,16 @@ public class NpsImporter
                 return false;
             }
 
+            // Map NPS designation to POI category
+            var designation = parkElement.TryGetProperty("designation", out var desEl)
+                ? desEl.GetString() ?? ""
+                : "";
+            var category = MapDesignationToCategory(designation);
+
             poi = new PoiEntity
             {
                 Name = fullName,
-                Category = "national_park",
+                Category = category,
                 Latitude = latitude,
                 Longitude = longitude,
                 Source = "nps",
@@ -171,6 +177,23 @@ public class NpsImporter
             Console.Error.WriteLine($"Error parsing NPS park data: {ex.Message}");
             return false;
         }
+    }
+
+    private static string MapDesignationToCategory(string designation)
+    {
+        var d = designation.ToLowerInvariant();
+
+        if (d.Contains("national park"))
+            return "national_park";
+        if (d.Contains("historic") || d.Contains("historical") || d.Contains("battlefield") || d.Contains("memorial") || d.Contains("monument"))
+            return "historic_site";
+        if (d.Contains("seashore") || d.Contains("lakeshore") || d.Contains("river") || d.Contains("preserve") || d.Contains("recreation"))
+            return "natural_feature";
+        if (d.Contains("trail") || d.Contains("parkway") || d.Contains("scenic"))
+            return "natural_feature";
+
+        // Fallback: "Park", "", or anything else from NPS is still national-level
+        return "national_park";
     }
 
     private bool ParseLatLong(string latLongString, out double latitude, out double longitude)
