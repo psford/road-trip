@@ -113,21 +113,27 @@ const PoiLayer = {
                 html = `<div style="padding:4px 8px"><strong>${escapedName}</strong><br><small style="color:#666">${categoryLabel}</small></div>`;
             }
 
-            poiPopup = new maplibregl.Popup({ closeOnClick: true, maxWidth: '240px' })
+            poiPopup = new maplibregl.Popup({ closeOnClick: false, closeButton: true, maxWidth: '240px' })
                 .setLngLat([lng, lat])
                 .setHTML(html)
                 .addTo(map);
 
             if (hasActions) {
-                const el = poiPopup.getElement();
-                el.querySelector('.poi-use-location')?.addEventListener('click', () => {
-                    poiPopup.remove();
-                    if (options.onPoiSelect) options.onPoiSelect(lat, lng, name);
-                });
-                el.querySelector('.poi-pick-nearby')?.addEventListener('click', () => {
-                    poiPopup.remove();
-                    if (options.onPoiZoom) options.onPoiZoom(lat, lng);
-                });
+                // Use setTimeout to ensure popup DOM is fully rendered before attaching listeners
+                setTimeout(() => {
+                    const el = poiPopup.getElement();
+                    if (!el) return;
+                    el.querySelector('.poi-use-location')?.addEventListener('click', (evt) => {
+                        evt.stopPropagation();
+                        poiPopup.remove();
+                        if (options.onPoiSelect) options.onPoiSelect(lat, lng, name);
+                    });
+                    el.querySelector('.poi-pick-nearby')?.addEventListener('click', (evt) => {
+                        evt.stopPropagation();
+                        poiPopup.remove();
+                        if (options.onPoiZoom) options.onPoiZoom(lat, lng);
+                    });
+                }, 0);
             }
         });
 
