@@ -145,4 +145,23 @@ const API = {
         if (!response.ok) throw new Error('Failed to load photos');
         return response.json();
     },
+
+    /**
+     * Fetch POIs within map bounds and zoom level
+     * @param {maplibregl.LngLatBounds} bounds - Map bounds from map.getBounds()
+     * @param {number} zoom - Current zoom level from map.getZoom()
+     * @returns {Promise<Array>} - Array of POI objects or empty array on error
+     */
+    async fetchPois(bounds, zoom) {
+        const params = new URLSearchParams({
+            minLat: bounds.getSouth(),
+            maxLat: bounds.getNorth(),
+            minLng: bounds.getWest(),
+            maxLng: bounds.getEast(),
+            zoom: Math.floor(zoom)
+        });
+        const response = await fetch(`${this.baseUrl}/poi?${params}`);
+        if (!response.ok) return [];
+        return response.json();
+    },
 };
