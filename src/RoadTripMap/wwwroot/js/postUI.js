@@ -745,6 +745,7 @@ const PostUI = {
         });
 
         // Resize first (container may have just become visible), then fit bounds
+        // Also reload POIs for the new viewport
         setTimeout(() => {
             this.photoMap.resize();
 
@@ -756,6 +757,9 @@ const PostUI = {
                 this.photoMap.fitBounds(bounds, { padding: 50, maxZoom: 15 });
                 this.setupRouteToggle(photos);
             }
+
+            // Reload POIs for the new viewport
+            PoiLayer.loadPois(this.photoMap);
         }, 150);
     },
 
