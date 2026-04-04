@@ -48,64 +48,128 @@ public class OverpassImporter
         return result;
     }
 
+    private const int MaxRetries = 3;
+    private const int RetryDelayMs = 30000; // 30s backoff on 504/429
+
+    // US bounding box split into 5°×5° tiles to avoid Overpass 504 timeouts.
+    // PNW prioritized first (Patrick's area of interest).
+    private static readonly (double south, double west, double north, double east)[] UsTiles = GenerateUsTiles();
+
+    private static (double, double, double, double)[] GenerateUsTiles()
+    {
+        // 5-degree grid across continental US: lat 25-50, lng -125 to -65
+        // PNW tiles (lat >= 40, lng <= -110) sorted first
+        var tiles = new List<(double south, double west, double north, double east)>();
+        var pnwTiles = new List<(double south, double west, double north, double east)>();
+
+        for (double lat = 25; lat < 50; lat += 5)
+        {
+            for (double lng = -125; lng < -65; lng += 5)
+            {
+                var tile = (lat, lng, Math.Min(lat + 5, 50), Math.Min(lng + 5, -65));
+                if (lat >= 40 && lng <= -110)
+                    pnwTiles.Add(tile);
+                else
+                    tiles.Add(tile);
+            }
+        }
+
+        pnwTiles.AddRange(tiles);
+        return pnwTiles.ToArray();
+    }
+
     private async Task RunQueryAsync(string queryType, ImportResult result)
     {
-        var query = BuildQuery(queryType);
-        var content = new FormUrlEncodedContent(new[] { new KeyValuePair<string, string>("data", query) });
-
-        var response = await _httpClient.PostAsync(OverpassApiUrl, content);
-        response.EnsureSuccessStatusCode();
-
-        var responseContent = await response.Content.ReadAsStringAsync();
-        var doc = JsonDocument.Parse(responseContent);
-
-        if (doc.RootElement.TryGetProperty("elements", out var elementsArray))
+        for (int i = 0; i < UsTiles.Length; i++)
         {
-            int processed = 0;
+            var tile = UsTiles[i];
+            Console.WriteLine($"    {queryType} tile {i + 1}/{UsTiles.Length} ({tile.south},{tile.west},{tile.north},{tile.east})...");
 
-            foreach (var element in elementsArray.EnumerateArray())
+            var success = false;
+            for (int retry = 0; retry <= MaxRetries; retry++)
             {
-                if (TryParseElement(element, queryType, out var poi))
+                try
                 {
-                    await UpsertPoiAsync(poi);
-                    result.ProcessedCount++;
-                    processed++;
+                    var query = BuildQuery(queryType, tile.south, tile.west, tile.north, tile.east);
+                    var content = new FormUrlEncodedContent(new[] { new KeyValuePair<string, string>("data", query) });
 
-                    // Batch save every 100 records
-                    if (processed % BatchSize == 0)
+                    var response = await _httpClient.PostAsync(OverpassApiUrl, content);
+
+                    if ((int)response.StatusCode == 429 || (int)response.StatusCode == 504 || (int)response.StatusCode == 503)
                     {
-                        await _context.SaveChangesAsync();
+                        if (retry < MaxRetries)
+                        {
+                            Console.Error.WriteLine($"      {(int)response.StatusCode} — retrying in {RetryDelayMs / 1000}s (attempt {retry + 1}/{MaxRetries})...");
+                            await Task.Delay(RetryDelayMs);
+                            continue;
+                        }
+                        Console.Error.WriteLine($"      {(int)response.StatusCode} — giving up on this tile after {MaxRetries} retries");
+                        break;
                     }
+
+                    response.EnsureSuccessStatusCode();
+
+                    var responseContent = await response.Content.ReadAsStringAsync();
+                    var doc = JsonDocument.Parse(responseContent);
+
+                    if (doc.RootElement.TryGetProperty("elements", out var elementsArray))
+                    {
+                        int processed = 0;
+
+                        foreach (var element in elementsArray.EnumerateArray())
+                        {
+                            if (TryParseElement(element, queryType, out var poi))
+                            {
+                                await UpsertPoiAsync(poi);
+                                result.ProcessedCount++;
+                                processed++;
+
+                                if (processed % BatchSize == 0)
+                                {
+                                    await _context.SaveChangesAsync();
+                                }
+                            }
+                            else
+                            {
+                                result.SkippedCount++;
+                            }
+                        }
+
+                        Console.WriteLine($"      {processed} POIs from this tile");
+                    }
+
+                    success = true;
+                    break;
                 }
-                else
+                catch (TaskCanceledException) when (retry < MaxRetries)
                 {
-                    result.SkippedCount++;
+                    Console.Error.WriteLine($"      Timeout — retrying in {RetryDelayMs / 1000}s (attempt {retry + 1}/{MaxRetries})...");
+                    await Task.Delay(RetryDelayMs);
                 }
+            }
+
+            if (!success)
+            {
+                Console.Error.WriteLine($"      SKIPPED tile {i + 1} after all retries");
+            }
+
+            // Rate limit between tiles
+            if (i < UsTiles.Length - 1)
+            {
+                await Task.Delay(RateLimitDelayMs);
             }
         }
     }
 
-    private string BuildQuery(string queryType)
+    private string BuildQuery(string queryType, double south, double west, double north, double east)
     {
+        var bbox = $"({south},{west},{north},{east})";
         return queryType switch
         {
-            "tourism" => @"[out:json][timeout:120];
-node[""tourism""~""attraction|museum|viewpoint""](24,-125,50,-66);
-out body;",
-            "historic" => @"[out:json][timeout:120];
-node[""historic""~""monument|memorial|castle|ruins|archaeological_site|battlefield""](24,-125,50,-66);
-out body;",
-            "natural" => @"[out:json][timeout:120];
-(
-  node[""natural""=""peak""](24,-125,50,-66);
-  node[""natural""=""waterfall""](24,-125,50,-66);
-  node[""natural""=""volcano""](24,-125,50,-66);
-  node[""natural""=""cave_entrance""](24,-125,50,-66);
-);
-out body;",
-            "nature_reserve" => @"[out:json][timeout:120];
-node[""leisure""=""nature_reserve""](24,-125,50,-66);
-out body;",
+            "tourism" => $"[out:json][timeout:120];\nnode[\"tourism\"~\"attraction|museum|viewpoint\"]{bbox};\nout body;",
+            "historic" => $"[out:json][timeout:120];\nnode[\"historic\"~\"monument|memorial|castle|ruins|archaeological_site|battlefield\"]{bbox};\nout body;",
+            "natural" => $"[out:json][timeout:120];\n(\n  node[\"natural\"=\"peak\"]{bbox};\n  node[\"natural\"=\"waterfall\"]{bbox};\n  node[\"natural\"=\"volcano\"]{bbox};\n  node[\"natural\"=\"cave_entrance\"]{bbox};\n);\nout body;",
+            "nature_reserve" => $"[out:json][timeout:120];\nnode[\"leisure\"=\"nature_reserve\"]{bbox};\nout body;",
             _ => throw new ArgumentException($"Unknown query type: {queryType}")
         };
     }
