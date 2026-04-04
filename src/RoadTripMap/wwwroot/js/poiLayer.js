@@ -82,6 +82,34 @@ const PoiLayer = {
             });
         }
 
+        // POI info popup on click — shows name and category for any map
+        let poiPopup = null;
+        map.on('click', 'poi-markers', (e) => {
+            if (!e.features || !e.features.length) return;
+
+            const feature = e.features[0];
+            const { name, category } = feature.properties;
+            const [lng, lat] = feature.geometry.coordinates;
+
+            if (poiPopup) poiPopup.remove();
+
+            const escapedName = name.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+            const categoryLabel = category.replace(/_/g, ' ');
+
+            poiPopup = new maplibregl.Popup({ closeOnClick: true, maxWidth: '240px' })
+                .setLngLat([lng, lat])
+                .setHTML(`<div style="padding:4px 8px"><strong>${escapedName}</strong><br><small style="color:#666">${categoryLabel}</small></div>`)
+                .addTo(map);
+        });
+
+        // Pointer cursor on POI hover
+        map.on('mouseenter', 'poi-markers', () => {
+            map.getCanvas().style.cursor = 'pointer';
+        });
+        map.on('mouseleave', 'poi-markers', () => {
+            map.getCanvas().style.cursor = '';
+        });
+
         // Setup debounced moveend handler
         let moveendTimeout;
         const debouncedLoadPois = () => {
