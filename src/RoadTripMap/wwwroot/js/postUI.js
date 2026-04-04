@@ -21,6 +21,7 @@ const PostUI = {
     currentLng: null,
     carousel: null,
     markerLookup: new Map(),
+    photos: [],
     _refreshTimer: null,
 
     init(secretToken) {
@@ -426,11 +427,23 @@ const PostUI = {
     },
 
     initializePinDropMap() {
+        // Determine map center based on existing photos
+        let center = [-98.5795, 39.8283];  // Center of US fallback
+        let zoom = 4;
+
+        if (this.photos && this.photos.length > 0) {
+            const lastPhoto = this.photos[this.photos.length - 1];
+            if (lastPhoto.lat && lastPhoto.lng) {
+                center = [lastPhoto.lng, lastPhoto.lat];
+                zoom = 10;
+            }
+        }
+
         this.map = new maplibregl.Map({
             container: 'pinDropMap',
             style: MAP_STYLE,
-            center: [-98.5795, 39.8283],
-            zoom: 4
+            center: center,
+            zoom: zoom
         });
 
         // Apply park restyling when map style loads
@@ -595,6 +608,7 @@ const PostUI = {
     async loadPhotoList() {
         try {
             const photos = await PostService.listPhotos(this.secretToken);
+            this.photos = photos;
 
             const photoList = document.getElementById('photoList');
             const photoMapSection = document.getElementById('photoMapSection');
