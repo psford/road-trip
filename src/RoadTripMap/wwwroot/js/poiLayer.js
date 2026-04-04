@@ -14,9 +14,9 @@ const PoiLayer = {
      * @returns {void}
      */
     init(map) {
-        // Guard: check if style is loaded
+        // If style isn't loaded yet, defer until it is
         if (!map.isStyleLoaded()) {
-            console.warn('Map style not loaded; skipping POI layer initialization');
+            map.once('styledata', () => this.init(map));
             return;
         }
 

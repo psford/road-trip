@@ -17,7 +17,7 @@
 const ParkStyle = {
     applyParkStyling(map) {
         if (!map.isStyleLoaded()) {
-            console.warn('Map style not loaded; skipping park styling');
+            map.once('styledata', () => this.applyParkStyling(map));
             return;
         }
 
