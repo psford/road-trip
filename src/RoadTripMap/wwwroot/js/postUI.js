@@ -390,6 +390,9 @@ const PostUI = {
         placeNameEl.textContent = 'Tap map to set location';
         placeNameEl.classList.add('no-gps');
 
+        // Hide photo map when pin-drop opens (avoid two maps on screen)
+        document.getElementById('photoMapSection')?.classList.remove('visible');
+
         // Show map section
         document.getElementById('mapSection').classList.add('visible');
 
@@ -398,8 +401,16 @@ const PostUI = {
             this.initializePinDropMap();
         }
 
-        // Center map on default location (last photo or USA center)
-        const { center, zoom } = this.getDefaultMapCenter();
+        // If user came from "Pick nearby spot", center on that POI area
+        // Otherwise use default (last photo or USA center)
+        let center, zoom;
+        if (this.pendingPoiZoom) {
+            center = [this.pendingPoiZoom.lng, this.pendingPoiZoom.lat];
+            zoom = 13;
+            this.pendingPoiZoom = null;
+        } else {
+            ({ center, zoom } = this.getDefaultMapCenter());
+        }
         this.map.jumpTo({ center, zoom });
         if (this.marker) {
             this.marker.remove();
@@ -444,7 +455,8 @@ const PostUI = {
                     // Pin-drop map: zoom in so user can tap for precise placement
                     this.map.flyTo({ center: [lng, lat], zoom: 13 });
                 } else {
-                    // Photo map: zoom in and open Add Photo flow
+                    // Photo map: store the zoom target so pin-drop map opens here
+                    this.pendingPoiZoom = { lat, lng };
                     this.photoMap.flyTo({ center: [lng, lat], zoom: 13 });
                     this.showToast('Zoomed in. Select a photo, then tap the map to place it.', 'success');
                 }
