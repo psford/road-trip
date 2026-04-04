@@ -38,21 +38,12 @@ const ParkStyle = {
             return;
         }
 
-        // Make park labels visible at lower zoom levels
-        map.setLayerZoomRange(parkLayerId, 6, 24);
-
-        // Bolder green text with white halo
+        // Bolder green text with white halo (don't change zoom range — the Park layer
+        // uses a sprite icon that's only available at certain zooms; changing minzoom
+        // causes "Image could not be loaded" warnings)
         map.setPaintProperty(parkLayerId, 'text-color', '#1e5631');
         map.setPaintProperty(parkLayerId, 'text-halo-color', '#ffffff');
         map.setPaintProperty(parkLayerId, 'text-halo-width', 2);
-
-        // Larger text size with zoom interpolation
-        map.setLayoutProperty(parkLayerId, 'text-size', [
-            'interpolate', ['linear'], ['zoom'],
-            6, 10,
-            10, 13,
-            14, 16
-        ]);
     },
 
     /**

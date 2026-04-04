@@ -645,10 +645,10 @@ const PostUI = {
                 zoom: 4
             });
 
-            // Apply park restyling and POI layer with tap-to-pin actions
+            // Apply park restyling and POI layer — info-only on photo map (no pin-drop here)
             this.photoMap.on('load', () => {
                 applyParkStyling(this.photoMap);
-                PoiLayer.init(this.photoMap, this._poiActionOptions());
+                PoiLayer.init(this.photoMap);
             });
         }
 

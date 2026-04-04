@@ -95,8 +95,7 @@ test('Park label layer exists and has enhanced styling on post page', async ({ p
     expect(parkLayerInfo.exists).toBe(true);
     expect(parkLayerInfo.type).toBe('symbol');
     expect(parkLayerInfo.sourceLayer).toBe('poi');
-    // Verify our enhancements were applied
-    expect(parkLayerInfo.minzoom).toBe(6);
+    // Verify our paint enhancements were applied (we don't change zoom range)
     expect(parkLayerInfo.textColor).toBe('#1e5631');
     expect(parkLayerInfo.haloWidth).toBe(2);
 });
