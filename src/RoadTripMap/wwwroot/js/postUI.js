@@ -437,8 +437,12 @@ const PostUI = {
                 this.currentLat = lat;
                 this.currentLng = lng;
 
-                // If pin-drop map is active, place marker there
-                if (this.map) {
+                // Check if pin-drop map is actively visible (not just initialized)
+                const mapSection = document.getElementById('mapSection');
+                const pinDropVisible = mapSection && mapSection.classList.contains('visible');
+
+                if (pinDropVisible && this.map) {
+                    // Pin-drop map is open — place marker there
                     if (this.marker) this.marker.remove();
                     this.marker = new maplibregl.Marker()
                         .setLngLat([lng, lat])

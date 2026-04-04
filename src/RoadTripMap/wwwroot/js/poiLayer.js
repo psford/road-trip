@@ -119,21 +119,29 @@ const PoiLayer = {
                 .addTo(map);
 
             if (hasActions) {
-                // Use setTimeout to ensure popup DOM is fully rendered before attaching listeners
-                setTimeout(() => {
-                    const el = poiPopup.getElement();
-                    if (!el) return;
-                    el.querySelector('.poi-use-location')?.addEventListener('click', (evt) => {
-                        evt.stopPropagation();
-                        poiPopup.remove();
-                        if (options.onPoiSelect) options.onPoiSelect(lat, lng, name);
-                    });
-                    el.querySelector('.poi-pick-nearby')?.addEventListener('click', (evt) => {
-                        evt.stopPropagation();
-                        poiPopup.remove();
-                        if (options.onPoiZoom) options.onPoiZoom(lat, lng);
-                    });
-                }, 0);
+                // Attach button handlers after popup is added to DOM
+                const popupEl = poiPopup.getElement();
+                if (popupEl) {
+                    const useBtn = popupEl.querySelector('.poi-use-location');
+                    const nearbyBtn = popupEl.querySelector('.poi-pick-nearby');
+
+                    if (useBtn) {
+                        useBtn.onclick = (evt) => {
+                            evt.stopPropagation();
+                            evt.preventDefault();
+                            poiPopup.remove();
+                            options.onPoiSelect(lat, lng, name);
+                        };
+                    }
+                    if (nearbyBtn) {
+                        nearbyBtn.onclick = (evt) => {
+                            evt.stopPropagation();
+                            evt.preventDefault();
+                            poiPopup.remove();
+                            options.onPoiZoom(lat, lng);
+                        };
+                    }
+                }
             }
         });
 
