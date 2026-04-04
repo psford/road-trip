@@ -253,7 +253,16 @@ const PostUI = {
             this.currentFile = file;
             this.currentMetadata = metadata;
 
-            if (metadata.gps) {
+            if (this.pendingPoiLocation) {
+                // User selected a POI location before choosing a photo — use it
+                const { lat, lng, name } = this.pendingPoiLocation;
+                this.pendingPoiLocation = null;
+                this.currentLat = lat;
+                this.currentLng = lng;
+                metadata.gps = { latitude: lat, longitude: lng };
+                metadata.placeName = name;
+                this.showPreview(file, metadata);
+            } else if (metadata.gps) {
                 // Has GPS data - show preview directly
                 this.currentLat = metadata.gps.latitude;
                 this.currentLng = metadata.gps.longitude;
@@ -412,13 +421,23 @@ const PostUI = {
     _poiActionOptions() {
         return {
             onPoiSelect: (lat, lng, name) => {
-                // Place marker and set location from POI
-                if (this.marker) this.marker.remove();
-                const targetMap = this.map || this.photoMap;
-                this.marker = new maplibregl.Marker()
-                    .setLngLat([lng, lat])
-                    .addTo(targetMap);
-                this.setLocationFromPoi(lat, lng, name);
+                // Store POI location for the next photo upload
+                this.pendingPoiLocation = { lat, lng, name };
+                this.currentLat = lat;
+                this.currentLng = lng;
+
+                // If pin-drop map is active, place marker there
+                if (this.map) {
+                    if (this.marker) this.marker.remove();
+                    this.marker = new maplibregl.Marker()
+                        .setLngLat([lng, lat])
+                        .addTo(this.map);
+                    this.setLocationFromPoi(lat, lng, name);
+                } else {
+                    // Photo map context — open Add Photo flow with this location
+                    this.showToast(`Location set: ${name}. Select a photo to post here.`, 'success');
+                    document.getElementById('addPhotoButton')?.click();
+                }
             },
             onPoiZoom: (lat, lng) => {
                 const targetMap = this.map || this.photoMap;
@@ -645,10 +664,10 @@ const PostUI = {
                 zoom: 4
             });
 
-            // Apply park restyling and POI layer — info-only on photo map (no pin-drop here)
+            // Apply park restyling and POI layer with tap-to-pin on photo map too
             this.photoMap.on('load', () => {
                 applyParkStyling(this.photoMap);
-                PoiLayer.init(this.photoMap);
+                PoiLayer.init(this.photoMap, this._poiActionOptions());
             });
         }
 

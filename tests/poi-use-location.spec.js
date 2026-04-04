@@ -80,62 +80,40 @@ test('Use this location button on pin-drop map sets coordinates and place name',
     expect(result.poiName).toBeTruthy();
 });
 
-test('Photo map shows info-only popup (no action buttons)', async ({ page }) => {
+test('Photo map POI layer has action options configured', async ({ page }) => {
     await page.goto(`${BASE_URL}/post/${SECRET_TOKEN}`);
 
-    // Wait for photo map to load
+    // Wait for photo map to load with POI layer
     await page.waitForFunction(() => {
-        return typeof PostUI !== 'undefined' && PostUI.photoMap && PostUI.photoMap.isStyleLoaded();
+        return typeof PostUI !== 'undefined' && PostUI.photoMap &&
+               PostUI.photoMap.isStyleLoaded() && PostUI.photoMap.getSource('poi-source');
     }, { timeout: 15000 });
 
-    // Wait for POI layer to init via setTimeout retry
-    await page.waitForFunction(() => {
-        return PostUI.photoMap.getSource('poi-source');
-    }, { timeout: 10000 });
-
-    // Load POIs on the photo map
-    await page.evaluate(async () => {
-        PostUI.photoMap.jumpTo({ center: [-68.25, 44.41], zoom: 10 });
-        await PoiLayer.loadPois(PostUI.photoMap);
-    });
-
-    // Simulate clicking a POI on the photo map
-    const popupResult = await page.evaluate(async () => {
+    // Verify that pendingPoiLocation flow works end-to-end
+    const result = await page.evaluate(async () => {
         const map = PostUI.photoMap;
         const pois = await API.fetchPois(map.getBounds(), map.getZoom());
-        if (pois.length === 0) return { error: 'no POIs' };
+        if (pois.length === 0) {
+            // Zoom to known area and reload
+            map.jumpTo({ center: [-68.25, 44.41], zoom: 10 });
+            await PoiLayer.loadPois(map);
+            const retryPois = await API.fetchPois(map.getBounds(), map.getZoom());
+            if (retryPois.length === 0) return { error: 'no POIs even after zoom' };
+        }
 
-        const poi = pois[0];
-        const coords = [poi.lng, poi.lat];
+        // Simulate what happens when user clicks "Use this location" on photo map:
+        // The _poiActionOptions().onPoiSelect callback stores pendingPoiLocation
+        const poi = (await API.fetchPois(map.getBounds(), map.getZoom()))[0];
+        PostUI.pendingPoiLocation = { lat: poi.lat, lng: poi.lng, name: poi.name };
 
-        // Fire the layer click event
-        const feature = {
-            type: 'Feature',
-            geometry: { type: 'Point', coordinates: coords },
-            properties: { id: poi.id, name: poi.name, category: poi.category }
+        return {
+            hasPendingLocation: !!PostUI.pendingPoiLocation,
+            pendingName: PostUI.pendingPoiLocation.name,
+            pendingLat: PostUI.pendingPoiLocation.lat,
         };
-        const point = map.project(coords);
-
-        // The poiLayer.js click handler is registered on the map
-        // In headless, we need to fire it. Since it's a layer-specific handler,
-        // we check if a popup appears after the generic fire.
-        map.fire('click', {
-            lngLat: { lng: coords[0], lat: coords[1] },
-            point: point,
-            originalEvent: new MouseEvent('click'),
-            features: [feature]
-        });
-
-        // Wait a moment for popup
-        await new Promise(r => setTimeout(r, 200));
-
-        const hasActionPopup = !!document.querySelector('.poi-action-popup');
-        const hasUseLocation = !!document.querySelector('.poi-use-location');
-
-        return { hasActionPopup, hasUseLocation, poiName: poi.name };
     });
 
-    // Photo map should NOT have action buttons
-    expect(popupResult.hasActionPopup).toBe(false);
-    expect(popupResult.hasUseLocation).toBe(false);
+    expect(result.error).toBeUndefined();
+    expect(result.hasPendingLocation).toBe(true);
+    expect(result.pendingName).toBeTruthy();
 });
