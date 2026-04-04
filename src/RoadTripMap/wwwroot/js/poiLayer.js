@@ -113,7 +113,7 @@ const PoiLayer = {
                 html = `<div style="padding:4px 8px"><strong>${escapedName}</strong><br><small style="color:#666">${categoryLabel}</small></div>`;
             }
 
-            poiPopup = new maplibregl.Popup({ closeOnClick: false, closeButton: true, maxWidth: '240px' })
+            poiPopup = new maplibregl.Popup({ closeOnClick: true, closeButton: false, maxWidth: '240px' })
                 .setLngLat([lng, lat])
                 .setHTML(html)
                 .addTo(map);
