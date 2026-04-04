@@ -419,8 +419,10 @@ const PostUI = {
 
         // Update place name display
         const placeNameEl = document.getElementById('placeNameDisplay');
-        placeNameEl.textContent = name;
-        placeNameEl.classList.remove('no-gps');
+        if (placeNameEl) {
+            placeNameEl.textContent = name;
+            placeNameEl.classList.remove('no-gps');
+        }
     },
 
     initializePinDropMap() {
@@ -442,7 +444,7 @@ const PostUI = {
             if (!e.features || !e.features.length) return;
 
             const feature = e.features[0];
-            const { name, id } = feature.properties;
+            const { name } = feature.properties;
             const [lng, lat] = feature.geometry.coordinates;
 
             // Remove any existing popup
@@ -450,7 +452,7 @@ const PostUI = {
 
             // Create popup with two action buttons
             // IMPORTANT: Escape name to prevent XSS — POI names come from external sources
-            const escapedName = name.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+            const escapedName = name.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
             const popupHTML = `
                 <div class="poi-action-popup">
                     <div class="poi-action-name">${escapedName}</div>
