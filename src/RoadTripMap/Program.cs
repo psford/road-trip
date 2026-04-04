@@ -490,22 +490,15 @@ app.MapGet("/api/poi", async (double? minLat, double? maxLat, double? minLng, do
     if (zoom < 0)
         return Results.BadRequest(new { error = "Invalid zoom level: zoom must be >= 0" });
 
-    // Determine allowed categories based on zoom
-    // Natural features (peaks, waterfalls) are dense — only show at zoom 10+
+    // All categories at all zoom levels — let the grid sampling handle density
     var allowedCategories = zoom < 7
         ? new[] { "national_park" }
-        : zoom < 10
-            ? new[] { "national_park", "state_park" }
-            : new[] { "national_park", "state_park", "natural_feature", "historic_site", "tourism" };
+        : new[] { "national_park", "state_park", "natural_feature", "historic_site", "tourism" };
 
-    // Scale result cap by zoom — fewer results at lower zoom to prevent overcrowding
-    var maxResults = zoom < 8 ? 50 : zoom < 10 ? 100 : zoom < 12 ? 150 : 200;
-
-    // Query POIs with viewport and category filtering
-    var pois = await db.PointsOfInterest
+    // Fetch candidates — get more than we need, then spatially sample
+    var candidates = await db.PointsOfInterest
         .Where(p => p.Latitude >= minLat && p.Latitude <= maxLat && p.Longitude >= minLng && p.Longitude <= maxLng)
         .Where(p => allowedCategories.Contains(p.Category))
-        .Take(maxResults)
         .Select(p => new PoiResponse
         {
             Id = p.Id,
@@ -516,7 +509,56 @@ app.MapGet("/api/poi", async (double? minLat, double? maxLat, double? minLng, do
         })
         .ToListAsync();
 
-    return Results.Ok(pois);
+    // Spatial grid sampling: divide viewport into cells, pick best POI per cell.
+    // This ensures even distribution across the viewport regardless of data density.
+    // Target ~40 POIs max. Grid is ~6x7 cells = 42 slots.
+    var targetCount = zoom >= 14 ? 30 : 40;
+    var gridCols = 7;
+    var gridRows = 6;
+
+    var latRange = maxLat.Value - minLat.Value;
+    var lngRange = maxLng.Value - minLng.Value;
+
+    if (latRange <= 0 || lngRange <= 0 || candidates.Count == 0)
+        return Results.Ok(candidates.Take(targetCount));
+
+    var cellLat = latRange / gridRows;
+    var cellLng = lngRange / gridCols;
+
+    // Priority: national_park > state_park > historic_site > natural_feature > tourism
+    int CategoryPriority(string cat) => cat switch
+    {
+        "national_park" => 0,
+        "state_park" => 1,
+        "historic_site" => 2,
+        "natural_feature" => 3,
+        "tourism" => 4,
+        _ => 5
+    };
+
+    var sampled = new List<PoiResponse>();
+    var usedCells = new HashSet<string>();
+
+    // Sort by priority so important POIs get picked first
+    var sorted = candidates.OrderBy(p => CategoryPriority(p.Category)).ToList();
+
+    foreach (var poi in sorted)
+    {
+        var row = Math.Min((int)((poi.Lat - minLat.Value) / cellLat), gridRows - 1);
+        var col = Math.Min((int)((poi.Lng - minLng.Value) / cellLng), gridCols - 1);
+        var cellKey = $"{row}_{col}";
+
+        if (usedCells.Contains(cellKey))
+            continue;
+
+        usedCells.Add(cellKey);
+        sampled.Add(poi);
+
+        if (sampled.Count >= targetCount)
+            break;
+    }
+
+    return Results.Ok(sampled);
 });
 
 app.Run();
