@@ -10,32 +10,50 @@ public class OverpassImporter
     private readonly HttpClient _httpClient;
     private readonly RoadTripDbContext _context;
     private const string OverpassApiUrl = "https://overpass-api.de/api/interpreter";
-    private const int RateLimitDelayMs = 5000; // 5 seconds between queries
+    private readonly int _rateLimitDelayMs;
     private const int BatchSize = 100;
 
-    public OverpassImporter(HttpClient httpClient, RoadTripDbContext context)
+    public OverpassImporter(HttpClient httpClient, RoadTripDbContext context, int rateLimitDelayMs = 5000)
     {
         _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
         _context = context ?? throw new ArgumentNullException(nameof(context));
+        _rateLimitDelayMs = rateLimitDelayMs;
     }
 
-    public async Task<ImportResult> ImportAsync()
+    /// <summary>
+    /// Import using a single bounding box (for testing or targeted imports).
+    /// </summary>
+    public Task<ImportResult> ImportAsync(double south, double west, double north, double east)
+    {
+        return ImportAsyncInternal(new[] { (south, west, north, east) });
+    }
+
+    /// <summary>
+    /// Import across all US tiles (production use).
+    /// </summary>
+    public Task<ImportResult> ImportAsync()
+    {
+        return ImportAsyncInternal(UsTiles);
+    }
+
+    private async Task<ImportResult> ImportAsyncInternal(
+        (double south, double west, double north, double east)[] tiles)
     {
         var result = new ImportResult();
 
         try
         {
-            // Run each query with rate limiting
-            await RunQueryAsync("tourism", result);
-            await Task.Delay(RateLimitDelayMs);
+            // Run each query type across all tiles
+            await RunQueryAsync("tourism", result, tiles);
+            await Task.Delay(_rateLimitDelayMs);
 
-            await RunQueryAsync("historic", result);
-            await Task.Delay(RateLimitDelayMs);
+            await RunQueryAsync("historic", result, tiles);
+            await Task.Delay(_rateLimitDelayMs);
 
-            await RunQueryAsync("natural", result);
-            await Task.Delay(RateLimitDelayMs);
+            await RunQueryAsync("natural", result, tiles);
+            await Task.Delay(_rateLimitDelayMs);
 
-            await RunQueryAsync("nature_reserve", result);
+            await RunQueryAsync("nature_reserve", result, tiles);
 
             // Final save
             await _context.SaveChangesAsync();
@@ -78,12 +96,14 @@ public class OverpassImporter
         return pnwTiles.ToArray();
     }
 
-    private async Task RunQueryAsync(string queryType, ImportResult result)
+    private async Task RunQueryAsync(string queryType, ImportResult result,
+        (double south, double west, double north, double east)[]? tilesToUse = null)
     {
-        for (int i = 0; i < UsTiles.Length; i++)
+        var tiles = tilesToUse ?? UsTiles;
+        for (int i = 0; i < tiles.Length; i++)
         {
-            var tile = UsTiles[i];
-            Console.WriteLine($"    {queryType} tile {i + 1}/{UsTiles.Length} ({tile.south},{tile.west},{tile.north},{tile.east})...");
+            var tile = tiles[i];
+            Console.WriteLine($"    {queryType} tile {i + 1}/{tiles.Length} ({tile.south},{tile.west},{tile.north},{tile.east})...");
 
             var success = false;
             for (int retry = 0; retry <= MaxRetries; retry++)
@@ -154,9 +174,9 @@ public class OverpassImporter
             }
 
             // Rate limit between tiles
-            if (i < UsTiles.Length - 1)
+            if (i < tiles.Length - 1)
             {
-                await Task.Delay(RateLimitDelayMs);
+                await Task.Delay(_rateLimitDelayMs);
             }
         }
     }

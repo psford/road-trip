@@ -34,10 +34,10 @@ public class OverpassImporterTests
             natureReserveElements: Array.Empty<OverpassElement>()
         );
         var httpClient = new HttpClient(httpHandler);
-        var importer = new OverpassImporter(httpClient, context);
+        var importer = new OverpassImporter(httpClient, context, rateLimitDelayMs: 0);
 
         // Act
-        var result = await importer.ImportAsync();
+        var result = await importer.ImportAsync(40, -75, 45, -70);
 
         // Assert
         result.ProcessedCount.Should().Be(2);
@@ -69,10 +69,10 @@ public class OverpassImporterTests
             natureReserveElements: Array.Empty<OverpassElement>()
         );
         var httpClient = new HttpClient(httpHandler);
-        var importer = new OverpassImporter(httpClient, context);
+        var importer = new OverpassImporter(httpClient, context, rateLimitDelayMs: 0);
 
         // Act
-        var result = await importer.ImportAsync();
+        var result = await importer.ImportAsync(40, -75, 45, -70);
 
         // Assert
         result.ProcessedCount.Should().Be(1);
@@ -97,10 +97,10 @@ public class OverpassImporterTests
             natureReserveElements: Array.Empty<OverpassElement>()
         );
         var httpClient = new HttpClient(httpHandler);
-        var importer = new OverpassImporter(httpClient, context);
+        var importer = new OverpassImporter(httpClient, context, rateLimitDelayMs: 0);
 
         // Act
-        var result = await importer.ImportAsync();
+        var result = await importer.ImportAsync(40, -75, 45, -70);
 
         // Assert
         result.ProcessedCount.Should().Be(1);
@@ -125,10 +125,10 @@ public class OverpassImporterTests
             }
         );
         var httpClient = new HttpClient(httpHandler);
-        var importer = new OverpassImporter(httpClient, context);
+        var importer = new OverpassImporter(httpClient, context, rateLimitDelayMs: 0);
 
         // Act
-        var result = await importer.ImportAsync();
+        var result = await importer.ImportAsync(40, -75, 45, -70);
 
         // Assert
         result.ProcessedCount.Should().Be(1);
@@ -154,10 +154,10 @@ public class OverpassImporterTests
             natureReserveElements: Array.Empty<OverpassElement>()
         );
         var httpClient = new HttpClient(httpHandler);
-        var importer = new OverpassImporter(httpClient, context);
+        var importer = new OverpassImporter(httpClient, context, rateLimitDelayMs: 0);
 
         // Act
-        var result = await importer.ImportAsync();
+        var result = await importer.ImportAsync(40, -75, 45, -70);
 
         // Assert
         result.ProcessedCount.Should().Be(1);
@@ -197,10 +197,10 @@ public class OverpassImporterTests
             natureReserveElements: Array.Empty<OverpassElement>()
         );
         var httpClient = new HttpClient(httpHandler);
-        var importer = new OverpassImporter(httpClient, context);
+        var importer = new OverpassImporter(httpClient, context, rateLimitDelayMs: 0);
 
         // Act
-        var result = await importer.ImportAsync();
+        var result = await importer.ImportAsync(40, -75, 45, -70);
 
         // Assert
         result.ProcessedCount.Should().Be(1);
@@ -224,10 +224,10 @@ public class OverpassImporterTests
             natureReserveElements: new[] { new OverpassElement { Id = 4001, Name = "Reserve", Lat = 43.0, Lon = -77.0 } }
         );
         var httpClient = new HttpClient(httpHandler);
-        var importer = new OverpassImporter(httpClient, context);
+        var importer = new OverpassImporter(httpClient, context, rateLimitDelayMs: 0);
 
         // Act
-        var result = await importer.ImportAsync();
+        var result = await importer.ImportAsync(40, -75, 45, -70);
 
         // Assert
         result.ProcessedCount.Should().Be(4);
