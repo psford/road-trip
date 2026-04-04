@@ -417,6 +417,7 @@ const PostUI = {
         // Apply park restyling when map style loads
         this.map.on('load', () => {
             applyParkStyling(this.map);
+            PoiLayer.init(this.map);
         });
 
         // Handle map clicks for marker placement
@@ -575,6 +576,7 @@ const PostUI = {
             // Apply park restyling when map style loads
             this.photoMap.on('load', () => {
                 applyParkStyling(this.photoMap);
+                PoiLayer.init(this.photoMap);
             });
         }
 

@@ -64,6 +64,7 @@ const MapUI = {
         // Apply park restyling when map style loads
         this.map.on('load', () => {
             applyParkStyling(this.map);
+            PoiLayer.init(this.map);
         });
 
         // Handle empty trip
