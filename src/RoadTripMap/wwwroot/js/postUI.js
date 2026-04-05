@@ -541,14 +541,16 @@ const PostUI = {
 
         // Apply park restyling and POI layer with tap-to-pin actions
         this.map.on('load', () => {
-            applyParkStyling(this.map);
+            applyParkStyling(this.map, this._poiActionOptions());
             PoiLayer.init(this.map, this._poiActionOptions());
         });
 
         // Handle map clicks for marker placement
         this.map.on('click', async (e) => {
-            // Skip if click was on a POI marker (handled by POI click handler)
-            const poiFeatures = this.map.queryRenderedFeatures(e.point, { layers: ['poi-markers'] });
+            // Skip if click was on a POI marker or national park dot
+            const clickLayers = ['poi-markers'];
+            if (this.map.getLayer('nps-centroid-dot')) clickLayers.push('nps-centroid-dot');
+            const poiFeatures = this.map.queryRenderedFeatures(e.point, { layers: clickLayers });
             if (poiFeatures.length > 0) return;
 
             const { lng, lat } = e.lngLat;
@@ -722,7 +724,7 @@ const PostUI = {
 
             // Apply park restyling and POI layer with tap-to-pin on photo map too
             this.photoMap.on('load', () => {
-                applyParkStyling(this.photoMap);
+                applyParkStyling(this.photoMap, this._poiActionOptions());
                 PoiLayer.init(this.photoMap, this._poiActionOptions());
             });
         }
