@@ -97,7 +97,9 @@ app.Use(async (context, next) =>
 });
 
 app.UseDefaultFiles();
-app.UseStaticFiles();
+var contentTypeProvider = new Microsoft.AspNetCore.StaticFiles.FileExtensionContentTypeProvider();
+contentTypeProvider.Mappings[".geojson"] = "application/geo+json";
+app.UseStaticFiles(new StaticFileOptions { ContentTypeProvider = contentTypeProvider });
 
 
 app.MapGet("/api/health", () => Results.Ok(new { status = "healthy" }));
@@ -494,10 +496,10 @@ app.MapGet("/api/poi", async (double? minLat, double? maxLat, double? minLng, do
     if (zoom < 0)
         return Results.BadRequest(new { error = "Invalid zoom level: zoom must be >= 0" });
 
-    // All categories at all zoom levels — let the grid sampling handle density
+    // National parks are rendered by the boundary polygon layer, not as POI dots
     var allowedCategories = zoom < 7
-        ? new[] { "national_park" }
-        : new[] { "national_park", "state_park", "natural_feature", "historic_site", "tourism" };
+        ? Array.Empty<string>()
+        : new[] { "state_park", "natural_feature", "historic_site", "tourism" };
 
     // Fetch candidates from DB
     var candidates = await db.PointsOfInterest
@@ -606,7 +608,7 @@ async Task<int> FetchOverpassForViewport(
     {
         ["tourism"] = $"[out:json][timeout:15];node[\"tourism\"~\"attraction|viewpoint\"]{bbox};out body;",
         ["natural"] = $"[out:json][timeout:15];(node[\"natural\"=\"peak\"]{bbox};node[\"natural\"=\"waterfall\"]{bbox};node[\"natural\"=\"volcano\"]{bbox};node[\"natural\"=\"cave_entrance\"]{bbox};);out body;",
-        ["nature_reserve"] = $"[out:json][timeout:15];node[\"leisure\"=\"nature_reserve\"]{bbox};out body;",
+        ["state_park"] = $"[out:json][timeout:15];(node[\"leisure\"=\"nature_reserve\"]{bbox};way[\"leisure\"=\"nature_reserve\"]{bbox};relation[\"leisure\"=\"nature_reserve\"]{bbox};node[\"boundary\"=\"protected_area\"][\"protect_class\"~\"^[1-5]$\"]{bbox};way[\"boundary\"=\"protected_area\"][\"protect_class\"~\"^[1-5]$\"]{bbox};relation[\"boundary\"=\"protected_area\"][\"protect_class\"~\"^[1-5]$\"]{bbox};);out center;",
     };
 
     var client = clientFactory.CreateClient("Overpass");
@@ -626,19 +628,33 @@ async Task<int> FetchOverpassForViewport(
 
             foreach (var el in elements.EnumerateArray())
             {
-                if (el.TryGetProperty("type", out var typeEl) && typeEl.GetString() != "node") continue;
                 if (!el.TryGetProperty("tags", out var tags)) continue;
                 if (!tags.TryGetProperty("name", out var nameEl)) continue;
                 var name = nameEl.GetString();
                 if (string.IsNullOrEmpty(name)) continue;
 
-                var lat = el.GetProperty("lat").GetDouble();
-                var lon = el.GetProperty("lon").GetDouble();
-                var sourceId = el.GetProperty("id").GetInt64().ToString();
+                var elType = el.TryGetProperty("type", out var typeEl) ? typeEl.GetString() : "node";
+
+                // Nodes have lat/lon directly; ways/relations use center
+                double lat, lon;
+                if (elType == "node")
+                {
+                    lat = el.GetProperty("lat").GetDouble();
+                    lon = el.GetProperty("lon").GetDouble();
+                }
+                else if (el.TryGetProperty("center", out var center))
+                {
+                    lat = center.GetProperty("lat").GetDouble();
+                    lon = center.GetProperty("lon").GetDouble();
+                }
+                else continue;
+
+                var sourceId = $"{elType}/{el.GetProperty("id").GetInt64()}";
 
                 var category = qtype switch
                 {
-                    "natural" or "nature_reserve" => "natural_feature",
+                    "natural" => "natural_feature",
+                    "state_park" => "state_park",
                     _ => "tourism"
                 };
 

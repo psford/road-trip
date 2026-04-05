@@ -171,14 +171,22 @@ const PoiLayer = {
     /**
      * Toggle POI layer visibility
      */
+    _parkLayers: ['nps-centroid-dot', 'nps-boundary-labels', 'nps-boundary-fill', 'nps-boundary-outline'],
+
     show(map) {
         if (map.getLayer('poi-markers')) map.setLayoutProperty('poi-markers', 'visibility', 'visible');
         if (map.getLayer('poi-labels')) map.setLayoutProperty('poi-labels', 'visibility', 'visible');
+        for (const id of this._parkLayers) {
+            if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', 'visible');
+        }
     },
 
     hide(map) {
         if (map.getLayer('poi-markers')) map.setLayoutProperty('poi-markers', 'visibility', 'none');
         if (map.getLayer('poi-labels')) map.setLayoutProperty('poi-labels', 'visibility', 'none');
+        for (const id of this._parkLayers) {
+            if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', 'none');
+        }
     },
 
     isVisible(map) {
