@@ -89,15 +89,15 @@ public class PoiEndpointTests : IAsyncLifetime
     [Fact]
     public async Task GetPoi_WithPoisInViewport_ReturnsPoisWithinBoundingBox()
     {
-        // Arrange - Seed POIs in different locations
+        // Arrange - Seed POIs in different locations (national_park excluded from API, use state_park)
         await SeedPoisAsync(
-            new PoiEntity { Name = "Yellowstone", Category = "national_park", Latitude = 44.4, Longitude = -110.8, Source = "nps" },
-            new PoiEntity { Name = "Grand Teton", Category = "national_park", Latitude = 43.7, Longitude = -110.7, Source = "nps" },
-            new PoiEntity { Name = "Moab Site", Category = "national_park", Latitude = 38.5, Longitude = -109.6, Source = "nps" }
+            new PoiEntity { Name = "Yellowstone SP", Category = "state_park", Latitude = 44.4, Longitude = -110.8, Source = "osm" },
+            new PoiEntity { Name = "Grand Teton SP", Category = "state_park", Latitude = 43.7, Longitude = -110.7, Source = "osm" },
+            new PoiEntity { Name = "Moab Site", Category = "state_park", Latitude = 38.5, Longitude = -109.6, Source = "osm" }
         );
 
-        // Act - Call endpoint with viewport containing Yellowstone and Grand Teton but not Moab
-        var response = await _client!.GetAsync("/api/poi?minLat=43.0&maxLat=45.0&minLng=-111.5&maxLng=-110.0&zoom=5");
+        // Act - Call endpoint with viewport containing first two but not Moab (zoom >= 7 for state_park)
+        var response = await _client!.GetAsync("/api/poi?minLat=43.0&maxLat=45.0&minLng=-111.5&maxLng=-110.0&zoom=8");
 
         // Assert - Verify HTTP response is successful
         response.StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
@@ -106,8 +106,8 @@ public class PoiEndpointTests : IAsyncLifetime
         var result = ParseJsonResponse<PoiResponse>(json);
 
         result.Should().HaveCount(2);
-        result.Should().Contain(p => p.Name == "Yellowstone");
-        result.Should().Contain(p => p.Name == "Grand Teton");
+        result.Should().Contain(p => p.Name == "Yellowstone SP");
+        result.Should().Contain(p => p.Name == "Grand Teton SP");
         result.Should().NotContain(p => p.Name == "Moab Site");
     }
 
@@ -132,49 +132,46 @@ public class PoiEndpointTests : IAsyncLifetime
     }
 
     // ============================================================
-    // AC4.1: Zoom < 7 — Only national parks
+    // AC4.1: Zoom < 7 — No POIs (national parks rendered by boundary layer)
     // ============================================================
 
     [Fact]
-    public async Task GetPoi_WithZoom5_ReturnsOnlyNationalParks()
+    public async Task GetPoi_WithZoom5_ReturnsNoPois()
     {
         // Arrange - Seed POIs with all categories
         await SeedPoisAsync(
             new PoiEntity { Name = "Yellowstone", Category = "national_park", Latitude = 44.4, Longitude = -110.8, Source = "nps" },
-            new PoiEntity { Name = "Grand Canyon", Category = "national_park", Latitude = 36.1, Longitude = -112.1, Source = "nps" },
             new PoiEntity { Name = "Moab Site", Category = "state_park", Latitude = 38.5, Longitude = -109.6, Source = "pad_us" },
             new PoiEntity { Name = "Natural Rock", Category = "natural_feature", Latitude = 40.0, Longitude = -105.0, Source = "osm" },
             new PoiEntity { Name = "Historic Fort", Category = "historic_site", Latitude = 39.0, Longitude = -105.0, Source = "osm" },
             new PoiEntity { Name = "Museum", Category = "tourism", Latitude = 41.0, Longitude = -105.0, Source = "osm" }
         );
 
-        // Act - Call endpoint with zoom=5 (< 7)
+        // Act - Call endpoint with zoom=5 (< 7, no POI categories shown)
         var response = await _client!.GetAsync("/api/poi?minLat=30.0&maxLat=45.0&minLng=-115.0&maxLng=-100.0&zoom=5");
 
-        // Assert
+        // Assert - National parks rendered by boundary layer, not POI API
         response.StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
 
         var json = await response.Content.ReadAsStringAsync();
         var result = ParseJsonResponse<PoiResponse>(json);
 
-        result.Should().HaveCount(2);
-        result.Should().AllSatisfy(p => p.Category.Should().Be("national_park"));
+        result.Should().BeEmpty();
     }
 
     [Fact]
-    public async Task GetPoi_WithZoom6_ReturnsOnlyNationalParks()
+    public async Task GetPoi_WithZoom6_ReturnsNoPois()
     {
         // Arrange - Seed POIs with all categories (boundary test for zoom 6, last value < 7)
         await SeedPoisAsync(
             new PoiEntity { Name = "Yellowstone", Category = "national_park", Latitude = 44.4, Longitude = -110.8, Source = "nps" },
-            new PoiEntity { Name = "Grand Canyon", Category = "national_park", Latitude = 36.1, Longitude = -112.1, Source = "nps" },
             new PoiEntity { Name = "Moab Site", Category = "state_park", Latitude = 38.5, Longitude = -109.6, Source = "pad_us" },
             new PoiEntity { Name = "Natural Rock", Category = "natural_feature", Latitude = 40.0, Longitude = -105.0, Source = "osm" },
             new PoiEntity { Name = "Historic Fort", Category = "historic_site", Latitude = 39.0, Longitude = -105.0, Source = "osm" },
             new PoiEntity { Name = "Museum", Category = "tourism", Latitude = 41.0, Longitude = -105.0, Source = "osm" }
         );
 
-        // Act - Call endpoint with zoom=6 (still < 7, boundary case)
+        // Act - Call endpoint with zoom=6 (still < 7, no POI categories shown)
         var response = await _client!.GetAsync("/api/poi?minLat=30.0&maxLat=45.0&minLng=-115.0&maxLng=-100.0&zoom=6");
 
         // Assert
@@ -183,19 +180,17 @@ public class PoiEndpointTests : IAsyncLifetime
         var json = await response.Content.ReadAsStringAsync();
         var result = ParseJsonResponse<PoiResponse>(json);
 
-        result.Should().HaveCount(2);
-        result.Should().AllSatisfy(p => p.Category.Should().Be("national_park"));
+        result.Should().BeEmpty();
     }
 
     // ============================================================
-    // AC4.2: Zoom 7-9 — National parks, state parks, natural features
+    // AC4.2: Zoom 7-9 — State parks, natural features, historic, tourism (no national_park)
     // ============================================================
 
     [Fact]
-    public async Task GetPoi_WithZoom7_ReturnsNationalParksStateParksAndNaturalFeatures()
+    public async Task GetPoi_WithZoom7_ReturnsStateParksAndNaturalFeatures()
     {
-        // Arrange - Seed POIs with all categories (boundary test for zoom 7, first value >= 7)
-        // Note: Zoom >= 7 now returns ALL 5 categories. Grid sampling limits to 1 per cell.
+        // Arrange - Seed POIs with all categories (national_park excluded from API)
         await SeedPoisAsync(
             new PoiEntity { Name = "Yellowstone", Category = "national_park", Latitude = 44.4, Longitude = -110.8, Source = "nps" },
             new PoiEntity { Name = "Moab Site", Category = "state_park", Latitude = 38.5, Longitude = -109.6, Source = "pad_us" },
@@ -204,7 +199,7 @@ public class PoiEndpointTests : IAsyncLifetime
             new PoiEntity { Name = "Museum", Category = "tourism", Latitude = 41.0, Longitude = -105.0, Source = "osm" }
         );
 
-        // Act - Call endpoint with zoom=7 (first value >= 7, returns ALL categories)
+        // Act - Call endpoint with zoom=7 (returns all categories except national_park)
         var response = await _client!.GetAsync("/api/poi?minLat=35.0&maxLat=45.0&minLng=-115.0&maxLng=-100.0&zoom=7");
 
         // Assert
@@ -213,19 +208,17 @@ public class PoiEndpointTests : IAsyncLifetime
         var json = await response.Content.ReadAsStringAsync();
         var result = ParseJsonResponse<PoiResponse>(json);
 
-        // Grid sampling returns one POI per cell in a 7x6 grid. With these 5 scattered POIs,
-        // we expect at least the 5 categories to be represented or grid sampling to reduce to 1-5.
         result.Should().HaveCountGreaterThanOrEqualTo(1);
-        result.Should().HaveCountLessThanOrEqualTo(5); // 5 unique POIs, grid sampling at most 1 per cell
-        result.Should().Contain(p => p.Category == "national_park");
+        result.Should().HaveCountLessThanOrEqualTo(4);
+        result.Should().NotContain(p => p.Category == "national_park");
         result.Should().Contain(p => p.Category == "state_park");
         result.Should().Contain(p => p.Category == "natural_feature");
     }
 
     [Fact]
-    public async Task GetPoi_WithZoom8_ReturnsNationalParksStateParksAndNaturalFeatures()
+    public async Task GetPoi_WithZoom8_ReturnsStateParksAndNaturalFeatures()
     {
-        // Arrange - Zoom >= 7 now returns ALL 5 categories
+        // Arrange - national_park excluded from API, rendered by boundary layer
         await SeedPoisAsync(
             new PoiEntity { Name = "Yellowstone", Category = "national_park", Latitude = 44.4, Longitude = -110.8, Source = "nps" },
             new PoiEntity { Name = "Moab Site", Category = "state_park", Latitude = 38.5, Longitude = -109.6, Source = "pad_us" },
@@ -234,7 +227,7 @@ public class PoiEndpointTests : IAsyncLifetime
             new PoiEntity { Name = "Museum", Category = "tourism", Latitude = 41.0, Longitude = -105.0, Source = "osm" }
         );
 
-        // Act - Call endpoint with zoom=8 (returns ALL categories)
+        // Act - Call endpoint with zoom=8
         var response = await _client!.GetAsync("/api/poi?minLat=35.0&maxLat=45.0&minLng=-115.0&maxLng=-100.0&zoom=8");
 
         // Assert
@@ -243,11 +236,9 @@ public class PoiEndpointTests : IAsyncLifetime
         var json = await response.Content.ReadAsStringAsync();
         var result = ParseJsonResponse<PoiResponse>(json);
 
-        // Grid sampling ensures at most 40 POIs. With these 5 scattered POIs in different cells,
-        // we should get several of them back.
         result.Should().HaveCountGreaterThanOrEqualTo(1);
-        result.Should().HaveCountLessThanOrEqualTo(5);
-        result.Should().Contain(p => p.Category == "national_park");
+        result.Should().HaveCountLessThanOrEqualTo(4);
+        result.Should().NotContain(p => p.Category == "national_park");
         result.Should().Contain(p => p.Category == "state_park");
         result.Should().Contain(p => p.Category == "natural_feature");
     }
@@ -257,10 +248,9 @@ public class PoiEndpointTests : IAsyncLifetime
     // ============================================================
 
     [Fact]
-    public async Task GetPoi_WithZoom10_ReturnsAllCategories()
+    public async Task GetPoi_WithZoom10_ReturnsAllCategoriesExceptNationalPark()
     {
-        // Arrange - Seed POIs with all categories (boundary test for zoom 10, first value >= 10)
-        // Grid sampling will limit to 1 POI per cell in a 7x6 grid
+        // Arrange - national_park excluded from API (rendered by boundary layer)
         await SeedPoisAsync(
             new PoiEntity { Name = "Yellowstone", Category = "national_park", Latitude = 44.4, Longitude = -110.8, Source = "nps" },
             new PoiEntity { Name = "Moab Site", Category = "state_park", Latitude = 38.5, Longitude = -109.6, Source = "pad_us" },
@@ -269,7 +259,7 @@ public class PoiEndpointTests : IAsyncLifetime
             new PoiEntity { Name = "Museum", Category = "tourism", Latitude = 41.0, Longitude = -105.0, Source = "osm" }
         );
 
-        // Act - Call endpoint with zoom=10 (returns all categories)
+        // Act - Call endpoint with zoom=10
         var response = await _client!.GetAsync("/api/poi?minLat=35.0&maxLat=45.0&minLng=-115.0&maxLng=-100.0&zoom=10");
 
         // Assert
@@ -278,18 +268,17 @@ public class PoiEndpointTests : IAsyncLifetime
         var json = await response.Content.ReadAsStringAsync();
         var result = ParseJsonResponse<PoiResponse>(json);
 
-        // Grid sampling with these 5 scattered POIs in different cells allows multiple results
         result.Should().HaveCountGreaterThanOrEqualTo(1);
-        result.Should().HaveCountLessThanOrEqualTo(5);
-        result.Should().Contain(p => p.Category == "national_park");
+        result.Should().HaveCountLessThanOrEqualTo(4);
+        result.Should().NotContain(p => p.Category == "national_park");
         result.Should().Contain(p => p.Category == "state_park");
         result.Should().Contain(p => p.Category == "natural_feature");
     }
 
     [Fact]
-    public async Task GetPoi_WithZoom12_ReturnsAllCategories()
+    public async Task GetPoi_WithZoom12_ReturnsAllCategoriesExceptNationalPark()
     {
-        // Arrange - Grid sampling limits results even at high zoom levels
+        // Arrange - national_park excluded from API (rendered by boundary layer)
         await SeedPoisAsync(
             new PoiEntity { Name = "Yellowstone", Category = "national_park", Latitude = 44.4, Longitude = -110.8, Source = "nps" },
             new PoiEntity { Name = "Moab Site", Category = "state_park", Latitude = 38.5, Longitude = -109.6, Source = "pad_us" },
@@ -298,7 +287,7 @@ public class PoiEndpointTests : IAsyncLifetime
             new PoiEntity { Name = "Museum", Category = "tourism", Latitude = 41.0, Longitude = -105.0, Source = "osm" }
         );
 
-        // Act - Call endpoint with zoom=12 (high zoom level, returns all categories)
+        // Act - Call endpoint with zoom=12
         var response = await _client!.GetAsync("/api/poi?minLat=35.0&maxLat=45.0&minLng=-115.0&maxLng=-100.0&zoom=12");
 
         // Assert
@@ -307,10 +296,9 @@ public class PoiEndpointTests : IAsyncLifetime
         var json = await response.Content.ReadAsStringAsync();
         var result = ParseJsonResponse<PoiResponse>(json);
 
-        // Grid sampling with these 5 scattered POIs in different cells allows multiple results
         result.Should().HaveCountGreaterThanOrEqualTo(1);
-        result.Should().HaveCountLessThanOrEqualTo(5);
-        result.Should().Contain(p => p.Category == "national_park");
+        result.Should().HaveCountLessThanOrEqualTo(4);
+        result.Should().NotContain(p => p.Category == "national_park");
         result.Should().Contain(p => p.Category == "state_park");
         result.Should().Contain(p => p.Category == "natural_feature");
     }
@@ -322,23 +310,23 @@ public class PoiEndpointTests : IAsyncLifetime
     [Fact]
     public async Task GetPoi_With250PoisInViewport_ReturnMaxOf200()
     {
-        // Arrange - Seed 250 POIs in the same bounding box
+        // Arrange - Seed 250 POIs in the same bounding box (use state_park, not national_park)
         var pois = new List<PoiEntity>();
         for (int i = 0; i < 250; i++)
         {
             pois.Add(new PoiEntity
             {
                 Name = $"POI {i}",
-                Category = "national_park",
+                Category = "state_park",
                 Latitude = 40.0 + (i * 0.001),
                 Longitude = -105.0,
-                Source = "nps"
+                Source = "osm"
             });
         }
         await SeedPoisAsync(pois.ToArray());
 
-        // Act - Call endpoint that would match all 250 POIs
-        var response = await _client!.GetAsync("/api/poi?minLat=39.0&maxLat=42.0&minLng=-106.0&maxLng=-104.0&zoom=5");
+        // Act - Call endpoint that would match all 250 POIs (zoom >= 7 for state_park)
+        var response = await _client!.GetAsync("/api/poi?minLat=39.0&maxLat=42.0&minLng=-106.0&maxLng=-104.0&zoom=8");
 
         // Assert
         response.StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
@@ -347,7 +335,6 @@ public class PoiEndpointTests : IAsyncLifetime
         var result = ParseJsonResponse<PoiResponse>(json);
 
         // Grid sampling limits results to ~40 evenly distributed POIs (one per grid cell).
-        // 250 POIs spread over 0.25 lat degrees at the same longitude land in 1-2 grid cells.
         result.Should().HaveCountGreaterThan(0);
         result.Should().HaveCountLessThanOrEqualTo(42); // 7x6 grid max
     }
@@ -451,11 +438,11 @@ public class PoiEndpointTests : IAsyncLifetime
     // ============================================================
 
     [Fact]
-    public async Task GetPoi_WithMultiplePoisAtSameCoordinates_ReturnsAll()
+    public async Task GetPoi_WithMultiplePoisAtSameCoordinates_ReturnsHighestPriority()
     {
         // Arrange - Multiple POIs at the same location (grid sampling returns max 1 per cell)
         await SeedPoisAsync(
-            new PoiEntity { Name = "Grand Canyon NP", Category = "national_park", Latitude = 36.1, Longitude = -112.1, Source = "nps" },
+            new PoiEntity { Name = "Blue Hills SP", Category = "state_park", Latitude = 36.1, Longitude = -112.1, Source = "osm" },
             new PoiEntity { Name = "Grand Canyon Overlook", Category = "tourism", Latitude = 36.1, Longitude = -112.1, Source = "osm" }
         );
 
@@ -468,26 +455,25 @@ public class PoiEndpointTests : IAsyncLifetime
         var json = await response.Content.ReadAsStringAsync();
         var result = ParseJsonResponse<PoiResponse>(json);
 
-        // Grid sampling: max 1 POI per cell. Since both are at the same coordinates, they're in the same cell.
-        // Grid sampling picks the highest priority category (national_park=0 beats tourism=4).
+        // Grid sampling: max 1 POI per cell. state_park (priority 1) beats tourism (priority 4).
         result.Should().HaveCount(1);
-        result.Should().Contain(p => p.Name == "Grand Canyon NP");
+        result.Should().Contain(p => p.Name == "Blue Hills SP");
     }
 
     [Fact]
     public async Task GetPoi_WithPoisAtViewportBoundaries_IncludesPoisOnEdges()
     {
-        // Arrange - POIs exactly on viewport boundaries
+        // Arrange - POIs exactly on viewport boundaries (use state_park, zoom >= 7)
         await SeedPoisAsync(
-            new PoiEntity { Name = "North Edge", Category = "national_park", Latitude = 45.0, Longitude = -110.0, Source = "nps" },
-            new PoiEntity { Name = "South Edge", Category = "national_park", Latitude = 40.0, Longitude = -110.0, Source = "nps" },
-            new PoiEntity { Name = "East Edge", Category = "national_park", Latitude = 42.5, Longitude = -100.0, Source = "nps" },
-            new PoiEntity { Name = "West Edge", Category = "national_park", Latitude = 42.5, Longitude = -115.0, Source = "nps" },
-            new PoiEntity { Name = "Inside", Category = "national_park", Latitude = 42.5, Longitude = -110.0, Source = "nps" }
+            new PoiEntity { Name = "North Edge", Category = "state_park", Latitude = 45.0, Longitude = -110.0, Source = "osm" },
+            new PoiEntity { Name = "South Edge", Category = "state_park", Latitude = 40.0, Longitude = -110.0, Source = "osm" },
+            new PoiEntity { Name = "East Edge", Category = "state_park", Latitude = 42.5, Longitude = -100.0, Source = "osm" },
+            new PoiEntity { Name = "West Edge", Category = "state_park", Latitude = 42.5, Longitude = -115.0, Source = "osm" },
+            new PoiEntity { Name = "Inside", Category = "state_park", Latitude = 42.5, Longitude = -110.0, Source = "osm" }
         );
 
-        // Act - Call endpoint with bounding box that includes all edges
-        var response = await _client!.GetAsync("/api/poi?minLat=40.0&maxLat=45.0&minLng=-115.0&maxLng=-100.0&zoom=5");
+        // Act - Call endpoint with bounding box that includes all edges (zoom >= 7 for state_park)
+        var response = await _client!.GetAsync("/api/poi?minLat=40.0&maxLat=45.0&minLng=-115.0&maxLng=-100.0&zoom=8");
 
         // Assert
         response.StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
@@ -527,9 +513,9 @@ public class PoiEndpointTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task GetPoi_WithZoom9_IncludesNationalParkStateParkNaturalFeatureButNotHistoricOrTourism()
+    public async Task GetPoi_WithZoom9_ReturnsAllCategoriesExceptNationalPark()
     {
-        // Arrange - Zoom >= 7 now returns ALL 5 categories (no longer restricted to 3)
+        // Arrange - national_park excluded from API
         await SeedPoisAsync(
             new PoiEntity { Name = "National Park", Category = "national_park", Latitude = 40.0, Longitude = -105.0, Source = "nps" },
             new PoiEntity { Name = "State Park", Category = "state_park", Latitude = 40.0, Longitude = -105.0, Source = "pad_us" },
@@ -538,7 +524,7 @@ public class PoiEndpointTests : IAsyncLifetime
             new PoiEntity { Name = "Tourism", Category = "tourism", Latitude = 40.0, Longitude = -105.0, Source = "osm" }
         );
 
-        // Act - Call endpoint with zoom=9 (returns ALL 5 categories now)
+        // Act - Call endpoint with zoom=9
         var response = await _client!.GetAsync("/api/poi?minLat=39.0&maxLat=41.0&minLng=-106.0&maxLng=-104.0&zoom=9");
 
         // Assert
@@ -547,8 +533,9 @@ public class PoiEndpointTests : IAsyncLifetime
         var json = await response.Content.ReadAsStringAsync();
         var result = ParseJsonResponse<PoiResponse>(json);
 
-        // All 5 POIs are at same coordinates, so grid sampling returns only 1 per cell
+        // 4 non-national_park POIs at same coordinates, grid sampling returns 1 per cell
+        // state_park has highest priority (1) among remaining categories
         result.Should().HaveCount(1);
-        result.Should().Contain(p => p.Category == "national_park"); // Highest priority by category order
+        result.Should().Contain(p => p.Category == "state_park");
     }
 }
