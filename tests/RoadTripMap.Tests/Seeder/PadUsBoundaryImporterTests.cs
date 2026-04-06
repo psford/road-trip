@@ -106,7 +106,7 @@ public class PadUsBoundaryImporterTests
         // Arrange
         using var context = CreateInMemoryContext();
 
-        var countResponse = JsonSerializer.Serialize(new { count = 2 });
+        var countResponse = JsonSerializer.Serialize(new { count = 3 });
 
         var featuresResponse = JsonSerializer.Serialize(new
         {
@@ -121,7 +121,7 @@ public class PadUsBoundaryImporterTests
                         Unit_Nm = "Deception Pass",
                         State_Nm = "WA",
                         d_Des_Tp = "State Park",
-                        GIS_Acres = 2000
+                        GIS_Acres = 1378
                     },
                     geometry = new
                     {
@@ -148,7 +148,7 @@ public class PadUsBoundaryImporterTests
                         Unit_Nm = "Deception Pass",
                         State_Nm = "WA",
                         d_Des_Tp = "State Park",
-                        GIS_Acres = 2134
+                        GIS_Acres = 1378
                     },
                     geometry = new
                     {
@@ -162,6 +162,33 @@ public class PadUsBoundaryImporterTests
                                 new object[] { -122.0, 48.0 },
                                 new object[] { -122.2, 48.0 },
                                 new object[] { -122.2, 48.15 }
+                            }
+                        }
+                    }
+                },
+                new
+                {
+                    type = "Feature",
+                    properties = new
+                    {
+                        OBJECTID = 3,
+                        Unit_Nm = "Deception Pass",
+                        State_Nm = "WA",
+                        d_Des_Tp = "State Park",
+                        GIS_Acres = 1378
+                    },
+                    geometry = new
+                    {
+                        type = "Polygon",
+                        coordinates = new object[][][]
+                        {
+                            new object[][]
+                            {
+                                new object[] { -122.1, 48.25 },
+                                new object[] { -121.95, 48.25 },
+                                new object[] { -121.95, 48.12 },
+                                new object[] { -122.1, 48.12 },
+                                new object[] { -122.1, 48.25 }
                             }
                         }
                     }
@@ -184,12 +211,20 @@ public class PadUsBoundaryImporterTests
         boundaries.Should().HaveCount(1);
 
         var boundary = boundaries[0];
-        boundary.GisAcres.Should().Be(4134); // Sum of both: 2000 + 2134
+        boundary.GisAcres.Should().Be(4134); // Sum of all three: 1378 + 1378 + 1378
         boundary.Name.Should().Be("Deception Pass");
         boundary.State.Should().Be("WA");
 
-        // Verify GeoJSON contains MultiPolygon with both polygons merged
+        // Verify GeoJSON contains MultiPolygon with all 3 polygons merged
         boundary.GeoJsonFull.Should().Contain("MultiPolygon");
+
+        // Parse GeoJSON and verify it contains coordinates from all 3 polygons
+        using var doc = JsonDocument.Parse(boundary.GeoJsonFull);
+        var root = doc.RootElement;
+        root.TryGetProperty("coordinates", out var coords).Should().BeTrue();
+        // MultiPolygon coordinates is array of polygons
+        var coordsArray = coords.EnumerateArray().ToList();
+        coordsArray.Should().HaveCount(3, "GeoJSON should contain all 3 polygons as separate entries in MultiPolygon");
     }
 
     [Fact]
@@ -254,7 +289,7 @@ public class PadUsBoundaryImporterTests
         // Arrange
         using var context = CreateInMemoryContext();
 
-        var countResponse = JsonSerializer.Serialize(new { count = 1 });
+        var countResponse = JsonSerializer.Serialize(new { count = 2 });
 
         var featuresResponse = JsonSerializer.Serialize(new
         {
@@ -286,6 +321,33 @@ public class PadUsBoundaryImporterTests
                             }
                         }
                     }
+                },
+                new
+                {
+                    type = "Feature",
+                    properties = new
+                    {
+                        OBJECTID = 2,
+                        Unit_Nm = "Another Park",
+                        State_Nm = "CA",
+                        d_Des_Tp = "State Park",
+                        GIS_Acres = 3000
+                    },
+                    geometry = new
+                    {
+                        type = "Polygon",
+                        coordinates = new object[][][]
+                        {
+                            new object[][]
+                            {
+                                new object[] { -118.0, 34.0 },
+                                new object[] { -117.0, 34.0 },
+                                new object[] { -117.0, 33.0 },
+                                new object[] { -118.0, 33.0 },
+                                new object[] { -118.0, 34.0 }
+                            }
+                        }
+                    }
                 }
             }
         });
@@ -297,23 +359,27 @@ public class PadUsBoundaryImporterTests
         var result1 = await importer.ImportAsync();
 
         // Assert first run
-        result1.imported.Should().Be(1);
+        result1.imported.Should().Be(2);
         var boundaries1 = await context.ParkBoundaries.ToListAsync();
-        boundaries1.Should().HaveCount(1);
-        var originalId = boundaries1[0].Id;
-        var originalAcres = boundaries1[0].GisAcres;
+        boundaries1.Should().HaveCount(2);
+        var originalIds = boundaries1.Select(b => b.Id).ToList();
+        var originalAcres = boundaries1.ToDictionary(b => b.Name, b => b.GisAcres);
 
         // Act - second run (simulating re-import of same data)
         var httpClient2 = CreateMockHttpClient(countResponse, featuresResponse);
         var importer2 = new PadUsBoundaryImporter(context, httpClient2);
         var result2 = await importer2.ImportAsync();
 
-        // Assert second run - should still be one boundary with same ID
-        result2.imported.Should().Be(1); // Upserted, not new
+        // Assert second run - should still be 2 boundaries with same IDs (not 4)
+        result2.imported.Should().Be(2); // Upserted, not new
         var boundaries2 = await context.ParkBoundaries.ToListAsync();
-        boundaries2.Should().HaveCount(1);
-        boundaries2[0].Id.Should().Be(originalId);
-        boundaries2[0].GisAcres.Should().Be(originalAcres);
+        boundaries2.Should().HaveCount(2, "Second run should not create duplicates");
+        var newIds = boundaries2.Select(b => b.Id).OrderBy(x => x).ToList();
+        originalIds.OrderBy(x => x).ToList().Should().Equal(newIds, "IDs should remain the same");
+        foreach (var boundary in boundaries2)
+        {
+            boundary.GisAcres.Should().Be(originalAcres[boundary.Name], $"Acres for {boundary.Name} should not change");
+        }
     }
 
     [Fact]

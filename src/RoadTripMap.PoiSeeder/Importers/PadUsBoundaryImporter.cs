@@ -110,6 +110,7 @@ public class PadUsBoundaryImporter
     /// <summary>
     /// Paginates through all PAD-US features with the filter.
     /// Rate limits: 2 second delay between pages per CLAUDE.md API rules.
+    /// Implements exponential backoff on HTTP 429 (Too Many Requests).
     /// </summary>
     private async Task<List<Dictionary<string, JsonElement>>> FetchAllFeaturesAsync()
     {
@@ -131,10 +132,39 @@ public class PadUsBoundaryImporter
             };
 
             var url = BuildUrl(queryParams);
-            var response = await _httpClient.GetAsync(url);
-            response.EnsureSuccessStatusCode();
+            HttpResponseMessage? response = null;
+            var retries = 0;
+            const int maxRetries = 3;
+            var delayMs = 2000; // Start with 2s base delay
 
-            using var doc = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync());
+            while (retries < maxRetries)
+            {
+                response = await _httpClient.GetAsync(url);
+
+                // Handle HTTP 429 with exponential backoff
+                if (response.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
+                {
+                    retries++;
+                    if (retries < maxRetries)
+                    {
+                        var backoffMs = delayMs * (int)Math.Pow(2, retries - 1); // 2s, 4s, 8s
+                        Console.WriteLine($"  Rate limited (429). Retry {retries}/{maxRetries} after {backoffMs}ms");
+                        await Task.Delay(backoffMs);
+                        continue;
+                    }
+                    else
+                    {
+                        // Final attempt failed
+                        response.EnsureSuccessStatusCode();
+                    }
+                }
+
+                // Success or non-429 error
+                response.EnsureSuccessStatusCode();
+                break;
+            }
+
+            using var doc = await JsonDocument.ParseAsync(await response!.Content.ReadAsStreamAsync());
             var root = doc.RootElement;
 
             // Extract features - must clone data before JsonDocument is disposed

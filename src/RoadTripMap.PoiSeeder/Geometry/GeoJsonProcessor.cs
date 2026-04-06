@@ -334,7 +334,7 @@ public static class GeoJsonProcessor
 
     /// <summary>
     /// Computes the area of a ring using the shoelace formula.
-    /// Returns signed area (positive for counter-clockwise, negative for clockwise).
+    /// Returns the absolute area of a ring using the shoelace formula.
     /// </summary>
     private static double ComputeRingArea(double[][] ring)
     {

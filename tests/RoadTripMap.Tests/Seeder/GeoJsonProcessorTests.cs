@@ -1,3 +1,4 @@
+using System.Text.Json;
 using FluentAssertions;
 using RoadTripMap.PoiSeeder.Geometry;
 using Xunit;
@@ -412,8 +413,10 @@ public class GeoJsonProcessorTests
         var noSimplification = GeoJsonProcessor.SimplifyMultiPolygon(polygons, dpTolerance: 0, chaikinIterations: 1);
         var withSimplification = GeoJsonProcessor.SimplifyMultiPolygon(polygons, dpTolerance: 0.05, chaikinIterations: 1);
 
-        // Assert: With DP simplification, points may be reduced more aggressively
-        // Both should be valid, but we just verify they both produce output
+        // Assert: Zero tolerance (no Douglas-Peucker) should retain more or equal points than with simplification
+        noSimplification[0][0].Length.Should().BeGreaterThanOrEqualTo(withSimplification[0][0].Length,
+            "Simplification with zero DP tolerance should retain all points from Chaikin, which may be more than with DP simplification");
+        // Both should have valid output
         noSimplification[0][0].Length.Should().BeGreaterThan(0);
         withSimplification[0][0].Length.Should().BeGreaterThan(0);
     }
@@ -512,10 +515,27 @@ public class GeoJsonProcessorTests
         // Act
         var json = GeoJsonProcessor.BuildGeoJson(polygons);
 
-        // Assert: Should include coordinates from both polygons
-        json.Should().Contain("0");
-        json.Should().Contain("2");
-        json.Should().Contain("3");
+        // Assert: Parse JSON and verify it contains 2 polygon entries
+        using var doc = JsonDocument.Parse(json);
+        var root = doc.RootElement;
+        root.TryGetProperty("coordinates", out var coordinates).Should().BeTrue();
+
+        var polygonCoordinates = coordinates.EnumerateArray().ToList();
+        polygonCoordinates.Should().HaveCount(2, "GeoJSON should contain 2 separate polygons in the MultiPolygon");
+
+        // Verify the first polygon has coordinates
+        var firstPolyElement = polygonCoordinates[0];
+        firstPolyElement.EnumerateArray().Should().NotBeEmpty("First polygon should have rings");
+
+        // Verify the second polygon has coordinates
+        var secondPolyElement = polygonCoordinates[1];
+        secondPolyElement.EnumerateArray().Should().NotBeEmpty("Second polygon should have rings");
+
+        // Verify JSON string contains expected coordinate values
+        json.Should().Contain("[0");
+        json.Should().Contain("[1");
+        json.Should().Contain("[2");
+        json.Should().Contain("[3");
     }
 
     // ============ ComputeThreeDetailLevels Tests ============
