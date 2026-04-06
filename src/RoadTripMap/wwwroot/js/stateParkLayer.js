@@ -375,16 +375,35 @@ const StateParkLayer = {
             }
 
             // Merge cached features with fresh API response
-            // Use cached version if ID exists in cache, otherwise use fresh from API
-            const features = response.features.map(feature => {
+            // Use cached version if ID exists in cache at current detail level, otherwise use fresh from API
+            const features = [];
+            const nonCachedFeatures = [];
+
+            for (const feature of response.features) {
                 const id = feature.id || feature.properties.id;
                 if (cachedIds && cachedIds.has(id)) {
-                    // ID is cached; in production would fetch from cache, but API already returned fresh
-                    // Keep API version which is current
-                    return feature;
+                    // ID is cached; retrieve cached version and use it
+                    try {
+                        const cachedFeature = await MapCache.get('park-boundary', id, detail);
+                        if (cachedFeature) {
+                            features.push(cachedFeature);
+                        } else {
+                            // Cache miss despite ID being in set; use API version
+                            features.push(feature);
+                            nonCachedFeatures.push(feature);
+                        }
+                    } catch (error) {
+                        console.warn('Failed to retrieve cached feature:', error);
+                        // Fall back to API version on cache error
+                        features.push(feature);
+                        nonCachedFeatures.push(feature);
+                    }
+                } else {
+                    // Not in cache; use API version and mark for caching
+                    features.push(feature);
+                    nonCachedFeatures.push(feature);
                 }
-                return feature;
-            });
+            }
 
             // Update boundary source with GeoJSON (render first)
             const boundarySource = map.getSource('sp-boundaries');
@@ -410,17 +429,18 @@ const StateParkLayer = {
                 labelSource.setData(labelPoints);
             }
 
-            // Cache features in IndexedDB after rendering (background work)
+            // Cache non-cached features in IndexedDB after rendering (background work)
             // Use non-blocking approach to avoid rendering delays
-            setImmediate(async () => {
-                for (const feature of features) {
+            // Only cache features that weren't already in the cache
+            setTimeout(async () => {
+                for (const feature of nonCachedFeatures) {
                     try {
                         await this._cacheFeature(feature, state.currentDetail);
                     } catch (error) {
                         console.warn('Failed to cache feature:', error);
                     }
                 }
-            });
+            }, 0);
         } catch (error) {
             console.error('Failed to load state park boundaries:', error);
         }
