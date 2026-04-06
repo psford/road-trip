@@ -17,7 +17,7 @@ public class PadUsBoundaryImporter
     private readonly RoadTripDbContext _context;
     private readonly HttpClient _httpClient;
     private const int PageSize = 500;
-    private const int BatchSize = 100;
+    private const int BatchSize = 25; // Smaller batches for Azure SQL — large GeoJSON columns hit DTU limits
     private const string BaseUrl = "https://edits.nationalmap.gov/arcgis/rest/services/PAD-US/PAD_US/MapServer/0/query";
     private const double MinPolygonAreaDeg2 = 0.0001; // Default threshold
 
@@ -74,6 +74,8 @@ public class PadUsBoundaryImporter
         catch (Exception ex)
         {
             Console.Error.WriteLine($"Error importing PAD-US boundaries: {ex.Message}");
+            if (ex.InnerException != null)
+                Console.Error.WriteLine($"  Inner exception: {ex.InnerException.Message}");
             throw;
         }
 

@@ -22,9 +22,11 @@ public static class Program
             var connectionString = Environment.GetEnvironmentVariable("WSL_SQL_CONNECTION")
                 ?? "Server=localhost,1433;Database=RoadTrip;User Id=sa;Password=YourPassword123!;TrustServerCertificate=true;";
 
-            // Build DbContext
+            // Build DbContext with extended timeout for bulk imports
+            // Azure SQL Basic tier has limited DTUs; large GeoJSON upserts need more time
             var optionsBuilder = new DbContextOptionsBuilder<RoadTripDbContext>();
-            optionsBuilder.UseSqlServer(connectionString);
+            optionsBuilder.UseSqlServer(connectionString, options =>
+                options.CommandTimeout(300)); // 5 minutes for bulk seeder operations
 
             await using var context = new RoadTripDbContext(optionsBuilder.Options);
 
