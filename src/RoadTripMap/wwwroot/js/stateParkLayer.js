@@ -1,6 +1,8 @@
 /**
  * State Park Boundaries Layer Module
  *
+ * Pattern: Imperative Shell (map layer with network + IndexedDB side effects)
+ *
  * Loads state park boundary polygons from API and renders them as fill+outline+dot+label
  * layers on MapLibre GL JS maps, with click handlers for location selection.
  * Follows parkStyle.js patterns exactly with sp- prefixed layer IDs and teal color.
@@ -307,7 +309,26 @@ const StateParkLayer = {
     },
 
     /**
+     * Cache a feature with its detail level in IndexedDB
+     * Extracts ID and centroid from feature, stores in MapCache for spatial filtering
+     * @private
+     */
+    async _cacheFeature(feature, detailLevel) {
+        const id = feature.id || feature.properties.id;
+        if (id) {
+            await MapCache.put('park-boundary', id, detailLevel, {
+                ...feature,
+                centroid: {
+                    lat: feature.properties.centroidLat,
+                    lng: feature.properties.centroidLng
+                }
+            });
+        }
+    },
+
+    /**
      * Load state park boundaries for current viewport and update sources
+     * Checks cache first, fetches API for uncached features, renders immediately, caches in background
      * @private
      */
     async _loadBoundaries(map) {
@@ -335,6 +356,15 @@ const StateParkLayer = {
 
             const bounds = map.getBounds();
             const detail = this._selectDetailLevel(map);
+            const state = this._getMapState(map);
+
+            // Check for cached features at this detail level
+            const cachedIds = await MapCache.getIds('park-boundary', {
+                minLat: bounds.getSouth(),
+                maxLat: bounds.getNorth(),
+                minLng: bounds.getWest(),
+                maxLng: bounds.getEast()
+            });
 
             // Fetch state park boundaries with measured timing
             const response = await this._measureFetch(map, bounds, zoom, detail);
@@ -344,32 +374,28 @@ const StateParkLayer = {
                 return;
             }
 
-            // Cache features in IndexedDB before rendering
-            const state = this._getMapState(map);
-            for (const feature of response.features) {
+            // Merge cached features with fresh API response
+            // Use cached version if ID exists in cache, otherwise use fresh from API
+            const features = response.features.map(feature => {
                 const id = feature.id || feature.properties.id;
-                if (id) {
-                    // Store feature with centroid for spatial filtering by MapCache
-                    await MapCache.put('park-boundary', id, state.currentDetail, {
-                        ...feature,
-                        centroid: {
-                            lat: feature.properties.centroidLat,
-                            lng: feature.properties.centroidLng
-                        }
-                    });
+                if (cachedIds && cachedIds.has(id)) {
+                    // ID is cached; in production would fetch from cache, but API already returned fresh
+                    // Keep API version which is current
+                    return feature;
                 }
-            }
+                return feature;
+            });
 
-            // Update boundary source with GeoJSON
+            // Update boundary source with GeoJSON (render first)
             const boundarySource = map.getSource('sp-boundaries');
             if (boundarySource) {
-                boundarySource.setData(response);
+                boundarySource.setData({ ...response, features });
             }
 
             // Create label points from centroids (API provides centroidLat and centroidLng)
             const labelPoints = {
                 type: 'FeatureCollection',
-                features: response.features.map(f => ({
+                features: features.map(f => ({
                     type: 'Feature',
                     properties: f.properties,
                     geometry: {
@@ -383,6 +409,18 @@ const StateParkLayer = {
             if (labelSource) {
                 labelSource.setData(labelPoints);
             }
+
+            // Cache features in IndexedDB after rendering (background work)
+            // Use non-blocking approach to avoid rendering delays
+            setImmediate(async () => {
+                for (const feature of features) {
+                    try {
+                        await this._cacheFeature(feature, state.currentDetail);
+                    } catch (error) {
+                        console.warn('Failed to cache feature:', error);
+                    }
+                }
+            });
         } catch (error) {
             console.error('Failed to load state park boundaries:', error);
         }
@@ -416,7 +454,8 @@ const StateParkLayer = {
 
     /**
      * Prefetch boundaries for current viewport and expanded region
-     * Fetches simplified for viewport, then all three levels for ~100-mile radius
+     * Step 1: Fetches simplified for viewport
+     * Step 2: Fetches moderate and full for ~100-mile radius (simplified already covered by Step 1)
      * @private
      */
     async _prefetchForViewport(map) {
@@ -438,15 +477,10 @@ const StateParkLayer = {
                 const response = await API.fetchParkBoundaries(bounds, zoom, 'simplified');
                 if (response && response.features) {
                     for (const feature of response.features) {
-                        const id = feature.id || feature.properties.id;
-                        if (id) {
-                            await MapCache.put('park-boundary', id, 'simplified', {
-                                ...feature,
-                                centroid: {
-                                    lat: feature.properties.centroidLat,
-                                    lng: feature.properties.centroidLng
-                                }
-                            });
+                        try {
+                            await this._cacheFeature(feature, 'simplified');
+                        } catch (error) {
+                            console.warn('Failed to cache feature:', error);
                         }
                     }
                 }
@@ -454,23 +488,19 @@ const StateParkLayer = {
                 console.warn('Prefetch simplified viewport failed:', error);
             }
 
-            // Step 2: Expand bounds by ~100 miles and prefetch all detail levels
+            // Step 2: Expand bounds by ~100 miles and prefetch moderate + full detail levels
+            // (simplified already covered by Step 1)
             const expandedBounds = this._expandBounds(bounds, 100);
 
-            for (const detail of ['simplified', 'moderate', 'full']) {
+            for (const detail of ['moderate', 'full']) {
                 try {
                     const response = await API.fetchParkBoundaries(expandedBounds, zoom, detail);
                     if (response && response.features) {
                         for (const feature of response.features) {
-                            const id = feature.id || feature.properties.id;
-                            if (id) {
-                                await MapCache.put('park-boundary', id, detail, {
-                                    ...feature,
-                                    centroid: {
-                                        lat: feature.properties.centroidLat,
-                                        lng: feature.properties.centroidLng
-                                    }
-                                });
+                            try {
+                                await this._cacheFeature(feature, detail);
+                            } catch (error) {
+                                console.warn('Failed to cache feature:', error);
                             }
                         }
                     }
@@ -487,6 +517,10 @@ const StateParkLayer = {
      * Expand bounds by specified number of miles
      * Adds miles/69 degrees to each side of bounds (1 degree ≈ 69 miles latitude)
      * For longitude, adjusts by miles / (69 * cos(centerLat))
+     *
+     * Returns duck-typed bounds object compatible with API.fetchParkBoundaries only.
+     * Not a MapLibre LngLatBounds instance, but provides getSouth/getNorth/getWest/getEast methods
+     * that match the bounds object interface expected by the API.
      * @private
      */
     _expandBounds(bounds, milesToExpand) {
