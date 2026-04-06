@@ -333,6 +333,121 @@ public static class GeoJsonProcessor
     }
 
     /// <summary>
+    /// Merges overlapping polygons within a MultiPolygon.
+    /// When multiple parcels for the same park overlap or one contains another,
+    /// keeps only the largest polygon and drops contained sub-parcels.
+    /// Truly disjoint polygons are preserved as separate entries.
+    /// </summary>
+    public static List<List<double[][]>> MergeOverlappingPolygons(List<List<double[][]>> polygons)
+    {
+        if (polygons.Count <= 1)
+            return polygons;
+
+        // Sort by area descending (largest first)
+        var sorted = polygons
+            .Select((p, i) => new { Polygon = p, Area = p.Count > 0 ? ComputeRingArea(p[0]) : 0, Index = i })
+            .OrderByDescending(x => x.Area)
+            .ToList();
+
+        var kept = new List<List<double[][]>>();
+        var absorbed = new HashSet<int>();
+
+        for (int i = 0; i < sorted.Count; i++)
+        {
+            if (absorbed.Contains(sorted[i].Index))
+                continue;
+
+            var large = sorted[i];
+            if (large.Polygon.Count == 0 || large.Polygon[0].Length < 3)
+            {
+                kept.Add(large.Polygon);
+                continue;
+            }
+
+            // Check if any remaining smaller polygon's centroid is inside this one
+            for (int j = i + 1; j < sorted.Count; j++)
+            {
+                if (absorbed.Contains(sorted[j].Index))
+                    continue;
+
+                var small = sorted[j];
+                if (small.Polygon.Count == 0 || small.Polygon[0].Length < 3)
+                    continue;
+
+                // Compute centroid of small polygon's exterior ring
+                var smallRing = small.Polygon[0];
+                double cx = 0, cy = 0;
+                int n = smallRing.Length > 1 ? smallRing.Length - 1 : smallRing.Length; // Exclude closing point
+                for (int k = 0; k < n; k++)
+                {
+                    cx += smallRing[k][0];
+                    cy += smallRing[k][1];
+                }
+                cx /= n;
+                cy /= n;
+
+                // Also check if bboxes overlap significantly
+                var largeBbox = GetRingBbox(large.Polygon[0]);
+                var smallBbox = GetRingBbox(small.Polygon[0]);
+
+                bool bboxOverlap = largeBbox.minLng <= smallBbox.maxLng && largeBbox.maxLng >= smallBbox.minLng &&
+                                   largeBbox.minLat <= smallBbox.maxLat && largeBbox.maxLat >= smallBbox.minLat;
+
+                if (bboxOverlap && PointInRing(cx, cy, large.Polygon[0]))
+                {
+                    absorbed.Add(sorted[j].Index);
+                }
+            }
+
+            kept.Add(large.Polygon);
+        }
+
+        return kept;
+    }
+
+    /// <summary>
+    /// Tests if a point is inside a polygon ring using ray casting algorithm.
+    /// </summary>
+    private static bool PointInRing(double px, double py, double[][] ring)
+    {
+        bool inside = false;
+        int n = ring.Length;
+
+        for (int i = 0, j = n - 1; i < n; j = i++)
+        {
+            double xi = ring[i][0], yi = ring[i][1];
+            double xj = ring[j][0], yj = ring[j][1];
+
+            if (((yi > py) != (yj > py)) &&
+                (px < (xj - xi) * (py - yi) / (yj - yi) + xi))
+            {
+                inside = !inside;
+            }
+        }
+
+        return inside;
+    }
+
+    /// <summary>
+    /// Gets bounding box of a ring.
+    /// </summary>
+    private static (double minLat, double maxLat, double minLng, double maxLng) GetRingBbox(double[][] ring)
+    {
+        double minLng = double.MaxValue, maxLng = double.MinValue;
+        double minLat = double.MaxValue, maxLat = double.MinValue;
+
+        foreach (var coord in ring)
+        {
+            if (coord[0] < minLng) minLng = coord[0];
+            if (coord[0] > maxLng) maxLng = coord[0];
+            if (coord[1] < minLat) minLat = coord[1];
+            if (coord[1] > maxLat) maxLat = coord[1];
+        }
+
+        return (minLat, maxLat, minLng, maxLng);
+    }
+
+    /// <summary>
     /// Computes the area of a ring using the shoelace formula.
     /// Returns the absolute area of a ring using the shoelace formula.
     /// </summary>

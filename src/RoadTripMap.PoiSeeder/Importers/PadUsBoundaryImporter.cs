@@ -16,9 +16,9 @@ public class PadUsBoundaryImporter
 {
     private readonly RoadTripDbContext _context;
     private readonly HttpClient _httpClient;
-    private const int PageSize = 2000;
+    private const int PageSize = 500;
     private const int BatchSize = 100;
-    private const string BaseUrl = "https://gis1.usgs.gov/arcgis/rest/services/padus3/PAD_US3_0_d_m/FeatureServer/0/query";
+    private const string BaseUrl = "https://edits.nationalmap.gov/arcgis/rest/services/PAD-US/PAD_US/MapServer/0/query";
     private const double MinPolygonAreaDeg2 = 0.0001; // Default threshold
 
     public PadUsBoundaryImporter(RoadTripDbContext context, HttpClient httpClient)
@@ -89,7 +89,7 @@ public class PadUsBoundaryImporter
     {
         var queryParams = new Dictionary<string, string>
         {
-            { "where", "d_Des_Tp IN ('State Park','State Recreation Area')" },
+            { "where", "Des_Tp IN ('SP','SREC')" },
             { "returnCountOnly", "true" },
             { "f", "json" }
         };
@@ -122,8 +122,8 @@ public class PadUsBoundaryImporter
         {
             var queryParams = new Dictionary<string, string>
             {
-                { "where", "d_Des_Tp IN ('State Park','State Recreation Area')" },
-                { "outFields", "Unit_Nm,State_Nm,d_Des_Tp,GIS_Acres,OBJECTID" },
+                { "where", "Des_Tp IN ('SP','SREC')" },
+                { "outFields", "Unit_Nm,State_Nm,Des_Tp,GIS_Acres,OBJECTID" },
                 { "resultOffset", resultOffset.ToString() },
                 { "resultRecordCount", PageSize.ToString() },
                 { "f", "geojson" },
@@ -314,6 +314,9 @@ public class PadUsBoundaryImporter
                 return false; // Skip if no valid polygons after filtering
             }
 
+            // Merge overlapping parcels — removes sub-parcels contained within larger ones
+            filteredPolygons = GeoJsonProcessor.MergeOverlappingPolygons(filteredPolygons);
+
             // Compute three detail levels
             var (fullGeoJson, moderateGeoJson, simplifiedGeoJson) =
                 GeoJsonProcessor.ComputeThreeDetailLevels(filteredPolygons);
@@ -475,16 +478,16 @@ public class PadUsBoundaryImporter
     }
 
     /// <summary>
-    /// Extracts category from properties (d_Des_Tp or similar).
+    /// Extracts category from properties (Des_Tp field with codes SP/SREC).
     /// </summary>
     private string ExtractCategory(JsonElement props)
     {
-        if (props.TryGetProperty("d_Des_Tp", out var desTp))
+        if (props.TryGetProperty("Des_Tp", out var desTp))
         {
             var value = desTp.GetString() ?? string.Empty;
-            if (value.Contains("Recreation", StringComparison.OrdinalIgnoreCase))
+            if (value.Equals("SREC", StringComparison.OrdinalIgnoreCase))
                 return "state_recreation_area";
-            if (value.Contains("Park", StringComparison.OrdinalIgnoreCase))
+            if (value.Equals("SP", StringComparison.OrdinalIgnoreCase))
                 return "state_park";
         }
 

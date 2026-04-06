@@ -20,7 +20,7 @@ public class PadUsBoundaryImporterTests
     private HttpClient CreateMockHttpClient(string countResponse, string featuresResponse)
     {
         var handler = new MockHttpMessageHandler(countResponse, featuresResponse);
-        return new HttpClient(handler) { BaseAddress = new Uri("https://gis1.usgs.gov/") };
+        return new HttpClient(handler) { BaseAddress = new Uri("https://edits.nationalmap.gov/") };
     }
 
     [Fact]
@@ -43,7 +43,7 @@ public class PadUsBoundaryImporterTests
                         OBJECTID = 1,
                         Unit_Nm = "Deception Pass",
                         State_Nm = "WA",
-                        d_Des_Tp = "State Park",
+                        Des_Tp = "SP",
                         GIS_Acres = 4134
                     },
                     geometry = new
@@ -120,7 +120,7 @@ public class PadUsBoundaryImporterTests
                         OBJECTID = 1,
                         Unit_Nm = "Deception Pass",
                         State_Nm = "WA",
-                        d_Des_Tp = "State Park",
+                        Des_Tp = "SP",
                         GIS_Acres = 1378
                     },
                     geometry = new
@@ -147,7 +147,7 @@ public class PadUsBoundaryImporterTests
                         OBJECTID = 2,
                         Unit_Nm = "Deception Pass",
                         State_Nm = "WA",
-                        d_Des_Tp = "State Park",
+                        Des_Tp = "SP",
                         GIS_Acres = 1378
                     },
                     geometry = new
@@ -174,7 +174,7 @@ public class PadUsBoundaryImporterTests
                         OBJECTID = 3,
                         Unit_Nm = "Deception Pass",
                         State_Nm = "WA",
-                        d_Des_Tp = "State Park",
+                        Des_Tp = "SP",
                         GIS_Acres = 1378
                     },
                     geometry = new
@@ -247,7 +247,7 @@ public class PadUsBoundaryImporterTests
                         OBJECTID = 1,
                         Unit_Nm = (string?)null,
                         State_Nm = "WA",
-                        d_Des_Tp = "State Park",
+                        Des_Tp = "SP",
                         GIS_Acres = 100
                     },
                     geometry = new
@@ -303,7 +303,7 @@ public class PadUsBoundaryImporterTests
                         OBJECTID = 1,
                         Unit_Nm = "Test Park",
                         State_Nm = "CA",
-                        d_Des_Tp = "State Park",
+                        Des_Tp = "SP",
                         GIS_Acres = 5000
                     },
                     geometry = new
@@ -330,7 +330,7 @@ public class PadUsBoundaryImporterTests
                         OBJECTID = 2,
                         Unit_Nm = "Another Park",
                         State_Nm = "CA",
-                        d_Des_Tp = "State Park",
+                        Des_Tp = "SP",
                         GIS_Acres = 3000
                     },
                     geometry = new
@@ -402,7 +402,7 @@ public class PadUsBoundaryImporterTests
                         OBJECTID = 1,
                         Unit_Nm = "Test Recreation Area",
                         State_Nm = "OR",
-                        d_Des_Tp = "State Recreation Area",
+                        Des_Tp = "SREC",
                         GIS_Acres = 1000
                     },
                     geometry = new
@@ -455,7 +455,7 @@ public class PadUsBoundaryImporterTests
                         OBJECTID = 1,
                         Unit_Nm = "Multi Polygon Park",
                         State_Nm = "AK",
-                        d_Des_Tp = "State Park",
+                        Des_Tp = "SP",
                         GIS_Acres = 10000
                     },
                     geometry = new
