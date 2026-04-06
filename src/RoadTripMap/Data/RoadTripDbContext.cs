@@ -11,6 +11,7 @@ public class RoadTripDbContext : DbContext
     public DbSet<PhotoEntity> Photos => Set<PhotoEntity>();
     public DbSet<GeoCacheEntity> GeoCache => Set<GeoCacheEntity>();
     public DbSet<PoiEntity> PointsOfInterest => Set<PoiEntity>();
+    public DbSet<ParkBoundaryEntity> ParkBoundaries => Set<ParkBoundaryEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -66,6 +67,27 @@ public class RoadTripDbContext : DbContext
             entity.HasIndex(e => new { e.Latitude, e.Longitude });
             entity.HasIndex(e => e.SourceId);
             entity.HasIndex(e => e.Category);
+        });
+
+        modelBuilder.Entity<ParkBoundaryEntity>(entity =>
+        {
+            entity.ToTable("ParkBoundaries");
+            entity.HasKey(e => e.Id);
+
+            entity.Property(e => e.Name).HasMaxLength(300).IsRequired();
+            entity.Property(e => e.State).HasMaxLength(2).IsRequired();
+            entity.Property(e => e.Category).HasMaxLength(50).IsRequired();
+            entity.Property(e => e.Source).HasMaxLength(50).IsRequired();
+            entity.Property(e => e.SourceId).HasMaxLength(200);
+
+            // Composite index on bbox columns for viewport queries
+            entity.HasIndex(e => new { e.MinLat, e.MaxLat, e.MinLng, e.MaxLng });
+
+            // Index on GisAcres for sorting (largest parks first)
+            entity.HasIndex(e => e.GisAcres);
+
+            // Index on SourceId for upsert/dedup during import
+            entity.HasIndex(e => e.SourceId);
         });
     }
 }

@@ -65,6 +65,7 @@ const MapUI = {
         this.map.on('load', () => {
             applyParkStyling(this.map);
             PoiLayer.init(this.map);
+            StateParkLayer.init(this.map);
         });
 
         // Handle empty trip

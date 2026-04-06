@@ -16,6 +16,7 @@ public static class Program
             var npsOnly = args.Contains("--nps-only");
             var overpassOnly = args.Contains("--overpass-only");
             var padUsOnly = args.Contains("--pad-us-only");
+            var boundariesOnly = args.Contains("--boundaries-only");
 
             // Read connection string from environment variable, fall back to development default
             var connectionString = Environment.GetEnvironmentVariable("WSL_SQL_CONNECTION")
@@ -37,7 +38,7 @@ public static class Program
             var results = new Dictionary<string, (int processed, int skipped)>();
 
             // Run NPS importer if not restricted
-            if (!overpassOnly && !padUsOnly)
+            if (!overpassOnly && !padUsOnly && !boundariesOnly)
             {
                 Console.WriteLine("Running NPS importer...");
                 var npsApiKey = Environment.GetEnvironmentVariable("NPS_API_KEY") ?? string.Empty;
@@ -55,7 +56,7 @@ public static class Program
             }
 
             // Run Overpass importer if not restricted
-            if (!npsOnly && !padUsOnly)
+            if (!npsOnly && !padUsOnly && !boundariesOnly)
             {
                 Console.WriteLine("Running Overpass importer...");
                 var overpassImporter = new OverpassImporter(httpClient, context);
@@ -72,7 +73,7 @@ public static class Program
             }
 
             // Run PAD-US importer if not restricted and file is provided
-            if (!npsOnly && !overpassOnly)
+            if (!npsOnly && !overpassOnly && !boundariesOnly)
             {
                 if (!string.IsNullOrEmpty(padUsFile))
                 {
@@ -92,6 +93,22 @@ public static class Program
                 else
                 {
                     Console.WriteLine("Skipping PAD-US importer (no file provided, use --pad-us-file <path>)\n");
+                }
+            }
+
+            // Run PAD-US boundary importer if not restricted to other importers
+            if (!npsOnly && !overpassOnly && !padUsOnly)
+            {
+                Console.WriteLine("Running PAD-US boundary importer...");
+                var boundaryImporter = new PadUsBoundaryImporter(context, httpClient);
+                try
+                {
+                    var boundaryResult = await boundaryImporter.ImportAsync();
+                    Console.WriteLine($"  Boundaries: {boundaryResult.imported} imported, {boundaryResult.skipped} skipped, {boundaryResult.merged} parks merged\n");
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"  Boundary import failed: {ex.Message}\n");
                 }
             }
 
