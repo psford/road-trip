@@ -543,6 +543,7 @@ const PostUI = {
         this.map.on('load', () => {
             applyParkStyling(this.map, this._poiActionOptions());
             PoiLayer.init(this.map, this._poiActionOptions());
+            StateParkLayer.init(this.map, this._poiActionOptions());
         });
 
         // Handle map clicks for marker placement
@@ -726,6 +727,7 @@ const PostUI = {
             this.photoMap.on('load', () => {
                 applyParkStyling(this.photoMap, this._poiActionOptions());
                 PoiLayer.init(this.photoMap, this._poiActionOptions());
+                StateParkLayer.init(this.photoMap, this._poiActionOptions());
             });
         }
 
