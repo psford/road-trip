@@ -164,4 +164,28 @@ const API = {
         if (!response.ok) return [];
         return response.json();
     },
+
+    /**
+     * Fetch state park boundaries within map bounds and zoom level
+     * @param {maplibregl.LngLatBounds} bounds - Map bounds from map.getBounds()
+     * @param {number} zoom - Current zoom level from map.getZoom()
+     * @param {string} [detail='moderate'] - Detail level for boundary simplification
+     * @returns {Promise<Object>} - GeoJSON FeatureCollection of park boundaries
+     */
+    async fetchParkBoundaries(bounds, zoom, detail = 'moderate') {
+        const params = new URLSearchParams({
+            minLat: bounds.getSouth(),
+            maxLat: bounds.getNorth(),
+            minLng: bounds.getWest(),
+            maxLng: bounds.getEast(),
+            zoom: Math.floor(zoom),
+            detail: detail
+        });
+        const response = await fetch(`${this.baseUrl}/park-boundaries?${params}`);
+        if (!response.ok) {
+            const error = await response.json().catch(() => ({}));
+            throw new Error(error.error || `Failed to fetch park boundaries: ${response.status}`);
+        }
+        return response.json();
+    },
 };
