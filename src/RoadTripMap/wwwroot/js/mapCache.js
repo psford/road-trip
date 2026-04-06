@@ -76,13 +76,14 @@ const MapCache = {
 
         try {
             const key = `${type}_${id}_${detailLevel}`;
-            return new Promise((resolve, reject) => {
+            return new Promise((resolve) => {
                 const transaction = db.transaction([this._storeName], 'readonly');
                 const store = transaction.objectStore(this._storeName);
                 const request = store.get(key);
 
                 request.onerror = () => {
-                    reject(new Error('Failed to get from cache'));
+                    console.warn('Failed to get from cache');
+                    resolve(null);
                 };
 
                 request.onsuccess = () => {
@@ -122,13 +123,14 @@ const MapCache = {
                 data
             };
 
-            return new Promise((resolve, reject) => {
+            return new Promise((resolve) => {
                 const transaction = db.transaction([this._storeName], 'readwrite');
                 const store = transaction.objectStore(this._storeName);
                 const request = store.put(entry);
 
                 request.onerror = () => {
-                    reject(new Error('Failed to put to cache'));
+                    console.warn('Failed to put to cache');
+                    resolve();
                 };
 
                 request.onsuccess = () => {
@@ -156,7 +158,7 @@ const MapCache = {
         }
 
         try {
-            return new Promise((resolve, reject) => {
+            return new Promise((resolve) => {
                 const transaction = db.transaction([this._storeName], 'readonly');
                 const store = transaction.objectStore(this._storeName);
                 const typeIndex = store.index('type');
@@ -166,7 +168,8 @@ const MapCache = {
                 const matchingIds = new Set();
 
                 request.onerror = () => {
-                    reject(new Error('Failed to query cache'));
+                    console.warn('Failed to query cache');
+                    resolve(new Set());
                 };
 
                 request.onsuccess = (event) => {
@@ -204,7 +207,7 @@ const MapCache = {
         }
 
         try {
-            return new Promise((resolve, reject) => {
+            return new Promise((resolve) => {
                 const transaction = db.transaction([this._storeName], 'readwrite');
                 const store = transaction.objectStore(this._storeName);
                 const typeIndex = store.index('type');
@@ -212,7 +215,8 @@ const MapCache = {
                 const request = typeIndex.openCursor(range);
 
                 request.onerror = () => {
-                    reject(new Error('Failed to clear cache'));
+                    console.warn('Failed to clear cache');
+                    resolve();
                 };
 
                 request.onsuccess = (event) => {
@@ -240,11 +244,12 @@ const MapCache = {
      * @returns {boolean} True if bounds intersect
      * @private
      */
+    // Pure function — no side effects
     _boundsIntersect(entryData, bounds) {
         // Handle case where entryData has centroid property
         if (entryData.centroid) {
-            const lat = entryData.centroid.lat || entryData.centroid[0];
-            const lng = entryData.centroid.lng || entryData.centroid[1];
+            const lat = entryData.centroid.lat ?? entryData.centroid[0];
+            const lng = entryData.centroid.lng ?? entryData.centroid[1];
             return lat >= bounds.minLat && lat <= bounds.maxLat &&
                    lng >= bounds.minLng && lng <= bounds.maxLng;
         }
