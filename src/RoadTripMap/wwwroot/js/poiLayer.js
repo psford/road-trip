@@ -171,7 +171,10 @@ const PoiLayer = {
     /**
      * Toggle POI layer visibility
      */
-    _parkLayers: ['nps-centroid-dot', 'nps-boundary-labels', 'nps-boundary-fill', 'nps-boundary-outline'],
+    _parkLayers: [
+        'nps-centroid-dot', 'nps-boundary-labels', 'nps-boundary-fill', 'nps-boundary-outline',
+        'sp-centroid-dot', 'sp-boundary-labels', 'sp-boundary-fill', 'sp-boundary-outline'
+    ],
 
     show(map) {
         if (map.getLayer('poi-markers')) map.setLayoutProperty('poi-markers', 'visibility', 'visible');

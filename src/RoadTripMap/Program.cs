@@ -598,6 +598,79 @@ app.MapGet("/api/poi", async (double? minLat, double? maxLat, double? minLng, do
     return Results.Ok(sampled);
 });
 
+// GET /api/park-boundaries — Get park boundaries filtered by viewport and zoom level
+app.MapGet("/api/park-boundaries", async (double? minLat, double? maxLat, double? minLng, double? maxLng, int? zoom, string? detail, RoadTripDbContext db) =>
+{
+    // Validate all 5 parameters are present
+    if (!minLat.HasValue || !maxLat.HasValue || !minLng.HasValue || !maxLng.HasValue || !zoom.HasValue)
+        return Results.BadRequest(new { error = "Missing required parameters: minLat, maxLat, minLng, maxLng, zoom" });
+
+    // Validate latitude range
+    if (minLat < -90 || minLat > 90 || maxLat < -90 || maxLat > 90)
+        return Results.BadRequest(new { error = "Invalid coordinates: latitude must be between -90 and 90" });
+
+    // Validate longitude range
+    if (minLng < -180 || minLng > 180 || maxLng < -180 || maxLng > 180)
+        return Results.BadRequest(new { error = "Invalid coordinates: longitude must be between -180 and 180" });
+
+    // Validate zoom >= 0
+    if (zoom < 0)
+        return Results.BadRequest(new { error = "Invalid zoom level: zoom must be >= 0" });
+
+    // Validate detail parameter if provided
+    detail ??= "moderate";
+    if (!new[] { "full", "moderate", "simplified" }.Contains(detail))
+        return Results.BadRequest(new { error = "Invalid detail level: must be one of 'full', 'moderate', 'simplified'" });
+
+    // Zoom gating: return empty features if zoom < 8
+    if (zoom < 8)
+        return Results.Ok(new RoadTripMap.Models.ParkBoundaryResponse
+        {
+            Type = "FeatureCollection",
+            Features = Array.Empty<RoadTripMap.Models.ParkBoundaryFeature>()
+        });
+
+    // Query parks that overlap the viewport bbox
+    var parks = await db.ParkBoundaries
+        .Where(p => p.MaxLat >= minLat.Value && p.MinLat <= maxLat.Value && p.MaxLng >= minLng.Value && p.MinLng <= maxLng.Value)
+        .OrderByDescending(p => p.GisAcres)
+        .Take(50)
+        .ToListAsync();
+
+    // Select the correct GeoJSON column based on detail parameter
+    var geoJsonSelector = detail switch
+    {
+        "full" => (System.Func<RoadTripMap.Entities.ParkBoundaryEntity, string>)(p => p.GeoJsonFull),
+        "simplified" => (p => p.GeoJsonSimplified),
+        _ => (p => p.GeoJsonModerate) // default to moderate
+    };
+
+    // Build GeoJSON FeatureCollection
+    var features = parks.Select(p => new RoadTripMap.Models.ParkBoundaryFeature
+    {
+        Type = "Feature",
+        Properties = new RoadTripMap.Models.ParkBoundaryProperties
+        {
+            Id = p.Id,
+            Name = p.Name,
+            State = p.State,
+            Category = p.Category,
+            CentroidLat = p.CentroidLat,
+            CentroidLng = p.CentroidLng,
+            GisAcres = p.GisAcres
+        },
+        Geometry = System.Text.Json.Nodes.JsonNode.Parse(geoJsonSelector(p))!
+    }).ToArray();
+
+    var response = new RoadTripMap.Models.ParkBoundaryResponse
+    {
+        Type = "FeatureCollection",
+        Features = features
+    };
+
+    return Results.Ok(response);
+});
+
 // Live Overpass backfill — queries Overpass for a viewport and caches results in DB
 async Task<int> FetchOverpassForViewport(
     IHttpClientFactory clientFactory, RoadTripDbContext dbCtx,
