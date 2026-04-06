@@ -1,6 +1,6 @@
 # Road Trip Photo Map
 
-Last verified: 2026-04-03
+Last verified: 2026-04-05
 
 ## Purpose
 
@@ -20,11 +20,11 @@ Mobile-first road trip photo sharing app. Users create a trip, get two secret li
 - `dotnet build RoadTripMap.sln` -- Build
 - `dotnet test RoadTripMap.sln` -- Run tests
 - `dotnet run --project src/RoadTripMap` -- Run locally (port 5100)
-- `dotnet run --project src/RoadTripMap.PoiSeeder` -- Seed POI data (flags: `--nps-only`, `--overpass-only`, `--pad-us-only`, `--pad-us-file <path>`)
+- `dotnet run --project src/RoadTripMap.PoiSeeder` -- Seed POI data (flags: `--nps-only`, `--overpass-only`, `--pad-us-only`, `--pad-us-file <path>`, `--boundaries-only`)
 
 ## Contracts
 
-- **Exposes**: REST API at `/api/` (trips, photos, geocode, poi, health)
+- **Exposes**: REST API at `/api/` (trips, photos, geocode, poi, park-boundaries, health)
 - **Guarantees**:
   - Photos stored in 3 tiers: original (full quality), display (1920px), thumb (300px)
   - Original media never degraded (re-encoded at quality 100, EXIF stripped)
@@ -37,11 +37,13 @@ Mobile-first road trip photo sharing app. Users create a trip, get two secret li
   - Migrations auto-apply on startup
   - `GET /api/poi` returns max 200 results per request, filtered by viewport bounds and zoom-based category tiers
   - POI categories by zoom: <7 national_park only, 7-9 adds state_park + natural_feature, 10+ adds historic_site + tourism
+  - `GET /api/park-boundaries` returns max 50 results per request as GeoJSON FeatureCollection, filtered by viewport bounds; zoom gating returns empty below zoom 8; detail parameter selects geometry fidelity (full, moderate, simplified)
+  - Park boundaries stored in 3 geometry tiers: full, moderate (default), simplified -- selected by `detail` query param
 - **Expects**: `ConnectionStrings__DefaultConnection` (SQL), `ConnectionStrings__AzureStorage` (Blob), optionally `WSL_SQL_CONNECTION` (overrides SQL in WSL2), `SA_DESIGN_CONNECTION` (EF Core migrations in WSL2)
 
 ## Dependencies
 
-- **Uses**: Azure SQL (shared DB — see Phase 4 migration notes), Azure Blob Storage, Nominatim API (geocoding), MapTiler (vector tile styles), NPS API (park data seeding), Overpass API (OSM features seeding), PAD-US GeoJSON (state park seeding)
+- **Uses**: Azure SQL (shared DB — see Phase 4 migration notes), Azure Blob Storage, Nominatim API (geocoding), MapTiler (vector tile styles), NPS API (park data seeding), Overpass API (OSM features seeding), PAD-US GeoJSON (state park seeding), PAD-US ArcGIS REST API (park boundary polygon fetching)
 - **Consumed by**: GitHub Actions deploy workflow (`.github/workflows/roadtrip-deploy.yml`)
 - **Decoupling**: Phase 4 of repo-split will add a dedicated Azure SQL instance for Road Trip, eliminating the shared DB dependency with Stock Analyzer
 
@@ -64,6 +66,7 @@ Mobile-first road trip photo sharing app. Users create a trip, get two secret li
 - Coordinate validation: lat [-90,90], lng [-180,180]
 - Caption max 1000 chars, trip name max 500 chars
 - POI records have a unique (Source, SourceId) pair; cross-source deduplication merges by name+proximity (100m radius)
+- Park boundary records deduplicate by (Source, SourceId) pair; upserts are idempotent via BoundaryUpsertHelper (application-level, no DB unique constraint)
 
 ## Key Files
 
@@ -74,7 +77,11 @@ Mobile-first road trip photo sharing app. Users create a trip, get two secret li
 - `src/RoadTripMap/wwwroot/js/photoCarousel.js` -- Carousel UI module (scroll-snap strip, fullscreen viewer, map sync)
 - `src/RoadTripMap/wwwroot/js/poiLayer.js` -- POI marker overlay for maps (viewport-based fetch, tap-to-pin)
 - `src/RoadTripMap/wwwroot/js/parkStyle.js` -- MapTiler park polygon restyling
+- `src/RoadTripMap/wwwroot/js/stateParkLayer.js` -- State park boundary polygon rendering (fill, outline, dots, labels, adaptive detail, predictive prefetch)
+- `src/RoadTripMap/wwwroot/js/mapCache.js` -- IndexedDB persistent cache for map data (boundaries, POIs)
 - `src/RoadTripMap.PoiSeeder/` -- Console app for importing POI data from NPS, Overpass, and PAD-US sources
+- `src/RoadTripMap.PoiSeeder/Importers/PadUsBoundaryImporter.cs` -- Fetches park boundary polygons from PAD-US ArcGIS API with geometry simplification
+- `src/RoadTripMap.PoiSeeder/Geometry/GeoJsonProcessor.cs` -- Geometry utilities for boundary simplification and centroid calculation
 - `infrastructure/azure/main.bicep` -- Azure App Service definition
 - `docs/TECHNICAL_SPEC.md` -- Full technical specification
 
