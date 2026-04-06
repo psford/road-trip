@@ -4,13 +4,28 @@
  * Loads state park boundary polygons from API and renders them as fill+outline+dot+label
  * layers on MapLibre GL JS maps, with click handlers for location selection.
  * Follows parkStyle.js patterns exactly with sp- prefixed layer IDs and teal color.
+ *
+ * Supports multiple map instances by storing per-map state in a Map data structure.
+ * Each call to init() creates independent state for that map instance.
  */
 
 const StateParkLayer = {
-    _map: null,
-    _options: {},
-    _loadedIds: new Set(),
-    _debounceTimer: null,
+    _mapStates: new Map(), // Map<maplibregl.Map, { options, debounceTimer, spPopup }>
+
+    /**
+     * Get or create state for a specific map instance
+     * @private
+     */
+    _getMapState(map) {
+        if (!this._mapStates.has(map)) {
+            this._mapStates.set(map, {
+                options: {},
+                debounceTimer: null,
+                spPopup: null
+            });
+        }
+        return this._mapStates.get(map);
+    },
 
     /**
      * Initialize state park layer on a MapLibre map
@@ -25,23 +40,24 @@ const StateParkLayer = {
             return;
         }
 
-        this._map = map;
-        this._options = options || {};
+        const state = this._getMapState(map);
+        state.options = options || {};
 
-        this._addSources();
-        this._addLayers();
-        this._setupClickHandlers();
-        this._setupMoveHandler();
-        this._loadBoundaries();
+        this._addSources(map);
+        this._addLayers(map);
+        this._setupClickHandlers(map);
+        this._setupMoveHandler(map);
+        this._loadBoundaries(map);
     },
 
     /**
      * Add GeoJSON sources for state park boundaries and label points
+     * @private
      */
-    _addSources() {
+    _addSources(map) {
         // Boundary polygons source
-        if (!this._map.getSource('sp-boundaries')) {
-            this._map.addSource('sp-boundaries', {
+        if (!map.getSource('sp-boundaries')) {
+            map.addSource('sp-boundaries', {
                 type: 'geojson',
                 data: {
                     type: 'FeatureCollection',
@@ -51,8 +67,8 @@ const StateParkLayer = {
         }
 
         // Label points source (centroids)
-        if (!this._map.getSource('sp-label-points')) {
-            this._map.addSource('sp-label-points', {
+        if (!map.getSource('sp-label-points')) {
+            map.addSource('sp-label-points', {
                 type: 'geojson',
                 data: {
                     type: 'FeatureCollection',
@@ -64,11 +80,12 @@ const StateParkLayer = {
 
     /**
      * Add fill, outline, dot, and label layers for state park boundaries
+     * @private
      */
-    _addLayers() {
+    _addLayers(map) {
         // Fill layer — semi-transparent teal
-        if (!this._map.getLayer('sp-boundary-fill')) {
-            this._map.addLayer({
+        if (!map.getLayer('sp-boundary-fill')) {
+            map.addLayer({
                 id: 'sp-boundary-fill',
                 type: 'fill',
                 source: 'sp-boundaries',
@@ -77,12 +94,12 @@ const StateParkLayer = {
                     'fill-opacity': 0.15
                 },
                 minzoom: 8
-            }, this._findFirstSymbolLayer());
+            }, this._findFirstSymbolLayer(map));
         }
 
         // Outline layer — solid teal border
-        if (!this._map.getLayer('sp-boundary-outline')) {
-            this._map.addLayer({
+        if (!map.getLayer('sp-boundary-outline')) {
+            map.addLayer({
                 id: 'sp-boundary-outline',
                 type: 'line',
                 source: 'sp-boundaries',
@@ -92,12 +109,12 @@ const StateParkLayer = {
                     'line-opacity': 0.7
                 },
                 minzoom: 8
-            }, this._findFirstSymbolLayer());
+            }, this._findFirstSymbolLayer(map));
         }
 
         // Centroid dot — teal circle with white stroke
-        if (!this._map.getLayer('sp-centroid-dot')) {
-            this._map.addLayer({
+        if (!map.getLayer('sp-centroid-dot')) {
+            map.addLayer({
                 id: 'sp-centroid-dot',
                 type: 'circle',
                 source: 'sp-label-points',
@@ -112,8 +129,8 @@ const StateParkLayer = {
         }
 
         // Label layer — park name text
-        if (!this._map.getLayer('sp-boundary-labels')) {
-            this._map.addLayer({
+        if (!map.getLayer('sp-boundary-labels')) {
+            map.addLayer({
                 id: 'sp-boundary-labels',
                 type: 'symbol',
                 source: 'sp-label-points',
@@ -139,19 +156,20 @@ const StateParkLayer = {
     /**
      * Set up click handlers for state park centroid dots
      * Displays popup with park name and optional action buttons
+     * @private
      */
-    _setupClickHandlers() {
-        let spPopup = null;
-        const hasActions = this._options.onPoiSelect || this._options.onPoiZoom;
+    _setupClickHandlers(map) {
+        const state = this._getMapState(map);
+        const hasActions = state.options.onPoiSelect || state.options.onPoiZoom;
 
-        this._map.on('click', 'sp-centroid-dot', (e) => {
+        map.on('click', 'sp-centroid-dot', (e) => {
             if (!e.features || !e.features.length) return;
 
             const feature = e.features[0];
             const name = feature.properties.name;
             const [lng, lat] = feature.geometry.coordinates;
 
-            if (spPopup) spPopup.remove();
+            if (state.spPopup) state.spPopup.remove();
 
             const escapedName = name.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
             let html;
@@ -167,32 +185,32 @@ const StateParkLayer = {
                 html = `<div style="padding:4px 8px"><strong>${escapedName}</strong><br><small style="color:#666">state park</small></div>`;
             }
 
-            spPopup = new maplibregl.Popup({ closeOnClick: true, closeButton: false, maxWidth: '240px' })
+            state.spPopup = new maplibregl.Popup({ closeOnClick: true, closeButton: false, maxWidth: '240px' })
                 .setLngLat([lng, lat])
                 .setHTML(html)
-                .addTo(this._map);
+                .addTo(map);
 
             if (hasActions) {
-                const popupEl = spPopup.getElement();
+                const popupEl = state.spPopup.getElement();
                 if (popupEl) {
                     const useBtn = popupEl.querySelector('.poi-use-location');
                     const nearbyBtn = popupEl.querySelector('.poi-pick-nearby');
 
-                    if (useBtn && this._options.onPoiSelect) {
+                    if (useBtn && state.options.onPoiSelect) {
                         useBtn.onclick = (evt) => {
                             evt.stopPropagation();
                             evt.preventDefault();
-                            spPopup.remove();
-                            this._options.onPoiSelect(lat, lng, name);
+                            state.spPopup.remove();
+                            state.options.onPoiSelect(lat, lng, name);
                         };
                     }
 
-                    if (nearbyBtn && this._options.onPoiZoom) {
+                    if (nearbyBtn && state.options.onPoiZoom) {
                         nearbyBtn.onclick = (evt) => {
                             evt.stopPropagation();
                             evt.preventDefault();
-                            spPopup.remove();
-                            this._options.onPoiZoom(lat, lng);
+                            state.spPopup.remove();
+                            state.options.onPoiZoom(lat, lng);
                         };
                     }
                 }
@@ -200,43 +218,47 @@ const StateParkLayer = {
         });
 
         // Pointer cursor on state park centroid hover
-        this._map.on('mouseenter', 'sp-centroid-dot', () => {
-            this._map.getCanvas().style.cursor = 'pointer';
+        map.on('mouseenter', 'sp-centroid-dot', () => {
+            map.getCanvas().style.cursor = 'pointer';
         });
-        this._map.on('mouseleave', 'sp-centroid-dot', () => {
-            this._map.getCanvas().style.cursor = '';
+        map.on('mouseleave', 'sp-centroid-dot', () => {
+            map.getCanvas().style.cursor = '';
         });
     },
 
     /**
      * Set up debounced moveend handler to reload boundaries when map moves
+     * @private
      */
-    _setupMoveHandler() {
-        this._map.on('moveend', () => {
-            clearTimeout(this._debounceTimer);
-            this._debounceTimer = setTimeout(() => {
-                this._loadBoundaries();
+    _setupMoveHandler(map) {
+        const state = this._getMapState(map);
+
+        map.on('moveend', () => {
+            clearTimeout(state.debounceTimer);
+            state.debounceTimer = setTimeout(() => {
+                this._loadBoundaries(map);
             }, 300);
         });
     },
 
     /**
      * Load state park boundaries for current viewport and update sources
+     * @private
      */
-    async _loadBoundaries() {
+    async _loadBoundaries(map) {
         try {
-            const zoom = this._map.getZoom();
+            const zoom = map.getZoom();
 
             // Skip loading if zoom is less than 8 (AC1.4)
             if (zoom < 8) {
-                const source = this._map.getSource('sp-boundaries');
+                const source = map.getSource('sp-boundaries');
                 if (source) {
                     source.setData({
                         type: 'FeatureCollection',
                         features: []
                     });
                 }
-                const labelSource = this._map.getSource('sp-label-points');
+                const labelSource = map.getSource('sp-label-points');
                 if (labelSource) {
                     labelSource.setData({
                         type: 'FeatureCollection',
@@ -246,7 +268,7 @@ const StateParkLayer = {
                 return;
             }
 
-            const bounds = this._map.getBounds();
+            const bounds = map.getBounds();
 
             // Fetch state park boundaries from API
             const response = await API.fetchParkBoundaries(bounds, zoom);
@@ -256,18 +278,10 @@ const StateParkLayer = {
                 return;
             }
 
-            // Track loaded park IDs to avoid redundant updates
-            let hasNewParks = false;
-            for (const feature of response.features) {
-                const parkId = feature.properties.id;
-                if (!this._loadedIds.has(parkId)) {
-                    this._loadedIds.add(parkId);
-                    hasNewParks = true;
-                }
-            }
-
             // Update boundary source with GeoJSON
-            const boundarySource = this._map.getSource('sp-boundaries');
+            // Note: Since the API response replaces full source data (not additive),
+            // and MapCache integration is deferred to Phase 6, simply update source
+            const boundarySource = map.getSource('sp-boundaries');
             if (boundarySource) {
                 boundarySource.setData(response);
             }
@@ -285,7 +299,7 @@ const StateParkLayer = {
                 }))
             };
 
-            const labelSource = this._map.getSource('sp-label-points');
+            const labelSource = map.getSource('sp-label-points');
             if (labelSource) {
                 labelSource.setData(labelPoints);
             }
@@ -296,9 +310,10 @@ const StateParkLayer = {
 
     /**
      * Find the first symbol layer in the style to insert fill/outline layers below it
+     * @private
      */
-    _findFirstSymbolLayer() {
-        const layers = this._map.getStyle().layers;
+    _findFirstSymbolLayer(map) {
+        const layers = map.getStyle().layers;
         for (const layer of layers) {
             if (layer.type === 'symbol') return layer.id;
         }
