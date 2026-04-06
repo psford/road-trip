@@ -10,7 +10,7 @@
  */
 
 const StateParkLayer = {
-    _mapStates: new Map(), // Map<maplibregl.Map, { options, debounceTimer, spPopup }>
+    _mapStates: new Map(), // Map<maplibregl.Map, { options, debounceTimer, spPopup, currentDetail, lastResponseMs, isPrefetching, prefetchTimer }>
 
     /**
      * Get or create state for a specific map instance
@@ -21,7 +21,11 @@ const StateParkLayer = {
             this._mapStates.set(map, {
                 options: {},
                 debounceTimer: null,
-                spPopup: null
+                spPopup: null,
+                currentDetail: 'moderate',
+                lastResponseMs: null,
+                isPrefetching: false,
+                prefetchTimer: null
             });
         }
         return this._mapStates.get(map);
@@ -47,6 +51,7 @@ const StateParkLayer = {
         this._addLayers(map);
         this._setupClickHandlers(map);
         this._setupMoveHandler(map);
+        this._setupPrefetchHandler(map);
         this._loadBoundaries(map);
     },
 
@@ -242,6 +247,66 @@ const StateParkLayer = {
     },
 
     /**
+     * Select detail level based on connection quality and measured response times
+     * Determines detail from two signals:
+     * 1. Initial estimate from navigator.connection (if available)
+     * 2. Measured response time (overrides initial estimate mid-session)
+     * @private
+     */
+    _selectDetailLevel(map) {
+        const state = this._getMapState(map);
+
+        // Start with initial estimate from navigator.connection
+        let detail = 'moderate'; // Default fallback
+
+        if (navigator.connection) {
+            const downlink = navigator.connection.downlink;
+            if (downlink < 1) {
+                detail = 'simplified';
+            } else if (downlink > 5) {
+                detail = 'full';
+            } else {
+                detail = 'moderate';
+            }
+        }
+
+        // Override with measured response time if available
+        if (state.lastResponseMs !== null) {
+            if (state.lastResponseMs > 3000) {
+                // Step down one level
+                if (detail === 'full') {
+                    detail = 'moderate';
+                } else if (detail === 'moderate') {
+                    detail = 'simplified';
+                }
+            } else if (state.lastResponseMs < 500) {
+                // Step up one level
+                if (detail === 'simplified') {
+                    detail = 'moderate';
+                } else if (detail === 'moderate') {
+                    detail = 'full';
+                }
+            }
+            // Otherwise keep current level
+        }
+
+        state.currentDetail = detail;
+        return detail;
+    },
+
+    /**
+     * Measure API response time and record it
+     * @private
+     */
+    async _measureFetch(map, bounds, zoom, detail) {
+        const start = performance.now();
+        const result = await API.fetchParkBoundaries(bounds, zoom, detail);
+        const state = this._getMapState(map);
+        state.lastResponseMs = performance.now() - start;
+        return result;
+    },
+
+    /**
      * Load state park boundaries for current viewport and update sources
      * @private
      */
@@ -269,18 +334,33 @@ const StateParkLayer = {
             }
 
             const bounds = map.getBounds();
+            const detail = this._selectDetailLevel(map);
 
-            // Fetch state park boundaries from API
-            const response = await API.fetchParkBoundaries(bounds, zoom);
+            // Fetch state park boundaries with measured timing
+            const response = await this._measureFetch(map, bounds, zoom, detail);
 
             if (!response || !response.features) {
                 console.warn('Invalid park boundaries response:', response);
                 return;
             }
 
+            // Cache features in IndexedDB before rendering
+            const state = this._getMapState(map);
+            for (const feature of response.features) {
+                const id = feature.id || feature.properties.id;
+                if (id) {
+                    // Store feature with centroid for spatial filtering by MapCache
+                    await MapCache.put('park-boundary', id, state.currentDetail, {
+                        ...feature,
+                        centroid: {
+                            lat: feature.properties.centroidLat,
+                            lng: feature.properties.centroidLng
+                        }
+                    });
+                }
+            }
+
             // Update boundary source with GeoJSON
-            // Note: Since the API response replaces full source data (not additive),
-            // and MapCache integration is deferred to Phase 6, simply update source
             const boundarySource = map.getSource('sp-boundaries');
             if (boundarySource) {
                 boundarySource.setData(response);
@@ -306,6 +386,120 @@ const StateParkLayer = {
         } catch (error) {
             console.error('Failed to load state park boundaries:', error);
         }
+    },
+
+    /**
+     * Set up prefetch handler for moveend events
+     * Triggers background prefetch of boundaries at zoom 7+ when user is in pre-render zone
+     * @private
+     */
+    _setupPrefetchHandler(map) {
+        const state = this._getMapState(map);
+
+        map.on('moveend', () => {
+            const zoom = map.getZoom();
+
+            // Trigger prefetch if at zoom 7 (pre-render zone)
+            if (zoom >= 7 && zoom < 8) {
+                // Clear existing debounce timer
+                if (state.prefetchTimer) {
+                    clearTimeout(state.prefetchTimer);
+                }
+
+                // Debounce prefetch by 500ms to avoid excessive requests during pan/zoom
+                state.prefetchTimer = setTimeout(() => {
+                    this._prefetchForViewport(map);
+                }, 500);
+            }
+        });
+    },
+
+    /**
+     * Prefetch boundaries for current viewport and expanded region
+     * Fetches simplified for viewport, then all three levels for ~100-mile radius
+     * @private
+     */
+    async _prefetchForViewport(map) {
+        const state = this._getMapState(map);
+
+        // Prevent concurrent prefetch requests
+        if (state.isPrefetching) {
+            return;
+        }
+
+        state.isPrefetching = true;
+
+        try {
+            const bounds = map.getBounds();
+            const zoom = 8; // Use zoom 8 for prefetch to get appropriate data
+
+            // Step 1: Prefetch simplified boundaries for current viewport
+            try {
+                const response = await API.fetchParkBoundaries(bounds, zoom, 'simplified');
+                if (response && response.features) {
+                    for (const feature of response.features) {
+                        const id = feature.id || feature.properties.id;
+                        if (id) {
+                            await MapCache.put('park-boundary', id, 'simplified', {
+                                ...feature,
+                                centroid: {
+                                    lat: feature.properties.centroidLat,
+                                    lng: feature.properties.centroidLng
+                                }
+                            });
+                        }
+                    }
+                }
+            } catch (error) {
+                console.warn('Prefetch simplified viewport failed:', error);
+            }
+
+            // Step 2: Expand bounds by ~100 miles and prefetch all detail levels
+            const expandedBounds = this._expandBounds(bounds, 100);
+
+            for (const detail of ['simplified', 'moderate', 'full']) {
+                try {
+                    const response = await API.fetchParkBoundaries(expandedBounds, zoom, detail);
+                    if (response && response.features) {
+                        for (const feature of response.features) {
+                            const id = feature.id || feature.properties.id;
+                            if (id) {
+                                await MapCache.put('park-boundary', id, detail, {
+                                    ...feature,
+                                    centroid: {
+                                        lat: feature.properties.centroidLat,
+                                        lng: feature.properties.centroidLng
+                                    }
+                                });
+                            }
+                        }
+                    }
+                } catch (error) {
+                    console.warn(`Prefetch ${detail} expanded region failed:`, error);
+                }
+            }
+        } finally {
+            state.isPrefetching = false;
+        }
+    },
+
+    /**
+     * Expand bounds by specified number of miles
+     * Adds miles/69 degrees to each side of bounds (1 degree ≈ 69 miles latitude)
+     * For longitude, adjusts by miles / (69 * cos(centerLat))
+     * @private
+     */
+    _expandBounds(bounds, milesToExpand) {
+        const latDelta = milesToExpand / 69;
+        const centerLat = (bounds.getNorth() + bounds.getSouth()) / 2;
+        const lngDelta = milesToExpand / (69 * Math.cos(centerLat * Math.PI / 180));
+
+        return {
+            getSouth: () => Math.max(-90, bounds.getSouth() - latDelta),
+            getNorth: () => Math.min(90, bounds.getNorth() + latDelta),
+            getWest: () => Math.max(-180, bounds.getWest() - lngDelta),
+            getEast: () => Math.min(180, bounds.getEast() + lngDelta)
+        };
     },
 
     /**
