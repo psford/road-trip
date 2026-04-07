@@ -147,7 +147,7 @@ public class EndpointRegistryTests : IDisposable
     }
 
     [Fact]
-    public void Resolve_KeyVaultSource_ThrowsNotImplemented()
+    public void Resolve_KeyVaultSource_UnreachableVault_ThrowsWithVaultAndSecretNames()
     {
         // Arrange
         Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", "Production");
@@ -156,9 +156,33 @@ public class EndpointRegistryTests : IDisposable
         // Act & Assert
         var action = () => EndpointRegistry.Resolve("keyvaultEndpoint");
 
-        action.Should()
-            .Throw<NotImplementedException>()
-            .WithMessage("*Key Vault resolution not yet implemented*");
+        var exception = action.Should()
+            .Throw<InvalidOperationException>()
+            .Which;
+
+        exception.Message.Should().ContainAll("kv-test-prod", "keyvaultEndpoint");
+
+        // Cleanup
+        Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", null);
+        EndpointRegistry.Reset();
+    }
+
+    [Fact]
+    public void Resolve_KeyVaultSource_AuthenticationFailure_IncludesVaultAndEndpointName()
+    {
+        // Arrange
+        Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", "Production");
+        EndpointRegistry.Reset();
+
+        // Act & Assert — verify error message includes vault name and endpoint name for diagnostics
+        var action = () => EndpointRegistry.Resolve("keyvaultEndpoint");
+
+        var exception = action.Should()
+            .Throw<InvalidOperationException>()
+            .Which;
+
+        // Verify vault name and endpoint name are in error message for diagnostics
+        exception.Message.Should().ContainAll("kv-test-prod", "keyvaultEndpoint");
 
         // Cleanup
         Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", null);

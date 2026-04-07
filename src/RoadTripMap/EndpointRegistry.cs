@@ -134,8 +134,7 @@ public static class EndpointRegistry
         {
             "literal" => entry.GetProperty("value").GetString()!,
             "env" => ResolveEnv(entry, name),
-            "keyvault" => throw new NotImplementedException(
-                $"Key Vault resolution not yet implemented (endpoint '{name}'). See Phase 3."),
+            "keyvault" => ResolveKeyVault(entry, name),
             _ => throw new InvalidOperationException(
                 $"Unknown source type '{source}' for endpoint '{name}'")
         };
@@ -149,6 +148,35 @@ public static class EndpointRegistry
             throw new InvalidOperationException(
                 $"Environment variable '{key}' not set for endpoint '{name}'");
         return value;
+    }
+
+    private static string ResolveKeyVault(JsonElement entry, string name)
+    {
+        var vaultName = entry.GetProperty("vault").GetString()!;
+        var secretName = entry.GetProperty("secret").GetString()!;
+
+        try
+        {
+            var client = new Azure.Security.KeyVault.Secrets.SecretClient(
+                new Uri($"https://{vaultName}.vault.azure.net"),
+                new Azure.Identity.DefaultAzureCredential());
+
+            var secret = client.GetSecret(secretName);
+            return secret.Value.Value;
+        }
+        catch (Azure.RequestFailedException ex) when (ex.Status == 404)
+        {
+            throw new InvalidOperationException(
+                $"Key Vault secret '{secretName}' not found in vault '{vaultName}' for endpoint '{name}'",
+                ex);
+        }
+        catch (Azure.Identity.AuthenticationFailedException ex)
+        {
+            throw new InvalidOperationException(
+                $"Failed to authenticate to Key Vault '{vaultName}' for endpoint '{name}'. " +
+                "Ensure managed identity or local credentials are configured.",
+                ex);
+        }
     }
 
     private static JsonDocument GetDocument()

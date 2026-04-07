@@ -30,6 +30,11 @@
         "source": "literal",
         "value": "https://prod.example.com",
         "description": "Test literal in prod"
+      },
+      "compound": {
+        "baseUrl": { "source": "literal", "value": "https://api.example.com" },
+        "apiKey": { "source": "env", "key": "TEST_API_KEY" },
+        "description": "Test compound endpoint"
       }
     }
   }
