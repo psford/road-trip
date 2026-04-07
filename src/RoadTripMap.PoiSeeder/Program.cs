@@ -30,6 +30,26 @@ public static class Program
 
             await using var context = new RoadTripDbContext(optionsBuilder.Options);
 
+            // Safety check: log which database we're targeting and require confirmation for non-local
+            var dbName = context.Database.GetDbConnection().Database;
+            var serverMatch = System.Text.RegularExpressions.Regex.Match(
+                connectionString, @"Server\s*=\s*([^;,]+)", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            var server = serverMatch.Success ? serverMatch.Groups[1].Value : "unknown";
+            Console.WriteLine($"Target: {server} / {dbName}");
+
+            bool isRemote = server.Contains(".database.windows.net") || server.Contains("tcp:");
+            if (isRemote && !args.Contains("--confirm-remote"))
+            {
+                Console.ForegroundColor = ConsoleColor.Yellow;
+                Console.WriteLine($"\n  WARNING: You are about to write to a REMOTE database.");
+                Console.WriteLine($"  Server: {server}");
+                Console.WriteLine($"  Database: {dbName}");
+                Console.WriteLine($"\n  Add --confirm-remote to proceed. This flag exists because");
+                Console.WriteLine($"  data was previously imported to the wrong production database.");
+                Console.ResetColor();
+                return;
+            }
+
             // Create HttpClient with user agent and polite rate limiting
             using var httpClient = new HttpClient();
             httpClient.DefaultRequestHeaders.Add("User-Agent", "RoadTripMap/1.0");
