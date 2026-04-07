@@ -1,8 +1,10 @@
 using FluentAssertions;
 using RoadTripMap;
+using Xunit;
 
 namespace RoadTripMap.Tests;
 
+[Collection("EndpointRegistry")]
 public class EndpointRegistryTests : IDisposable
 {
     private readonly string _testFixturePath;
@@ -22,6 +24,39 @@ public class EndpointRegistryTests : IDisposable
     {
         EndpointRegistry.OverrideFilePath = null;
         EndpointRegistry.Reset();
+    }
+
+    [Fact]
+    public void Resolve_NullName_ThrowsArgumentException()
+    {
+        // Act & Assert
+        var action = () => EndpointRegistry.Resolve(null!);
+
+        action.Should()
+            .Throw<ArgumentException>()
+            .WithMessage("*Endpoint name cannot be null or empty*");
+    }
+
+    [Fact]
+    public void Resolve_EmptyName_ThrowsArgumentException()
+    {
+        // Act & Assert
+        var action = () => EndpointRegistry.Resolve("");
+
+        action.Should()
+            .Throw<ArgumentException>()
+            .WithMessage("*Endpoint name cannot be null or empty*");
+    }
+
+    [Fact]
+    public void Resolve_WhitespaceName_ThrowsArgumentException()
+    {
+        // Act & Assert
+        var action = () => EndpointRegistry.Resolve("   ");
+
+        action.Should()
+            .Throw<ArgumentException>()
+            .WithMessage("*Endpoint name cannot be null or empty*");
     }
 
     [Fact]

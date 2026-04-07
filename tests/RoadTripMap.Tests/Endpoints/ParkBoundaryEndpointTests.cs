@@ -17,6 +17,7 @@ namespace RoadTripMap.Tests.Endpoints;
 /// result capping and sorting (AC2.3), validation (AC2.4), and zoom gating (AC2.5).
 /// Uses WebApplicationFactory to test the actual HTTP endpoint with an in-memory SQLite database.
 /// </summary>
+[Collection("EndpointRegistry")]
 public class ParkBoundaryEndpointTests : IAsyncLifetime
 {
     private WebApplicationFactory<Program>? _factory;

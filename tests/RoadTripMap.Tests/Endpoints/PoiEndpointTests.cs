@@ -17,6 +17,7 @@ namespace RoadTripMap.Tests.Endpoints;
 /// Verifies viewport filtering (AC1.4) and zoom-based category filtering (AC4.1-4.4).
 /// Uses WebApplicationFactory to test the actual HTTP endpoint with an in-memory SQLite database.
 /// </summary>
+[Collection("EndpointRegistry")]
 public class PoiEndpointTests : IAsyncLifetime
 {
     private WebApplicationFactory<Program>? _factory;

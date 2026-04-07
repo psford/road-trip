@@ -13,6 +13,7 @@ using System.Text.Json;
 
 namespace RoadTripMap.Tests.Endpoints;
 
+[Collection("EndpointRegistry")]
 public class PhotoEndpointTests
 {
     private RoadTripDbContext CreateInMemoryContext()

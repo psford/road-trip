@@ -20,6 +20,9 @@ public static class EndpointRegistry
 
     public static string Resolve(string name)
     {
+        if (string.IsNullOrWhiteSpace(name))
+            throw new ArgumentException("Endpoint name cannot be null or empty.", nameof(name));
+
         var doc = GetDocument();
         var env = NormalizeEnvironment(GetEnvironment());
 

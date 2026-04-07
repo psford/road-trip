@@ -8,6 +8,7 @@ using RoadTripMap.Data;
 
 namespace RoadTripMap.Tests.Middleware;
 
+[Collection("EndpointRegistry")]
 public class SecurityHeaderTests : IAsyncLifetime
 {
     private WebApplicationFactory<Program>? _factory;
