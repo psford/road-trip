@@ -11,6 +11,9 @@
     "storageConnectionString": {
       "value": "DefaultEndpointsProtocol=https;AccountName={storage-account-name};AccountKey={storage-account-key};EndpointSuffix=core.windows.net"
     },
+    "npsApiKey": {
+      "value": "#{NpsApiKey}#"
+    },
     "environment": {
       "value": "Production"
     }

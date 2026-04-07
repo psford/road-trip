@@ -3,10 +3,12 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using RoadTripMap;
 using RoadTripMap.Data;
 
 namespace RoadTripMap.Tests.Middleware;
 
+[Collection("EndpointRegistry")]
 public class SecurityHeaderTests : IAsyncLifetime
 {
     private WebApplicationFactory<Program>? _factory;
@@ -15,6 +17,15 @@ public class SecurityHeaderTests : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
+        // Set required environment variables for ValidateAll()
+        Environment.SetEnvironmentVariable("WSL_SQL_CONNECTION", "Data Source=:memory:");
+        Environment.SetEnvironmentVariable("RT_DESIGN_CONNECTION", "Data Source=:memory:");
+        Environment.SetEnvironmentVariable("NPS_API_KEY", "test-key");
+
+        // Ensure EndpointRegistry uses the real endpoints.json, not test fixture
+        EndpointRegistry.OverrideFilePath = null;
+        EndpointRegistry.Reset();
+
         // SQLite in-memory connection (kept open for test lifetime)
         _connection = new SqliteConnection("DataSource=:memory:");
         _connection.Open();

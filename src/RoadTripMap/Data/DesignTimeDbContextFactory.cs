@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;
+using RoadTripMap;
 
 namespace RoadTripMap.Data;
 
@@ -7,11 +8,12 @@ public class DesignTimeDbContextFactory : IDesignTimeDbContextFactory<RoadTripDb
 {
     public RoadTripDbContext CreateDbContext(string[] args)
     {
-        // RT_DESIGN_CONNECTION: Used in WSL2 with TCP connection to Windows SQL Express.
-        // Uses the admin login (wsl_claude_admin) because migrations need DDL permissions.
-        // Fallback: Windows SQL Express via named pipes for existing Windows workflow.
-        var connectionString = Environment.GetEnvironmentVariable("RT_DESIGN_CONNECTION")
-            ?? "Server=.\\SQLEXPRESS;Database=RoadTripMap;Trusted_Connection=True;TrustServerCertificate=True";
+        // EF Core CLI tools (dotnet ef migrations add, dotnet ef database update) do not set
+        // ASPNETCORE_ENVIRONMENT, so we explicitly set DOTNET_ENVIRONMENT to "Development"
+        // to ensure EndpointRegistry resolves the dev endpoints. This is a known limitation
+        // of the EF Core design-time API and affects the global process environment.
+        Environment.SetEnvironmentVariable("DOTNET_ENVIRONMENT", "Development");
+        var connectionString = EndpointRegistry.Resolve("database-admin");
 
         var optionsBuilder = new DbContextOptionsBuilder<RoadTripDbContext>();
         optionsBuilder.UseSqlServer(connectionString);

@@ -1,6 +1,6 @@
 # Road Trip Photo Map
 
-Last verified: 2026-04-05
+Last verified: 2026-04-07
 
 ## Purpose
 
@@ -39,7 +39,7 @@ Mobile-first road trip photo sharing app. Users create a trip, get two secret li
   - POI categories by zoom: <7 national_park only, 7-9 adds state_park + natural_feature, 10+ adds historic_site + tourism
   - `GET /api/park-boundaries` returns max 50 results per request as GeoJSON FeatureCollection, filtered by viewport bounds; zoom gating returns empty below zoom 8; detail parameter selects geometry fidelity (full, moderate, simplified)
   - Park boundaries stored in 3 geometry tiers: full, moderate (default), simplified -- selected by `detail` query param
-- **Expects**: `ConnectionStrings__DefaultConnection` (SQL), `ConnectionStrings__AzureStorage` (Blob), optionally `WSL_SQL_CONNECTION` (overrides SQL in WSL2), `SA_DESIGN_CONNECTION` (EF Core migrations in WSL2)
+- **Expects**: All remote resources resolved via `EndpointRegistry.Resolve("name")`. Endpoint definitions in `endpoints.json` (root). Dev uses env vars (`WSL_SQL_CONNECTION`, `RT_DESIGN_CONNECTION`, `NPS_API_KEY`); prod uses Azure Key Vault secrets. Never read env vars directly for endpoint keys -- always go through the registry.
 
 ## Dependencies
 
@@ -55,6 +55,7 @@ Mobile-first road trip photo sharing app. Users create a trip, get two secret li
 - **SkiaSharp over ImageSharp**: Already proven in ecosystem; handles EXIF rotation and resize
 - **No SPA framework**: Static HTML pages served same-origin; keeps bundle zero
 - **MapLibre GL JS over Leaflet**: Leaflet had an unfixed popup auto-pan bug on mobile (popup overflow behind header). MapLibre handles popup positioning natively, supports vector tiles, and eliminates the manual pan workaround.
+- **EndpointRegistry over direct env vars**: All connection strings and API keys resolved via `EndpointRegistry.Resolve()` backed by `endpoints.json`. Centralizes endpoint management, supports Key Vault resolution in prod, and enables schema validation via claude-env hooks.
 
 ## Invariants
 
@@ -67,9 +68,12 @@ Mobile-first road trip photo sharing app. Users create a trip, get two secret li
 - Caption max 1000 chars, trip name max 500 chars
 - POI records have a unique (Source, SourceId) pair; cross-source deduplication merges by name+proximity (100m radius)
 - Park boundary records deduplicate by (Source, SourceId) pair; upserts are idempotent via BoundaryUpsertHelper (application-level, no DB unique constraint)
+- All connection strings and API keys resolve through `EndpointRegistry.Resolve()` -- no direct `Environment.GetEnvironmentVariable()` for endpoint keys
 
 ## Key Files
 
+- `endpoints.json` -- Single source of truth for all remote resource endpoints (DB, blob, APIs)
+- `src/RoadTripMap/EndpointRegistry.cs` -- Static resolver: `EndpointRegistry.Resolve("name")` reads endpoints.json, resolves env vars or Key Vault secrets
 - `src/RoadTripMap/Program.cs` -- All endpoints (Minimal API)
 - `src/RoadTripMap/Services/IAuthStrategy.cs` -- Auth abstraction (upgradeable)
 - `src/RoadTripMap/Services/PhotoService.cs` -- Image processing + blob storage

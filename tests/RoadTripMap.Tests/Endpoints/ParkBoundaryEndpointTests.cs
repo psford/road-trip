@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using RoadTripMap;
 using RoadTripMap.Data;
 using RoadTripMap.Entities;
 using System.Text.Json;
@@ -16,6 +17,7 @@ namespace RoadTripMap.Tests.Endpoints;
 /// result capping and sorting (AC2.3), validation (AC2.4), and zoom gating (AC2.5).
 /// Uses WebApplicationFactory to test the actual HTTP endpoint with an in-memory SQLite database.
 /// </summary>
+[Collection("EndpointRegistry")]
 public class ParkBoundaryEndpointTests : IAsyncLifetime
 {
     private WebApplicationFactory<Program>? _factory;
@@ -24,6 +26,15 @@ public class ParkBoundaryEndpointTests : IAsyncLifetime
 
     public Task InitializeAsync()
     {
+        // Set required environment variables for ValidateAll()
+        Environment.SetEnvironmentVariable("WSL_SQL_CONNECTION", "Data Source=:memory:");
+        Environment.SetEnvironmentVariable("RT_DESIGN_CONNECTION", "Data Source=:memory:");
+        Environment.SetEnvironmentVariable("NPS_API_KEY", "test-key");
+
+        // Ensure EndpointRegistry uses the real endpoints.json, not test fixture
+        EndpointRegistry.OverrideFilePath = null;
+        EndpointRegistry.Reset();
+
         // SQLite in-memory connection (kept open for test lifetime)
         _connection = new SqliteConnection("DataSource=:memory:");
         _connection.Open();

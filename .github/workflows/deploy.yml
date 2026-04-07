@@ -54,6 +54,51 @@ jobs:
           az group show --name ${{ env.RESOURCE_GROUP }} --query "name" -o tsv
           echo "✅ Azure credentials valid and resource group accessible"
 
+      - name: Validate endpoint registry Key Vault secrets
+        run: |
+          echo "::group::Validating endpoint registry secrets"
+
+          # Parse endpoints.json for prod keyvault entries
+          VAULT_SECRETS=$(python3 -c "
+          import json, sys
+          with open('endpoints.json') as f:
+              data = json.load(f)
+          prod = data.get('environments', {}).get('prod', {})
+          for name, entry in prod.items():
+              if isinstance(entry, dict):
+                  if entry.get('source') == 'keyvault':
+                      print(f\"{entry['vault']}|{entry['secret']}|{name}\")
+                  else:
+                      for sub_name, sub_entry in entry.items():
+                          if isinstance(sub_entry, dict) and sub_entry.get('source') == 'keyvault':
+                              print(f\"{sub_entry['vault']}|{sub_entry['secret']}|{name}.{sub_name}\")
+          ")
+
+          if [ -z "$VAULT_SECRETS" ]; then
+            echo "No Key Vault secrets found in endpoints.json prod environment."
+            echo "::endgroup::"
+            exit 0
+          fi
+
+          FAILED=0
+          while IFS='|' read -r vault secret endpoint; do
+            echo "Checking $vault/$secret (endpoint: $endpoint)..."
+            if ! az keyvault secret show --vault-name "$vault" --name "$secret" --query "name" -o tsv > /dev/null 2>&1; then
+              echo "::error::Key Vault secret '$secret' not found in vault '$vault' (endpoint: $endpoint)"
+              FAILED=$((FAILED + 1))
+            else
+              echo "  ✓ $secret exists"
+            fi
+          done <<< "$VAULT_SECRETS"
+
+          if [ "$FAILED" -gt 0 ]; then
+            echo "::error::$FAILED Key Vault secret(s) missing. Deploy blocked."
+            exit 1
+          fi
+
+          echo "All endpoint registry secrets verified."
+          echo "::endgroup::"
+
       - name: Test ACR credentials
         run: |
           echo "Testing ACR access..."
