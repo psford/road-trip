@@ -19,6 +19,7 @@ public class SecurityHeaderTests : IAsyncLifetime
     {
         // Set required environment variables for ValidateAll()
         Environment.SetEnvironmentVariable("WSL_SQL_CONNECTION", "Data Source=:memory:");
+        Environment.SetEnvironmentVariable("RT_DESIGN_CONNECTION", "Data Source=:memory:");
         Environment.SetEnvironmentVariable("NPS_API_KEY", "test-key");
 
         // Ensure EndpointRegistry uses the real endpoints.json, not test fixture
