@@ -1,0 +1,77 @@
+{
+  "$schema": "./endpoints.schema.json",
+  "project": "road-trip",
+  "environments": {
+    "dev": {
+      "database": {
+        "source": "env",
+        "key": "WSL_SQL_CONNECTION",
+        "description": "Road-trip SQL Server (local dev via WSL2)"
+      },
+      "database-admin": {
+        "source": "env",
+        "key": "RT_DESIGN_CONNECTION",
+        "description": "Admin connection for EF Core migrations (DDL permissions)"
+      },
+      "blobStorage": {
+        "source": "literal",
+        "value": "UseDevelopmentStorage=true",
+        "description": "Local Azurite emulator"
+      },
+      "nominatim": {
+        "source": "literal",
+        "value": "https://nominatim.openstreetmap.org",
+        "description": "Geocoding API (public, no auth)"
+      },
+      "overpass": {
+        "source": "literal",
+        "value": "https://overpass-api.de/api/interpreter",
+        "description": "Overpass API for OSM queries (public, no auth)"
+      },
+      "padUs": {
+        "source": "literal",
+        "value": "https://edits.nationalmap.gov/arcgis/rest/services/PAD-US/PAD_US/MapServer/0/query",
+        "description": "PAD-US ArcGIS boundary service (public, no auth)"
+      },
+      "npsApi": {
+        "baseUrl": { "source": "literal", "value": "https://developer.nps.gov/api/v1" },
+        "apiKey": { "source": "env", "key": "NPS_API_KEY" },
+        "description": "National Park Service API"
+      }
+    },
+    "prod": {
+      "database": {
+        "source": "keyvault",
+        "vault": "kv-roadtripmap-prod",
+        "secret": "DbConnectionString",
+        "description": "Azure SQL (roadtripmap-db on sql-roadtripmap-prod)"
+      },
+      "blobStorage": {
+        "source": "keyvault",
+        "vault": "kv-roadtripmap-prod",
+        "secret": "BlobStorageConnection",
+        "description": "Azure Blob Storage"
+      },
+      "nominatim": {
+        "source": "literal",
+        "value": "https://nominatim.openstreetmap.org",
+        "description": "Geocoding API (same in all environments)"
+      },
+      "overpass": {
+        "source": "literal",
+        "value": "https://overpass-api.de/api/interpreter",
+        "description": "Overpass API (same in all environments)"
+      },
+      "padUs": {
+        "source": "literal",
+        "value": "https://edits.nationalmap.gov/arcgis/rest/services/PAD-US/PAD_US/MapServer/0/query",
+        "description": "PAD-US ArcGIS boundary service"
+      },
+      "npsApi": {
+        "baseUrl": { "source": "literal", "value": "https://developer.nps.gov/api/v1" },
+        "apiKey": { "source": "keyvault", "vault": "kv-roadtripmap-prod", "secret": "NpsApiKey" },
+        "description": "National Park Service API"
+      }
+    }
+  }
+}

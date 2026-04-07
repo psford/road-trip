@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Endpoint Registry",
+  "description": "Per-project pointer file declaring all remote resources and how to resolve them per environment",
+  "type": "object",
+  "required": ["$schema", "project", "environments"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "type": "string" },
+    "project": { "type": "string" },
+    "environments": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": {
+          "oneOf": [
+            { "$ref": "#/$defs/simpleEntry" },
+            { "$ref": "#/$defs/compoundEntry" }
+          ]
+        }
+      }
+    }
+  },
+  "$defs": {
+    "simpleEntry": {
+      "type": "object",
+      "required": ["source"],
+      "properties": {
+        "source": { "enum": ["literal", "env", "keyvault"] },
+        "value": { "type": "string" },
+        "key": { "type": "string" },
+        "vault": { "type": "string" },
+        "secret": { "type": "string" },
+        "description": { "type": "string" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "source": { "const": "literal" } }, "required": ["source"] },
+          "then": { "required": ["value"] }
+        },
+        {
+          "if": { "properties": { "source": { "const": "env" } }, "required": ["source"] },
+          "then": { "required": ["key"] }
+        },
+        {
+          "if": { "properties": { "source": { "const": "keyvault" } }, "required": ["source"] },
+          "then": { "required": ["vault", "secret"] }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "compoundEntry": {
+      "type": "object",
+      "properties": {
+        "description": { "type": "string" }
+      },
+      "additionalProperties": {
+        "oneOf": [
+          { "$ref": "#/$defs/simpleEntry" },
+          { "type": "string" }
+        ]
+      },
+      "not": {
+        "required": ["source"]
+      }
+    }
+  }
+}
