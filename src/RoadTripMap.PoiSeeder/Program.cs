@@ -1,4 +1,5 @@
 ﻿using Microsoft.EntityFrameworkCore;
+using RoadTripMap;
 using RoadTripMap.Data;
 using RoadTripMap.PoiSeeder;
 using RoadTripMap.PoiSeeder.Importers;
@@ -11,6 +12,24 @@ public static class Program
     {
         try
         {
+            // Parse --environment flag (defaults to dev)
+            var environmentArg = GetArgument(args, "--environment");
+            if (!string.IsNullOrEmpty(environmentArg))
+            {
+                Environment.SetEnvironmentVariable("DOTNET_ENVIRONMENT", environmentArg switch
+                {
+                    "dev" => "Development",
+                    "prod" => "Production",
+                    _ => environmentArg  // Let the registry throw for invalid values
+                });
+            }
+            else
+            {
+                // Ensure dev is the default for the seeder
+                Environment.SetEnvironmentVariable("DOTNET_ENVIRONMENT",
+                    Environment.GetEnvironmentVariable("DOTNET_ENVIRONMENT") ?? "Development");
+            }
+
             // Parse command-line arguments
             var padUsFile = GetArgument(args, "--pad-us-file");
             var npsOnly = args.Contains("--nps-only");
@@ -18,9 +37,8 @@ public static class Program
             var padUsOnly = args.Contains("--pad-us-only");
             var boundariesOnly = args.Contains("--boundaries-only");
 
-            // Read connection string from environment variable, fall back to development default
-            var connectionString = Environment.GetEnvironmentVariable("WSL_SQL_CONNECTION")
-                ?? "Server=localhost,1433;Database=RoadTrip;User Id=sa;Password=YourPassword123!;TrustServerCertificate=true;";
+            // Read connection string from EndpointRegistry
+            var connectionString = EndpointRegistry.Resolve("database");
 
             // Build DbContext with extended timeout for bulk imports
             // Azure SQL Basic tier has limited DTUs; large GeoJSON upserts need more time
@@ -29,26 +47,6 @@ public static class Program
                 options.CommandTimeout(300)); // 5 minutes for bulk seeder operations
 
             await using var context = new RoadTripDbContext(optionsBuilder.Options);
-
-            // Safety check: log which database we're targeting and require confirmation for non-local
-            var dbName = context.Database.GetDbConnection().Database;
-            var serverMatch = System.Text.RegularExpressions.Regex.Match(
-                connectionString, @"Server\s*=\s*([^;,]+)", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-            var server = serverMatch.Success ? serverMatch.Groups[1].Value : "unknown";
-            Console.WriteLine($"Target: {server} / {dbName}");
-
-            bool isRemote = server.Contains(".database.windows.net") || server.Contains("tcp:");
-            if (isRemote && !args.Contains("--confirm-remote"))
-            {
-                Console.ForegroundColor = ConsoleColor.Yellow;
-                Console.WriteLine($"\n  WARNING: You are about to write to a REMOTE database.");
-                Console.WriteLine($"  Server: {server}");
-                Console.WriteLine($"  Database: {dbName}");
-                Console.WriteLine($"\n  Add --confirm-remote to proceed. This flag exists because");
-                Console.WriteLine($"  data was previously imported to the wrong production database.");
-                Console.ResetColor();
-                return;
-            }
 
             // Create HttpClient with user agent and polite rate limiting
             using var httpClient = new HttpClient();
@@ -63,7 +61,7 @@ public static class Program
             if (!overpassOnly && !padUsOnly && !boundariesOnly)
             {
                 Console.WriteLine("Running NPS importer...");
-                var npsApiKey = Environment.GetEnvironmentVariable("NPS_API_KEY") ?? string.Empty;
+                var npsApiKey = EndpointRegistry.Resolve("npsApi.apiKey");
                 var npsImporter = new NpsImporter(httpClient, context);
                 try
                 {
