@@ -157,13 +157,25 @@ resource appService 'Microsoft.Web/sites@2023-12-01' = {
   }
 }
 
-// Role assignment: Key Vault Secrets User
+// Role assignment: Key Vault Secrets User for App Service
 resource keyVaultSecretsUserRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   scope: keyVault
   name: guid(resourceGroup().id, keyVault.name, appService.name)
   properties: {
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '4633458b-17de-408a-b874-0445c86b69e6')
     principalId: appService.identity.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+// Role assignment: Key Vault Secrets User for GitHub Actions deploy SP (preflight validation)
+param deploySpObjectId string = '5693632f-69d8-4482-9820-355c3bea04c3'
+resource keyVaultSecretsUserRoleDeploy 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  scope: keyVault
+  name: guid(resourceGroup().id, keyVault.name, 'github-deploy-rt')
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '4633458b-17de-408a-b874-0445c86b69e6')
+    principalId: deploySpObjectId
     principalType: 'ServicePrincipal'
   }
 }
