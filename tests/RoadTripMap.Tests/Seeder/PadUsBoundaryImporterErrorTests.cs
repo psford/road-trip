@@ -18,6 +18,19 @@ public class PadUsBoundaryImporterErrorTests
         return new RoadTripDbContext(options);
     }
 
+    /// <summary>
+    /// Contract probe response — the importer calls AssertFieldContractAsync before anything else.
+    /// This must be the FIRST response in every SequencedHttpMessageHandler.
+    /// </summary>
+    private static SequencedResponse ProbeResponse() => new(HttpStatusCode.OK,
+        JsonSerializer.Serialize(new
+        {
+            features = new object[]
+            {
+                new { attributes = new { OBJECTID = 1, Unit_Nm = "Probe Park", State_Nm = "WA", Des_Tp = "SP", GIS_Acres = 100 } }
+            }
+        }));
+
     private static string BuildValidFeaturesResponse()
     {
         return JsonSerializer.Serialize(new
@@ -67,9 +80,10 @@ public class PadUsBoundaryImporterErrorTests
         var countResponse = JsonSerializer.Serialize(new { count = 1 });
         var featuresResponse = BuildValidFeaturesResponse();
 
-        // Sequenced: call 1 = count (200), call 2 = features 429, call 3 = features 200
+        // Sequenced: probe (200), count (200), features 429, features 200
         var handler = new SequencedHttpMessageHandler(new[]
         {
+            ProbeResponse(),
             new SequencedResponse(HttpStatusCode.OK, countResponse),
             new SequencedResponse(HttpStatusCode.TooManyRequests, ""),
             new SequencedResponse(HttpStatusCode.OK, featuresResponse)
@@ -85,8 +99,8 @@ public class PadUsBoundaryImporterErrorTests
         imported.Should().Be(1);
         skipped.Should().Be(0);
 
-        // Call count: 1 (count) + 2 (one 429 retry + one success) = 3
-        handler.CallCount.Should().Be(3, "count endpoint + one 429 + one successful features call");
+        // Call count: 1 (probe) + 1 (count) + 2 (one 429 retry + one success) = 4
+        handler.CallCount.Should().Be(4, "probe + count + one 429 + one successful features call");
     }
 
     // -------------------------------------------------------------------------
@@ -100,9 +114,10 @@ public class PadUsBoundaryImporterErrorTests
 
         var countResponse = JsonSerializer.Serialize(new { count = 1 });
 
-        // Sequenced: call 1 = count (200), calls 2-4 = features 429 × 3
+        // Sequenced: probe (200), count (200), features 429 × 3
         var handler = new SequencedHttpMessageHandler(new[]
         {
+            ProbeResponse(),
             new SequencedResponse(HttpStatusCode.OK, countResponse),
             new SequencedResponse(HttpStatusCode.TooManyRequests, ""),
             new SequencedResponse(HttpStatusCode.TooManyRequests, ""),
@@ -130,6 +145,7 @@ public class PadUsBoundaryImporterErrorTests
 
         var handler = new SequencedHttpMessageHandler(new[]
         {
+            ProbeResponse(),
             new SequencedResponse(HttpStatusCode.InternalServerError, "Internal Server Error")
         });
 
@@ -156,6 +172,7 @@ public class PadUsBoundaryImporterErrorTests
 
         var handler = new SequencedHttpMessageHandler(new[]
         {
+            ProbeResponse(),
             new SequencedResponse(HttpStatusCode.OK, countResponse),
             new SequencedResponse(HttpStatusCode.InternalServerError, "Internal Server Error")
         });
@@ -181,6 +198,7 @@ public class PadUsBoundaryImporterErrorTests
 
         var handler = new SequencedHttpMessageHandler(new[]
         {
+            ProbeResponse(),
             new SequencedResponse(HttpStatusCode.OK, "{ this is not valid json }")
         });
 
@@ -208,6 +226,7 @@ public class PadUsBoundaryImporterErrorTests
 
         var handler = new SequencedHttpMessageHandler(new[]
         {
+            ProbeResponse(),
             new SequencedResponse(HttpStatusCode.OK, countResponse),
             new SequencedResponse(HttpStatusCode.OK, featuresResponse)
         });

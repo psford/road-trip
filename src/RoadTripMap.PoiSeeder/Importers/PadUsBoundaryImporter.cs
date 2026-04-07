@@ -39,6 +39,9 @@ public class PadUsBoundaryImporter
 
         try
         {
+            // Step 0: Probe API contract — fetch 1 record, assert expected fields exist
+            await AssertFieldContractAsync();
+
             // Step 1: Count total features
             var totalCount = await GetTotalCountAsync();
             Console.WriteLine($"  Total PAD-US features with State Park/Recreation Area designation: {totalCount}");
@@ -83,6 +86,61 @@ public class PadUsBoundaryImporter
     }
 
     // ============ Private implementation ============
+
+    /// <summary>
+    /// Fetches 1 record from the API and asserts expected field names exist.
+    /// Throws InvalidOperationException immediately if the API contract has changed,
+    /// rather than silently processing zero records across a full paginated run.
+    /// </summary>
+    private async Task AssertFieldContractAsync()
+    {
+        var requiredFields = new[] { "OBJECTID", "Unit_Nm", "State_Nm", "Des_Tp", "GIS_Acres" };
+        var probeUrl = $"{BaseUrl}?where=Des_Tp=%27SP%27&outFields={string.Join(",", requiredFields)}&resultRecordCount=1&f=json";
+
+        var response = await _httpClient.GetAsync(probeUrl);
+        response.EnsureSuccessStatusCode();
+
+        var raw = await response.Content.ReadAsStringAsync();
+        using var doc = System.Text.Json.JsonDocument.Parse(raw);
+
+        if (doc.RootElement.TryGetProperty("error", out var errorEl))
+        {
+            var code = errorEl.TryGetProperty("code", out var c) ? c.GetRawText() : "?";
+            var msg = errorEl.TryGetProperty("message", out var m) ? m.GetString() : "unknown";
+            throw new InvalidOperationException(
+                $"PAD-US API returned error (code {code}): {msg}. URL: {probeUrl}");
+        }
+
+        if (!doc.RootElement.TryGetProperty("features", out var features) ||
+            features.GetArrayLength() == 0)
+        {
+            Console.Error.WriteLine("  [WARN] Contract probe returned 0 features — cannot validate fields.");
+            return;
+        }
+
+        var first = features[0];
+        if (!first.TryGetProperty("attributes", out var attrs))
+        {
+            throw new InvalidOperationException(
+                $"PAD-US API: first feature has no 'attributes' property. " +
+                $"Keys: [{string.Join(", ", first.EnumerateObject().Select(p => p.Name))}]");
+        }
+
+        var actualFields = attrs.EnumerateObject().Select(p => p.Name).ToHashSet();
+        var missing = requiredFields.Where(f => !actualFields.Contains(f)).ToList();
+
+        if (missing.Count > 0)
+        {
+            throw new InvalidOperationException(
+                $"PAD-US FIELD CONTRACT VIOLATION — field names have changed.\n" +
+                $"Expected: {string.Join(", ", requiredFields)}\n" +
+                $"Missing: {string.Join(", ", missing)}\n" +
+                $"Actual: {string.Join(", ", actualFields.OrderBy(f => f))}\n" +
+                $"Update the importer field names and docs/api-contracts/PadUsBoundaryImporter.json");
+        }
+
+        Console.WriteLine($"  [OK] PAD-US field contract probe passed ({requiredFields.Length} fields verified)");
+    }
 
     /// <summary>
     /// Queries PAD-US API with returnCountOnly=true to get total feature count.
