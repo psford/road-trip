@@ -4,6 +4,7 @@ using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Moq;
+using RoadTripMap;
 using RoadTripMap.Data;
 using RoadTripMap.Entities;
 using RoadTripMap.Models;
@@ -554,6 +555,14 @@ public class PhotoEndpointTests
     [Fact]
     public async Task GetPhotosEndpoint_OrdersByTakenAtAscending()
     {
+        // Set required environment variables for ValidateAll()
+        Environment.SetEnvironmentVariable("WSL_SQL_CONNECTION", "Data Source=:memory:");
+        Environment.SetEnvironmentVariable("NPS_API_KEY", "test-key");
+
+        // Ensure EndpointRegistry uses the real endpoints.json, not test fixture
+        EndpointRegistry.OverrideFilePath = null;
+        EndpointRegistry.Reset();
+
         // Arrange - Create a test server with HTTP client
         using var connection = new SqliteConnection("DataSource=:memory:");
         connection.Open();
@@ -646,6 +655,14 @@ public class PhotoEndpointTests
     [Fact]
     public async Task GetPhotosEndpoint_WithNullTakenAt_SortsNullsLast()
     {
+        // Set required environment variables for ValidateAll()
+        Environment.SetEnvironmentVariable("WSL_SQL_CONNECTION", "Data Source=:memory:");
+        Environment.SetEnvironmentVariable("NPS_API_KEY", "test-key");
+
+        // Ensure EndpointRegistry uses the real endpoints.json, not test fixture
+        EndpointRegistry.OverrideFilePath = null;
+        EndpointRegistry.Reset();
+
         // Arrange - Create a test server with HTTP client
         using var connection = new SqliteConnection("DataSource=:memory:");
         connection.Open();
