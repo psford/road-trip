@@ -6,6 +6,15 @@ on:
   pull_request:
     branches: [ master, main, develop ]
   workflow_dispatch:
+    inputs:
+      run_integration_tests:
+        description: 'Run integration tests against live APIs (requires network)'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
 
 env:
   DOTNET_VERSION: '8.0.x'
@@ -30,8 +39,8 @@ jobs:
     - name: Build
       run: dotnet build ${{ env.SOLUTION_PATH }} --configuration Release --no-restore
 
-    - name: Run tests
-      run: dotnet test ${{ env.SOLUTION_PATH }} --configuration Release --no-build --verbosity normal --logger "trx;LogFileName=test-results.trx"
+    - name: Run unit tests
+      run: dotnet test ${{ env.SOLUTION_PATH }} --configuration Release --no-build --verbosity normal --filter "Category!=Integration" --logger "trx;LogFileName=test-results.trx"
 
     - name: Upload test results
       uses: actions/upload-artifact@v6
@@ -39,6 +48,37 @@ jobs:
       with:
         name: roadtrip-test-results
         path: '**/TestResults/*.trx'
+        retention-days: 30
+
+  # Optional integration test job — runs against live APIs on demand
+  integration-tests:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.run_integration_tests == 'true'
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v6
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v5
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+
+    - name: Restore and build
+      run: dotnet build ${{ env.SOLUTION_PATH }} --configuration Release
+
+    - name: Run integration tests (live API)
+      env:
+        RUN_INTEGRATION_TESTS: '1'
+      run: dotnet test ${{ env.SOLUTION_PATH }} --configuration Release --no-build --verbosity normal --filter "Category=Integration" --logger "trx;LogFileName=integration-test-results.trx"
+      timeout-minutes: 5
+
+    - name: Upload integration test results
+      uses: actions/upload-artifact@v6
+      if: always()
+      with:
+        name: roadtrip-integration-test-results
+        path: '**/TestResults/integration-test-results.trx'
         retention-days: 30
 
   # Gate job for branch protection — single required check name
