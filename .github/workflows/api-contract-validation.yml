@@ -1,0 +1,30 @@
+name: API Contract Validation
+
+on:
+  schedule:
+    # Every Monday at 08:00 UTC
+    - cron: '0 8 * * 1'
+  workflow_dispatch:
+
+jobs:
+  validate-contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Validate PAD-US ArcGIS contract
+        run: |
+          python scripts/validate_api_contract.py \
+            --name PadUsBoundaryImporter \
+            --url "https://edits.nationalmap.gov/arcgis/rest/services/PAD-US/PAD_US/MapServer/0/query?where=Des_Tp=%27SP%27&outFields=OBJECTID,Unit_Nm,State_Nm,Des_Tp,GIS_Acres&resultRecordCount=1&f=json" \
+            --required-fields "features" \
+            --required-feature-fields "OBJECTID,Unit_Nm,State_Nm,Des_Tp,GIS_Acres" \
+            --feature-attr-key "attributes"
