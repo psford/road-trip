@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Azure;
+using RoadTripMap;
 using RoadTripMap.Data;
 using RoadTripMap.Entities;
 using RoadTripMap.Helpers;
@@ -9,15 +10,9 @@ using RoadTripMap.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// WSL_SQL_CONNECTION: TCP connection string for WSL2 development (from .env).
-// Falls back to appsettings ConnectionStrings:DefaultConnection for Windows/production.
-var connectionString = Environment.GetEnvironmentVariable("WSL_SQL_CONNECTION")
-    ?? builder.Configuration.GetConnectionString("DefaultConnection");
-if (!string.IsNullOrEmpty(connectionString))
-{
-    builder.Services.AddDbContext<RoadTripDbContext>(options =>
-        options.UseSqlServer(connectionString));
-}
+var connectionString = EndpointRegistry.Resolve("database");
+builder.Services.AddDbContext<RoadTripDbContext>(options =>
+    options.UseSqlServer(connectionString));
 
 var storageConnectionString = builder.Configuration.GetConnectionString("AzureStorage");
 if (!string.IsNullOrEmpty(storageConnectionString))
@@ -40,6 +35,8 @@ builder.Services.AddHttpClient("Overpass", c => {
 builder.Services.AddScoped<IGeocodingService, NominatimGeocodingService>();
 
 var app = builder.Build();
+
+EndpointRegistry.ValidateAll();
 
 // Apply pending migrations on startup (skip for non-relational providers like SQLite in tests)
 using (var scope = app.Services.CreateScope())
