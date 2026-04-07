@@ -74,6 +74,12 @@ jobs:
                               print(f\"{sub_entry['vault']}|{sub_entry['secret']}|{name}.{sub_name}\")
           ")
 
+          if [ -z "$VAULT_SECRETS" ]; then
+            echo "No Key Vault secrets found in endpoints.json prod environment."
+            echo "::endgroup::"
+            exit 0
+          fi
+
           FAILED=0
           while IFS='|' read -r vault secret endpoint; do
             echo "Checking $vault/$secret (endpoint: $endpoint)..."
