@@ -1,0 +1,48 @@
+/**
+ * Vitest setup — loads wwwroot/js global-namespace modules into jsdom scope.
+ * These files use `const Foo = {...}` pattern, not ES modules.
+ */
+import { readFileSync } from 'fs';
+import { resolve } from 'path';
+
+const wwwroot = resolve(process.cwd(), 'src/RoadTripMap/wwwroot/js');
+
+function loadGlobal(filename) {
+    const code = readFileSync(resolve(wwwroot, filename), 'utf-8');
+    // Execute in global scope so const declarations become global
+    const script = new Function(code.replace(/^const /gm, 'globalThis.'));
+    try {
+        script();
+    } catch (e) {
+        // Fallback: eval in global context
+        eval(code.replace(/^const /gm, 'globalThis.'));
+    }
+}
+
+beforeAll(() => {
+    // Stub fetch
+    globalThis.fetch = vi.fn();
+
+    // Stub MapLibre
+    globalThis.maplibregl = {
+        Popup: class {
+            setLngLat() { return this; }
+            setHTML() { return this; }
+            addTo() { return this; }
+            remove() {}
+        }
+    };
+
+    // Stub performance.now
+    if (!globalThis.performance) {
+        globalThis.performance = { now: () => Date.now() };
+    }
+
+    // Load modules
+    loadGlobal('api.js');
+    loadGlobal('mapCache.js');
+});
+
+afterEach(() => {
+    vi.clearAllMocks();
+});
