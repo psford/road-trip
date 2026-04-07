@@ -7,10 +7,14 @@ param sqlAdminPassword string
 param sqlAdminUsername string = 'sqladmin'
 param storageConnectionString string
 
+@secure()
+param npsApiKey string
+
 var sqlServerName = 'sql-roadtripmap-prod'
 var sqlDatabaseName = 'roadtripmap-db'
 var appServicePlanName = 'asp-roadtripmap-prod'
 var appServiceName = 'app-roadtripmap-prod'
+var keyVaultName = 'kv-roadtripmap-prod'
 
 // SQL Server
 resource sqlServer 'Microsoft.Sql/servers@2024-11-01-preview' = {
@@ -67,8 +71,47 @@ resource appServicePlan 'Microsoft.Web/serverfarms@2023-12-01' = {
   }
 }
 
+// Key Vault
+resource keyVault 'Microsoft.KeyVault/vaults@2024-04-01-preview' = {
+  name: keyVaultName
+  location: location
+  properties: {
+    enableRbacAuthorization: true
+    tenantId: subscription().tenantId
+    sku: {
+      family: 'A'
+      name: 'standard'
+    }
+  }
+}
+
 // Construct connection string from SQL server outputs
 var sqlConnectionString = 'Server=tcp:${sqlServer.properties.fullyQualifiedDomainName},1433;Initial Catalog=${sqlDatabaseName};Persist Security Info=False;User ID=${sqlAdminUsername};Password=${sqlAdminPassword};MultipleActiveResultSets=False;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;'
+
+// Key Vault Secrets
+resource dbConnectionStringSecret 'Microsoft.KeyVault/vaults/secrets@2024-04-01-preview' = {
+  parent: keyVault
+  name: 'DbConnectionString'
+  properties: {
+    value: sqlConnectionString
+  }
+}
+
+resource blobStorageConnectionSecret 'Microsoft.KeyVault/vaults/secrets@2024-04-01-preview' = {
+  parent: keyVault
+  name: 'BlobStorageConnection'
+  properties: {
+    value: storageConnectionString
+  }
+}
+
+resource npsApiKeySecret 'Microsoft.KeyVault/vaults/secrets@2024-04-01-preview' = {
+  parent: keyVault
+  name: 'NpsApiKey'
+  properties: {
+    value: npsApiKey
+  }
+}
 
 // App Service
 resource appService 'Microsoft.Web/sites@2023-12-01' = {
@@ -99,14 +142,29 @@ resource appService 'Microsoft.Web/sites@2023-12-01' = {
         }
         {
           name: 'ConnectionStrings__DefaultConnection'
-          value: sqlConnectionString
+          value: '@Microsoft.KeyVault(VaultName=${keyVaultName};SecretName=DbConnectionString)'
         }
         {
           name: 'ConnectionStrings__AzureStorage'
-          value: storageConnectionString
+          value: '@Microsoft.KeyVault(VaultName=${keyVaultName};SecretName=BlobStorageConnection)'
+        }
+        {
+          name: 'NPS_API_KEY'
+          value: '@Microsoft.KeyVault(VaultName=${keyVaultName};SecretName=NpsApiKey)'
         }
       ]
     }
+  }
+}
+
+// Role assignment: Key Vault Secrets User
+resource keyVaultSecretsUserRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  scope: keyVault
+  name: guid(resourceGroup().id, keyVault.name, appService.name)
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '4633458b-17de-408a-b874-0445c86b69e6')
+    principalId: appService.identity.principalId
+    principalType: 'ServicePrincipal'
   }
 }
 
