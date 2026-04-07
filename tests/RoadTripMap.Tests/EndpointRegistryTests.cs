@@ -147,28 +147,7 @@ public class EndpointRegistryTests : IDisposable
     }
 
     [Fact]
-    public void Resolve_KeyVaultSource_UnreachableVault_ThrowsWithVaultAndSecretNames()
-    {
-        // Arrange
-        Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", "Production");
-        EndpointRegistry.Reset();
-
-        // Act & Assert
-        var action = () => EndpointRegistry.Resolve("keyvaultEndpoint");
-
-        var exception = action.Should()
-            .Throw<InvalidOperationException>()
-            .Which;
-
-        exception.Message.Should().ContainAll("kv-test-prod", "keyvaultEndpoint");
-
-        // Cleanup
-        Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", null);
-        EndpointRegistry.Reset();
-    }
-
-    [Fact]
-    public void Resolve_KeyVaultSource_AuthenticationFailure_IncludesVaultAndEndpointName()
+    public void Resolve_KeyVaultSource_FailsWithDescriptiveError_IncludingVaultAndEndpointNames()
     {
         // Arrange
         Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", "Production");
@@ -181,7 +160,9 @@ public class EndpointRegistryTests : IDisposable
             .Throw<InvalidOperationException>()
             .Which;
 
-        // Verify vault name and endpoint name are in error message for diagnostics
+        // Verify vault name and endpoint name are in error message for diagnostics.
+        // Without live credentials, both RequestFailedException and AuthenticationFailedException
+        // paths converge to the same descriptive error, so we test the error message format only.
         exception.Message.Should().ContainAll("kv-test-prod", "keyvaultEndpoint");
 
         // Cleanup
