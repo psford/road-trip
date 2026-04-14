@@ -1,0 +1,7 @@
+{
+  "_comment": "Expected Azure SP identity for this repo. Used by azure_sp_identity_guard hook.",
+  "repo": "road-trip",
+  "allowed_sp_names": ["github-deploy-rt"],
+  "allowed_sp_object_ids": ["5693632f-69d8-4482-9820-355c3bea04c3"],
+  "resource_group": "rg-roadtripmap-prod"
+}

@@ -1,14 +1,24 @@
 using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
 using FluentAssertions;
+using Microsoft.EntityFrameworkCore;
 using Moq;
 using SkiaSharp;
+using RoadTripMap.Data;
 using RoadTripMap.Services;
 
 namespace RoadTripMap.Tests.Services;
 
 public class PhotoServiceTests
 {
+    private RoadTripDbContext CreateInMemoryContext()
+    {
+        var options = new DbContextOptionsBuilder<RoadTripDbContext>()
+            .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
+            .Options;
+        return new RoadTripDbContext(options);
+    }
+
     private static Stream CreateTestImageStream()
     {
         // Create a simple 100x100 red bitmap
@@ -26,9 +36,10 @@ public class PhotoServiceTests
     {
         // Arrange
         var mockBlobServiceClient = new Mock<BlobServiceClient>();
+        using var context = CreateInMemoryContext();
 
         // Act & Assert
-        var service = new PhotoService(mockBlobServiceClient.Object);
+        var service = new PhotoService(mockBlobServiceClient.Object, context);
         service.Should().BeAssignableTo<IPhotoService>();
     }
 
@@ -38,16 +49,6 @@ public class PhotoServiceTests
         // Assert - Interface has the method
         typeof(IPhotoService)
             .GetMethod(nameof(IPhotoService.ProcessAndUploadAsync))
-            .Should()
-            .NotBeNull();
-    }
-
-    [Fact]
-    public void IPhotoService_HasGetPhotoAsyncMethod()
-    {
-        // Assert - Interface has the method
-        typeof(IPhotoService)
-            .GetMethod(nameof(IPhotoService.GetPhotoAsync))
             .Should()
             .NotBeNull();
     }
@@ -173,7 +174,8 @@ public class PhotoServiceTests
     {
         // Arrange
         var mockBlobServiceClient = new Mock<BlobServiceClient>();
-        var service = new PhotoService(mockBlobServiceClient.Object);
+        using var context = CreateInMemoryContext();
+        var service = new PhotoService(mockBlobServiceClient.Object, context);
 
         // Act & Assert
         await Assert.ThrowsAsync<NullReferenceException>(
@@ -185,7 +187,8 @@ public class PhotoServiceTests
     {
         // Arrange
         var mockBlobServiceClient = new Mock<BlobServiceClient>();
-        var service = new PhotoService(mockBlobServiceClient.Object);
+        using var context = CreateInMemoryContext();
+        var service = new PhotoService(mockBlobServiceClient.Object, context);
 
         // Act & Assert
         await Assert.ThrowsAsync<ArgumentException>(
@@ -197,7 +200,8 @@ public class PhotoServiceTests
     {
         // Arrange
         var mockBlobServiceClient = new Mock<BlobServiceClient>();
-        var service = new PhotoService(mockBlobServiceClient.Object);
+        using var context = CreateInMemoryContext();
+        var service = new PhotoService(mockBlobServiceClient.Object, context);
 
         var validSizes = new[] { "original", "display", "thumb" };
 
