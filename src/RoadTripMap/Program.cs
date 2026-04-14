@@ -36,6 +36,9 @@ else
     builder.Services.AddScoped<ISasTokenIssuer, UserDelegationSasIssuer>();
 builder.Services.Configure<UploadOptions>(builder.Configuration.GetSection("Upload"));
 
+// Blob container provisioner for per-trip containers
+builder.Services.AddScoped<IBlobContainerProvisioner, BlobContainerProvisioner>();
+
 builder.Services.AddHttpClient<NominatimGeocodingService>();
 builder.Services.AddHttpClient("Overpass", c => {
     c.DefaultRequestHeaders.Add("User-Agent", "RoadTripMap/1.0");
