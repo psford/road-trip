@@ -40,6 +40,7 @@ public class UploadEndpointHttpTests : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
+        Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", "Development");
         Environment.SetEnvironmentVariable("WSL_SQL_CONNECTION", "Data Source=:memory:");
         Environment.SetEnvironmentVariable("RT_DESIGN_CONNECTION", "Data Source=:memory:");
         Environment.SetEnvironmentVariable("NPS_API_KEY", "test-key");

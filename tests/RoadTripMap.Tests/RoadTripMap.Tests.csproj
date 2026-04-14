@@ -30,6 +30,10 @@
     <EmbeddedResource Include="Fixtures\*.json" Exclude="Fixtures\test-endpoints.json" />
     <None Include="Fixtures\test-endpoints.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\tests\docker-compose.azurite.yml" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="Services\Snapshots\PhotoReadService_LegacyOnly.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>Services\Snapshots\PhotoReadService_LegacyOnly.json</Link>
+    </None>
   </ItemGroup>
 
   <ItemGroup>

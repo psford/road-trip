@@ -237,9 +237,8 @@ public class PhotoReadServiceTests
         var json = JsonSerializer.Serialize(photos, jsonOptions);
 
         // Assert against baseline snapshot to guard against regressions
-        var expectedJson = File.ReadAllText(
-            "/home/patrick/projects/road-trip/tests/RoadTripMap.Tests/Services/Snapshots/PhotoReadService_LegacyOnly.json"
-        );
+        var snapshotPath = Path.Combine(AppContext.BaseDirectory, "Services", "Snapshots", "PhotoReadService_LegacyOnly.json");
+        var expectedJson = File.ReadAllText(snapshotPath);
         json.Should().Be(expectedJson);
     }
 
