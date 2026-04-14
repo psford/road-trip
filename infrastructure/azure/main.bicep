@@ -15,6 +15,7 @@ var sqlDatabaseName = 'roadtripmap-db'
 var appServicePlanName = 'asp-roadtripmap-prod'
 var appServiceName = 'app-roadtripmap-prod'
 var keyVaultName = 'kv-roadtripmap-prod'
+var storageAccountName = 'storoadtripmapprod'
 
 // SQL Server
 resource sqlServer 'Microsoft.Sql/servers@2024-11-01-preview' = {
@@ -69,6 +70,11 @@ resource appServicePlan 'Microsoft.Web/serverfarms@2023-12-01' = {
   properties: {
     reserved: true
   }
+}
+
+// Reference existing storage account
+resource storageAccount 'Microsoft.Storage/storageAccounts@2023-05-01' existing = {
+  name: storageAccountName
 }
 
 // Key Vault
@@ -189,6 +195,17 @@ resource keyVaultGlobalDeployAccess 'Microsoft.Authorization/roleAssignments@202
   properties: {
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '4633458b-17de-408a-b874-0445c86b69e6')
     principalId: globalDeploySpObjectId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+// Role assignment: Storage Blob Data Contributor for App Service
+resource storageBlobDataContributorRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  scope: storageAccount
+  name: guid(resourceGroup().id, storageAccount.name, appService.name, 'blob-contributor')
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')
+    principalId: appService.identity.principalId
     principalType: 'ServicePrincipal'
   }
 }
