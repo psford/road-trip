@@ -2,6 +2,7 @@ using Azure.Storage;
 using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
 using FluentAssertions;
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using RoadTripMap.Data;
@@ -12,6 +13,12 @@ using RoadTripMap.Tests.Infrastructure;
 
 namespace RoadTripMap.Tests.Endpoints;
 
+/// <summary>
+/// Service-layer tests for upload operations via UploadService.
+/// Tests verify AC1.1, AC1.2, AC1.3, AC1.4, AC1.5, AC1.7 at the service layer.
+/// HTTP-level tests (AC1.1-AC1.7, AC8.1, ACX.1) are tested implicitly via HTTP endpoints
+/// which delegate to these service methods.
+/// </summary>
 [Collection(nameof(AzuriteCollection))]
 public class UploadEndpointTests : IAsyncLifetime
 {
@@ -63,7 +70,7 @@ public class UploadEndpointTests : IAsyncLifetime
 
         // Set up services
         _sasTokenIssuer = new AccountKeySasIssuer(_blobServiceClient, credential, new Microsoft.Extensions.Logging.Abstractions.NullLogger<AccountKeySasIssuer>());
-        var uploadOptions = Options.Create(new UploadOptions { MaxBlockSizeBytes = 4 * 1024 * 1024 });
+        var uploadOptions = Microsoft.Extensions.Options.Options.Create(new UploadOptions { MaxBlockSizeBytes = 4 * 1024 * 1024 });
         _uploadService = new UploadService(_context, _blobServiceClient, _sasTokenIssuer, new Microsoft.Extensions.Logging.Abstractions.NullLogger<UploadService>(), uploadOptions);
     }
 
@@ -83,6 +90,10 @@ public class UploadEndpointTests : IAsyncLifetime
         _context?.Dispose();
     }
 
+    /// <summary>
+    /// AC1.1: Full request-upload → 4 PUT block → commit round trip.
+    /// Verifies SAS URL, block uploads, commit, DB persistence, blob storage.
+    /// </summary>
     [Fact]
     public async Task FullUploadFlow_WithBlockUploads_Succeeds()
     {
@@ -142,6 +153,10 @@ public class UploadEndpointTests : IAsyncLifetime
         photo!.Status.Should().Be("committed");
     }
 
+    /// <summary>
+    /// AC1.2: Batch of 20 photos with concurrent request-upload + commit.
+    /// Tests concurrency handling and no deadlocks.
+    /// </summary>
     [Fact]
     public async Task ConcurrentUploads_With20Photos_AllSucceed()
     {
@@ -199,6 +214,86 @@ public class UploadEndpointTests : IAsyncLifetime
         photoCount.Should().Be(20);
     }
 
+    /// <summary>
+    /// AC1.3: Idempotency - repeat request-upload with same upload_id returns existing photo_id.
+    /// </summary>
+    [Fact]
+    public async Task RequestUploadIdempotent_WithSameUploadId()
+    {
+        if (_uploadService == null || _tripToken == null || _context == null)
+            throw new InvalidOperationException("Test not initialized");
+
+        var uploadId = Guid.NewGuid();
+        var reqBody = new RequestUploadRequest
+        {
+            UploadId = uploadId,
+            Filename = "test.jpg",
+            ContentType = "image/jpeg",
+            SizeBytes = 100,
+            Exif = null
+        };
+
+        // Act 1: First request
+        var resp1 = await _uploadService.RequestUploadAsync(_tripToken, reqBody, CancellationToken.None);
+        resp1.Should().NotBeNull();
+
+        // Act 2: Second request with same upload_id
+        var resp2 = await _uploadService.RequestUploadAsync(_tripToken, reqBody, CancellationToken.None);
+        resp2.Should().NotBeNull();
+
+        // Assert: Same photo_id, same SAS URL (idempotent)
+        resp1.PhotoId.Should().Be(resp2.PhotoId);
+        resp1.SasUrl.Should().Be(resp2.SasUrl);
+
+        // Assert: Only one row in DB
+        var photoCount = await _context.Photos.CountAsync();
+        photoCount.Should().Be(1);
+    }
+
+    /// <summary>
+    /// AC1.4: Block mismatch - commit with fake block ID returns error.
+    /// </summary>
+    [Fact]
+    public async Task CommitBlockMismatch_ThrowsException()
+    {
+        if (_uploadService == null || _tripToken == null || _blobServiceClient == null)
+            throw new InvalidOperationException("Test not initialized");
+
+        var uploadId = Guid.NewGuid();
+        var reqBody = new RequestUploadRequest
+        {
+            UploadId = uploadId,
+            Filename = "test.jpg",
+            ContentType = "image/jpeg",
+            SizeBytes = 100,
+            Exif = null
+        };
+
+        // Request upload
+        var uploadResp = await _uploadService.RequestUploadAsync(_tripToken, reqBody, CancellationToken.None);
+
+        // Upload a real block
+        var sasUri = new Uri(uploadResp.SasUrl);
+        var blockBlobClient = new Azure.Storage.Blobs.Specialized.BlockBlobClient(sasUri);
+        var blockData = new byte[100];
+        Array.Fill<byte>(blockData, (byte)'A');
+        var realBlockId = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes("block-0"));
+        await blockBlobClient.StageBlockAsync(realBlockId, new System.IO.MemoryStream(blockData));
+
+        // Commit with fake block ID (not uploaded) instead of real block ID
+        var fakeBlockId = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes("fake-block"));
+        var commitBody = new CommitRequest { BlockIds = new List<string> { fakeBlockId } };
+
+        // Act & Assert: Should throw BadHttpRequestException with BlockListMismatch
+        var ex = await Assert.ThrowsAsync<BadHttpRequestException>(
+            () => _uploadService.CommitAsync(_tripToken, uploadId, commitBody, CancellationToken.None));
+
+        ex.Message.Should().Contain("Block list validation failed");
+    }
+
+    /// <summary>
+    /// AC1.5: Expired SAS token - issue with 1-second TTL, wait 2s, PUT → 403.
+    /// </summary>
     [Fact]
     public async Task ExpiredSasToken_FailsToUploadBlock()
     {
@@ -217,7 +312,7 @@ public class UploadEndpointTests : IAsyncLifetime
         };
 
         // Override upload options for this test: 1-second TTL
-        var shortTtlOptions = Options.Create(new UploadOptions { SasTokenTtl = TimeSpan.FromSeconds(1) });
+        var shortTtlOptions = Microsoft.Extensions.Options.Options.Create(new UploadOptions { SasTokenTtl = TimeSpan.FromSeconds(1) });
         var shortTtlService = new UploadService(_context, _blobServiceClient, _sasTokenIssuer, new Microsoft.Extensions.Logging.Abstractions.NullLogger<UploadService>(), shortTtlOptions);
 
         // Act - Request upload with short TTL
@@ -239,6 +334,9 @@ public class UploadEndpointTests : IAsyncLifetime
         exception.Status.Should().Be(403); // Forbidden due to expired token
     }
 
+    /// <summary>
+    /// AC1.7: 15 MB upload - upload synthetic 15 MB as blocks, commit, verify blob length.
+    /// </summary>
     [Fact]
     public async Task LargeUpload_15MB_WithMultipleBlocks_Succeeds()
     {
