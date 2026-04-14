@@ -24,6 +24,18 @@ if (!string.IsNullOrEmpty(storageConnectionString))
     {
         clientBuilder.AddBlobServiceClient(storageConnectionString);
     });
+
+    // For dev-storage (Azurite), extract account key and register StorageSharedKeyCredential
+    if (builder.Configuration.GetValue<bool>("Blob:UseDevelopmentStorage"))
+    {
+        var accountName = builder.Configuration.GetValue<string>("Blob:AccountName");
+        var accountKey = builder.Configuration.GetValue<string>("Blob:AccountKey");
+
+        if (!string.IsNullOrEmpty(accountName) && !string.IsNullOrEmpty(accountKey))
+        {
+            builder.Services.AddSingleton(new Azure.Storage.StorageSharedKeyCredential(accountName, accountKey));
+        }
+    }
 }
 
 builder.Services.AddSingleton<UploadRateLimiter>();
@@ -290,12 +302,17 @@ app.MapPost("/api/trips", async (CreateTripRequest request, RoadTripDbContext db
 });
 
 // DELETE /api/trips/{secretToken} — Delete trip
-app.MapDelete("/api/trips/{secretToken}", async (string secretToken, RoadTripDbContext db, IBlobContainerProvisioner provisioner, IPhotoService photoService, ILogger<Program> logger, HttpContext context) =>
+app.MapDelete("/api/trips/{secretToken}", async (string secretToken, RoadTripDbContext db, IBlobContainerProvisioner provisioner, IPhotoService photoService, IAuthStrategy authStrategy, ILogger<Program> logger, HttpContext context) =>
 {
     // Look up trip by secret token
     var trip = await db.Trips.FirstOrDefaultAsync(t => t.SecretToken == secretToken);
     if (trip == null)
         return Results.NotFound(new { error = "Trip not found" });
+
+    // Validate auth
+    var authResult = await authStrategy.ValidatePostAccess(context, trip);
+    if (!authResult.IsAuthorized)
+        return Results.Unauthorized();
 
     // Delete legacy blobs (existing code path)
     var legacyPhotos = await db.Photos.Where(p => p.TripId == trip.Id && p.StorageTier == "legacy").ToListAsync();
@@ -552,13 +569,16 @@ app.MapGet("/api/photos/{tripId:int}/{photoId:int}/{size}", async (int tripId, i
     if (!validSizes.Contains(size))
         return Results.BadRequest(new { error = "Invalid size. Must be one of: original, display, thumb" });
 
-    // Look up photo in database
-    var photo = await db.Photos.FirstOrDefaultAsync(p => p.TripId == tripId && p.Id == photoId);
+    // Look up photo in database, including Trip details for per-trip storage tier resolution
+    var photo = await db.Photos
+        .Include(p => p.Trip)
+        .FirstOrDefaultAsync(p => p.TripId == tripId && p.Id == photoId);
     if (photo == null)
         return Results.NotFound(new { error = "Photo not found" });
 
-    // Get photo stream from blob storage using stored path
-    var stream = await photoService.GetPhotoAsync(photo.BlobPath, size);
+    // Get photo stream from blob storage, using storage tier to determine container
+    var containerName = photo.StorageTier == "per-trip" ? $"trip-{photo.Trip!.SecretToken.ToLowerInvariant()}" : null;
+    var stream = await photoService.GetPhotoAsync(photo.BlobPath, size, photo.StorageTier, containerName);
 
     // Photos are immutable — cache aggressively (1 year)
     context.Response.Headers.CacheControl = "public, max-age=31536000, immutable";
