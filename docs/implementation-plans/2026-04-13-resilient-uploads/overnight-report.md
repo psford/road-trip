@@ -4,7 +4,7 @@ Worked autonomously after you went to bed. Complete rundown below.
 
 ## Bottom line
 
-- **Phase 1 is done and in a draft PR.** 32 commits on `feat/resilient-uploads`, 305/305 tests green, 0 build warnings.
+- **Phase 1 is done and in a draft PR. CI is green.** 34 commits on `feat/resilient-uploads`, 305/305 tests locally, 0 build warnings, ✅ build-and-test + build-and-test-gate on GitHub.
 - **PR #37** (draft): https://github.com/psford/road-trip/pull/37
 - **Mac handoff doc** committed at `docs/implementation-plans/2026-04-13-resilient-uploads/mac-handoff.md` — covers what Phases 2–7 need on macOS.
 - **Not merged, not deployed.** Per CLAUDE.md you merge via the GitHub web UI. Runbook in the plan dir is ready for when you deploy.
