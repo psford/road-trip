@@ -147,7 +147,7 @@ public class AzuriteFixture : IAsyncLifetime
         {
             try
             {
-                var client = new BlobServiceClient(new Uri("http://127.0.0.1:10000/devstoreaccount1"), null);
+                var client = new BlobServiceClient(ConnectionString);
                 await client.GetPropertiesAsync();
                 return; // Success
             }
@@ -171,7 +171,7 @@ public class AzuriteFixture : IAsyncLifetime
         var psi = new System.Diagnostics.ProcessStartInfo
         {
             FileName = "docker",
-            Arguments = "compose " + string.Join(" ", args.Select(a => $"\"{a}\"")),
+            Arguments = $"compose -f \"{DockerComposeFile}\" " + string.Join(" ", args.Select(a => $"\"{a}\"")),
             WorkingDirectory = workingDirectory,
             UseShellExecute = false,
             RedirectStandardOutput = true,

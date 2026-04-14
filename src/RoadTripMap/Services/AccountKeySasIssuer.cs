@@ -12,13 +12,16 @@ namespace RoadTripMap.Services;
 public class AccountKeySasIssuer : ISasTokenIssuer
 {
     private readonly BlobServiceClient _blobServiceClient;
+    private readonly StorageSharedKeyCredential _credential;
     private readonly ILogger<AccountKeySasIssuer> _logger;
 
     public AccountKeySasIssuer(
         BlobServiceClient blobServiceClient,
+        StorageSharedKeyCredential credential,
         ILogger<AccountKeySasIssuer> logger)
     {
         _blobServiceClient = blobServiceClient;
+        _credential = credential ?? throw new ArgumentNullException(nameof(credential));
         _logger = logger;
     }
 
@@ -42,28 +45,17 @@ public class AccountKeySasIssuer : ISasTokenIssuer
         };
         blobSasBuilder.SetPermissions(BlobSasPermissions.Write);
 
-        // Get the account key from the service client via reflection
-        var credential = _blobServiceClient.GetType()
-            .GetProperty("Credential", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)
-            ?.GetValue(_blobServiceClient);
-
-        if (credential is StorageSharedKeyCredential sharedKeyCredential)
+        var sasUri = new BlobUriBuilder(blobClient.Uri)
         {
-            var sasUri = new BlobUriBuilder(blobClient.Uri)
-            {
-                Sas = blobSasBuilder.ToSasQueryParameters(sharedKeyCredential)
-            }.ToUri();
+            Sas = blobSasBuilder.ToSasQueryParameters(_credential)
+        }.ToUri();
 
-            _logger.LogInformation(
-                "AccountKeySasIssuer: issued SAS for container={container}, blob_path_prefix={pathPrefix}, ttl={ttl}s",
-                containerName,
-                blobPath.Length > 20 ? blobPath.Substring(0, 20) + "..." : blobPath,
-                (int)ttl.TotalSeconds);
+        _logger.LogInformation(
+            "AccountKeySasIssuer: issued SAS for container={container}, blob_path_prefix={pathPrefix}, ttl={ttl}s",
+            containerName,
+            blobPath.Length > 20 ? blobPath.Substring(0, 20) + "..." : blobPath,
+            (int)ttl.TotalSeconds);
 
-            return Task.FromResult(sasUri);
-        }
-
-        throw new InvalidOperationException(
-            "AccountKeySasIssuer requires StorageSharedKeyCredential; use UserDelegationSasIssuer for managed identity");
+        return Task.FromResult(sasUri);
     }
 }

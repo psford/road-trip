@@ -71,8 +71,8 @@ public class UploadService : IUploadService
         }
 
         // AC1.1: Create new row with status='pending', storage_tier='per-trip'
-        var photoId = Guid.NewGuid();
-        var blobPath = $"{photoId}_original.jpg";
+        // Use the client-provided UploadId as the blob path identifier (enables idempotency)
+        var blobPath = $"{request.UploadId}_original.jpg";
 
         var photo = new PhotoEntity
         {
@@ -102,7 +102,7 @@ public class UploadService : IUploadService
 
         return new RequestUploadResponse
         {
-            PhotoId = photoId,
+            PhotoId = request.UploadId,
             SasUrl = newSasUrl.ToString(),
             BlobPath = blobPath,
             MaxBlockSizeBytes = _options.MaxBlockSizeBytes,

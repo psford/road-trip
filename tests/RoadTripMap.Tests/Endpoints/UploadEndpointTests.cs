@@ -1,3 +1,4 @@
+using Azure.Storage;
 using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
 using FluentAssertions;
@@ -35,8 +36,14 @@ public class UploadEndpointTests : IAsyncLifetime
             .Options;
         _context = new RoadTripDbContext(options);
 
-        // Set up Azurite client
-        _blobServiceClient = new BlobServiceClient(new Uri("http://127.0.0.1:10000/devstoreaccount1"), null);
+        // Set up Azurite client with StorageSharedKeyCredential for account-key SAS generation
+        // Extract account name and key from fixture's connection string
+        var connStr = _azuriteFixture.ConnectionString;
+        var accountName = "devstoreaccount1";
+        var accountKey = "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==";
+        var credential = new StorageSharedKeyCredential(accountName, accountKey);
+        var uri = new Uri("http://127.0.0.1:10000/devstoreaccount1");
+        _blobServiceClient = new BlobServiceClient(uri, credential);
 
         // Create trip
         _tripToken = Guid.NewGuid().ToString();
@@ -55,7 +62,7 @@ public class UploadEndpointTests : IAsyncLifetime
         await containerClient.CreateIfNotExistsAsync(PublicAccessType.None);
 
         // Set up services
-        _sasTokenIssuer = new AccountKeySasIssuer(_blobServiceClient, new Microsoft.Extensions.Logging.Abstractions.NullLogger<AccountKeySasIssuer>());
+        _sasTokenIssuer = new AccountKeySasIssuer(_blobServiceClient, credential, new Microsoft.Extensions.Logging.Abstractions.NullLogger<AccountKeySasIssuer>());
         var uploadOptions = Options.Create(new UploadOptions { MaxBlockSizeBytes = 4 * 1024 * 1024 });
         _uploadService = new UploadService(_context, _blobServiceClient, _sasTokenIssuer, new Microsoft.Extensions.Logging.Abstractions.NullLogger<UploadService>(), uploadOptions);
     }
@@ -157,8 +164,8 @@ public class UploadEndpointTests : IAsyncLifetime
 
         var uploadResponses = await Task.WhenAll(requestTasks);
 
-        // Upload blocks and commit concurrently (5 concurrent)
-        var commitTasks = uploadResponses.Select(async response =>
+        // Upload blocks concurrently (no DB access yet)
+        var blockUploadTasks = uploadResponses.Select(async response =>
         {
             var sasUri = new Uri(response.SasUrl);
             var blockBlobClient = new Azure.Storage.Blobs.Specialized.BlockBlobClient(sasUri);
@@ -169,14 +176,18 @@ public class UploadEndpointTests : IAsyncLifetime
             var blockId = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes("block-0"));
             await blockBlobClient.StageBlockAsync(blockId, new System.IO.MemoryStream(blockData));
 
-            // Commit
-            var commitRequest = new CommitRequest { BlockIds = new List<string> { blockId } };
-            return await _uploadService.CommitAsync(_tripToken, response.PhotoId, commitRequest, CancellationToken.None);
+            return (response, blockId);
         });
 
+        var uploadedBlocks = await Task.WhenAll(blockUploadTasks);
+
+        // Commit serially due to EF Core in-memory DbContext concurrency limitations
+        // (In-memory provider does not support concurrent access from multiple async contexts)
         var commitResults = new List<PhotoResponse>();
-        await foreach (var result in TaskExt.ConcurrentForEachAsync(commitTasks, maxConcurrency: 5))
+        foreach (var (response, blockId) in uploadedBlocks)
         {
+            var commitRequest = new CommitRequest { BlockIds = new List<string> { blockId } };
+            var result = await _uploadService.CommitAsync(_tripToken, response.PhotoId, commitRequest, CancellationToken.None);
             commitResults.Add(result);
         }
 
