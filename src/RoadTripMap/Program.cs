@@ -283,7 +283,7 @@ app.MapPost("/api/trips", async (CreateTripRequest request, RoadTripDbContext db
     catch (Exception ex)
     {
         logger.LogError(ex, "Failed to provision blob container for trip {trip_token_prefix}",
-            secretToken.Substring(0, Math.Min(4, secretToken.Length)));
+            RoadTripMap.Security.LogSanitizer.SanitizeToken(secretToken));
         // Return 500 but do not roll back the trip row
         return Results.StatusCode(500);
     }
@@ -339,7 +339,7 @@ app.MapDelete("/api/trips/{secretToken}", async (string secretToken, RoadTripDbC
     catch (Exception ex)
     {
         logger.LogWarning(ex, "Failed to delete blob container for trip {trip_token_prefix}",
-            secretToken.Substring(0, Math.Min(4, secretToken.Length)));
+            RoadTripMap.Security.LogSanitizer.SanitizeToken(secretToken));
     }
 
     // Delete trip and all associated photos

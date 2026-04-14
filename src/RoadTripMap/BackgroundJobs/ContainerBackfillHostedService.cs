@@ -53,7 +53,7 @@ public class ContainerBackfillHostedService : IHostedService
             {
                 failed++;
                 _logger.LogWarning(ex, "Failed to provision container for trip {trip_token_prefix}",
-                    trip.SecretToken.Substring(0, Math.Min(4, trip.SecretToken.Length)));
+                    Security.LogSanitizer.SanitizeToken(trip.SecretToken));
             }
         }
 

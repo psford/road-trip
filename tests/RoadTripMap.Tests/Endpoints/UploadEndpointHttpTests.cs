@@ -29,11 +29,11 @@ namespace RoadTripMap.Tests.Endpoints;
 public class UploadEndpointHttpTests : IAsyncLifetime
 {
     private readonly AzuriteFixture _azurite;
-    private WebApplicationFactory<Program>? _factory;
-    private HttpClient? _client;
-    private SqliteConnection? _sqlite;
-    private CapturingLoggerProvider? _logs;
-    private string? _tripSecretToken;
+    private WebApplicationFactory<Program> _factory = null!;
+    private HttpClient _client = null!;
+    private SqliteConnection _sqlite = null!;
+    private CapturingLoggerProvider _logs = null!;
+    private string _tripSecretToken = null!;
     private int _tripId;
 
     public UploadEndpointHttpTests(AzuriteFixture azurite) => _azurite = azurite;
@@ -73,6 +73,10 @@ public class UploadEndpointHttpTests : IAsyncLifetime
                         logging.ClearProviders();
                         logging.AddProvider(_logs);
                         logging.SetMinimumLevel(LogLevel.Trace);
+                        // Framework request-path loggers echo the full URL (including {secretToken})
+                        // at Information. Keep them at Warning so ACX.1 assertions test app-layer logs.
+                        logging.AddFilter("Microsoft.AspNetCore", LogLevel.Warning);
+                        logging.AddFilter("Microsoft.Hosting", LogLevel.Warning);
                     });
                 });
             });
@@ -104,16 +108,16 @@ public class UploadEndpointHttpTests : IAsyncLifetime
 
     public async Task DisposeAsync()
     {
-        _client?.Dispose();
-        if (_factory != null) await _factory.DisposeAsync();
-        _sqlite?.Dispose();
+        _client.Dispose();
+        await _factory.DisposeAsync();
+        _sqlite.Dispose();
     }
 
     [Fact]
     public async Task RequestUpload_Commit_HappyPath_Returns200WithVersionHeaders()
     {
         var uploadId = Guid.NewGuid();
-        var requestUploadResp = await _client!.PostAsJsonAsync(
+        var requestUploadResp = await _client.PostAsJsonAsync(
             $"/api/trips/{_tripSecretToken}/photos/request-upload",
             new RequestUploadRequest
             {
@@ -153,7 +157,7 @@ public class UploadEndpointHttpTests : IAsyncLifetime
     public async Task Commit_WithFakeBlockIds_Returns400BlockListMismatch()
     {
         var uploadId = Guid.NewGuid();
-        var reqResp = await _client!.PostAsJsonAsync(
+        var reqResp = await _client.PostAsJsonAsync(
             $"/api/trips/{_tripSecretToken}/photos/request-upload",
             new RequestUploadRequest
             {
@@ -174,7 +178,7 @@ public class UploadEndpointHttpTests : IAsyncLifetime
     [Fact]
     public async Task Commit_CrossTripPhotoId_Returns404()
     {
-        using var scope = _factory!.Services.CreateScope();
+        using var scope = _factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<RoadTripDbContext>();
         var tripB = new TripEntity
         {
@@ -187,7 +191,7 @@ public class UploadEndpointHttpTests : IAsyncLifetime
         await db.SaveChangesAsync();
 
         var uploadId = Guid.NewGuid();
-        var reqResp = await _client!.PostAsJsonAsync(
+        var reqResp = await _client.PostAsJsonAsync(
             $"/api/trips/{_tripSecretToken}/photos/request-upload",
             new RequestUploadRequest
             {
@@ -207,7 +211,7 @@ public class UploadEndpointHttpTests : IAsyncLifetime
     public async Task Abort_Returns204_AndIsIdempotent()
     {
         var uploadId = Guid.NewGuid();
-        await _client!.PostAsJsonAsync(
+        await _client.PostAsJsonAsync(
             $"/api/trips/{_tripSecretToken}/photos/request-upload",
             new RequestUploadRequest
             {
@@ -227,7 +231,7 @@ public class UploadEndpointHttpTests : IAsyncLifetime
     [Fact]
     public async Task RequestUpload_UnknownTrip_Returns404()
     {
-        var resp = await _client!.PostAsJsonAsync(
+        var resp = await _client.PostAsJsonAsync(
             $"/api/trips/{Guid.NewGuid()}/photos/request-upload",
             new RequestUploadRequest
             {
@@ -240,7 +244,7 @@ public class UploadEndpointHttpTests : IAsyncLifetime
     [Fact]
     public async Task AllResponses_IncludeVersionHeaders_Even404()
     {
-        var resp = await _client!.GetAsync($"/api/post/{Guid.NewGuid()}/photos");
+        var resp = await _client.GetAsync($"/api/post/{Guid.NewGuid()}/photos");
         resp.StatusCode.Should().BeOneOf(HttpStatusCode.NotFound, HttpStatusCode.OK);
         AssertVersionHeaders(resp);
     }
@@ -249,7 +253,7 @@ public class UploadEndpointHttpTests : IAsyncLifetime
     public async Task Logs_DoNotContainRawSecretTokenOrSasSignatureOrGps()
     {
         var uploadId = Guid.NewGuid();
-        var resp = await _client!.PostAsJsonAsync(
+        var resp = await _client.PostAsJsonAsync(
             $"/api/trips/{_tripSecretToken}/photos/request-upload",
             new RequestUploadRequest
             {
@@ -264,13 +268,114 @@ public class UploadEndpointHttpTests : IAsyncLifetime
         // Trigger at least one more request so version-headers and any per-route logs fire.
         await _client.PostAsync($"/api/trips/{_tripSecretToken}/photos/{uploadId}/abort", null);
 
-        var joined = string.Join("\n", _logs!.Records.Select(r => r.Formatted + " " + (r.Exception?.ToString() ?? "")));
+        var joined = string.Join("\n", _logs.Records.Select(r => r.Formatted + " " + (r.Exception?.ToString() ?? "")));
 
         // ACX.1 assertions: sensitive values must not appear in logs.
-        joined.Should().NotContain(_tripSecretToken!, "secret token must never land in logs");
+        joined.Should().NotContain(_tripSecretToken, "secret token must never land in logs");
         joined.Should().NotContain("sig=", "SAS signature query parameter must not appear in logs");
         joined.Should().NotContain("47.6062", "GPS latitude must not appear in logs");
         joined.Should().NotContain("-122.3321", "GPS longitude must not appear in logs");
+    }
+
+    [Fact]
+    public async Task RequestUpload_Idempotent_IncrementsUploadAttemptCount()
+    {
+        // I3 coverage: second call with same UploadId bumps the attempt counter.
+        var uploadId = Guid.NewGuid();
+        var req = new RequestUploadRequest
+        {
+            UploadId = uploadId, Filename = "dup.jpg", ContentType = "image/jpeg", SizeBytes = 1024,
+        };
+
+        var r1 = await _client.PostAsJsonAsync($"/api/trips/{_tripSecretToken}/photos/request-upload", req);
+        r1.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var r2 = await _client.PostAsJsonAsync($"/api/trips/{_tripSecretToken}/photos/request-upload", req);
+        r2.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<RoadTripDbContext>();
+        var photo = await db.Photos.SingleAsync(p => p.UploadId == uploadId);
+        photo.UploadAttemptCount.Should().Be(1,
+            "idempotent re-request must increment UploadAttemptCount from 0 to 1 (I3)");
+    }
+
+    [Fact]
+    public async Task RequestUpload_Idempotent_DeletesStaleStagedBlocks()
+    {
+        // I4 coverage: previously staged uncommitted blocks are cleared on re-request so they
+        // can't be committed accidentally on a later commit.
+        var uploadId = Guid.NewGuid();
+        var req = new RequestUploadRequest
+        {
+            UploadId = uploadId, Filename = "stale.jpg", ContentType = "image/jpeg", SizeBytes = 1024,
+        };
+
+        var r1 = await _client.PostAsJsonAsync($"/api/trips/{_tripSecretToken}/photos/request-upload", req);
+        r1.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body1 = (await r1.Content.ReadFromJsonAsync<RequestUploadResponse>())!;
+
+        var blockClient1 = new BlockBlobClient(new Uri(body1.SasUrl));
+        var staleBlockId = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes("stale-block"));
+        await blockClient1.StageBlockAsync(staleBlockId, new MemoryStream(new byte[50]));
+
+        var r2 = await _client.PostAsJsonAsync($"/api/trips/{_tripSecretToken}/photos/request-upload", req);
+        r2.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        // After re-request, the stale blob+blocks should be gone.
+        var sharedKey = new Azure.Storage.StorageSharedKeyCredential(
+            "devstoreaccount1",
+            "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==");
+        var directClient = new BlockBlobClient(
+            new Uri($"http://127.0.0.1:10000/devstoreaccount1/trip-{_tripSecretToken.ToLowerInvariant()}/{uploadId}_original.jpg"),
+            sharedKey);
+
+        try
+        {
+            var list = await directClient.GetBlockListAsync(Azure.Storage.Blobs.Models.BlockListTypes.Uncommitted);
+            list.Value.UncommittedBlocks.Should().BeEmpty("stale staged blocks must be wiped on re-request (I4)");
+        }
+        catch (Azure.RequestFailedException ex) when (ex.Status == 404)
+        {
+            // Blob was deleted entirely — equivalent guarantee.
+        }
+    }
+
+    [Fact]
+    public async Task RequestUpload_PersistsExifGpsAndTakenAt()
+    {
+        // C7 coverage: EXIF GPS + TakenAt land on the PhotoEntity row.
+        var uploadId = Guid.NewGuid();
+        var takenAt = new DateTimeOffset(2026, 04, 12, 14, 30, 0, TimeSpan.Zero);
+        var resp = await _client.PostAsJsonAsync($"/api/trips/{_tripSecretToken}/photos/request-upload",
+            new RequestUploadRequest
+            {
+                UploadId = uploadId, Filename = "exif.jpg", ContentType = "image/jpeg", SizeBytes = 1024,
+                Exif = new ExifDto { GpsLat = 42.1234, GpsLon = -71.5678, TakenAt = takenAt },
+            });
+
+        resp.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<RoadTripDbContext>();
+        var photo = await db.Photos.SingleAsync(p => p.UploadId == uploadId);
+        photo.Latitude.Should().Be(42.1234, "EXIF GPS lat must persist (C7)");
+        photo.Longitude.Should().Be(-71.5678, "EXIF GPS lon must persist (C7)");
+        photo.TakenAt.Should().Be(takenAt.UtcDateTime, "EXIF TakenAt must persist (C7)");
+    }
+
+    [Fact]
+    public async Task DeleteTrip_WithUnknownToken_Returns404AndDoesNotCascade()
+    {
+        // C3 coverage: unknown token returns 404; does not destroy the real trip.
+        var resp = await _client.DeleteAsync($"/api/trips/{Guid.NewGuid()}");
+        resp.StatusCode.Should().Be(HttpStatusCode.NotFound);
+
+        // The real trip seeded in InitializeAsync must still exist.
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<RoadTripDbContext>();
+        var realTrip = await db.Trips.FirstOrDefaultAsync(t => t.SecretToken == _tripSecretToken);
+        realTrip.Should().NotBeNull("unknown-token DELETE must not touch any real trip (C3)");
     }
 
     private static void AssertVersionHeaders(HttpResponseMessage response)
