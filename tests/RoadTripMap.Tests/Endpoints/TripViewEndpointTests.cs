@@ -3,7 +3,6 @@ using Microsoft.EntityFrameworkCore;
 using RoadTripMap.Data;
 using RoadTripMap.Entities;
 using RoadTripMap.Models;
-using RoadTripMap.Tests.Fixtures;
 
 namespace RoadTripMap.Tests.Endpoints;
 
@@ -119,27 +118,36 @@ public class TripViewEndpointTests
         var takenAt2 = new DateTime(2026, 1, 2, 10, 0, 0, DateTimeKind.Utc);
         var takenAt3 = new DateTime(2026, 1, 3, 11, 0, 0, DateTimeKind.Utc);
 
-        var photo1 = new PhotoEntityBuilder()
-            .WithTripId(trip.Id)
-            .WithBlobPath("photo1.jpg")
-            .WithCoordinates(40.7128, -74.0060)
-            .WithPlaceName("New York")
-            .WithTakenAt(takenAt1)
-            .Build();
-        var photo2 = new PhotoEntityBuilder()
-            .WithTripId(trip.Id)
-            .WithBlobPath("photo2.jpg")
-            .WithCoordinates(41.8781, -87.6298)
-            .WithPlaceName("Chicago")
-            .WithTakenAt(takenAt2)
-            .Build();
-        var photo3 = new PhotoEntityBuilder()
-            .WithTripId(trip.Id)
-            .WithBlobPath("photo3.jpg")
-            .WithCoordinates(34.0522, -118.2437)
-            .WithPlaceName("Los Angeles")
-            .WithTakenAt(takenAt3)
-            .Build();
+        var photo1 = new PhotoEntity
+        {
+            TripId = trip.Id,
+            BlobPath = "photo1.jpg",
+            Latitude = 40.7128,
+            Longitude = -74.0060,
+            PlaceName = "New York",
+            TakenAt = takenAt1,
+            CreatedAt = DateTime.UtcNow
+        };
+        var photo2 = new PhotoEntity
+        {
+            TripId = trip.Id,
+            BlobPath = "photo2.jpg",
+            Latitude = 41.8781,
+            Longitude = -87.6298,
+            PlaceName = "Chicago",
+            TakenAt = takenAt2,
+            CreatedAt = DateTime.UtcNow
+        };
+        var photo3 = new PhotoEntity
+        {
+            TripId = trip.Id,
+            BlobPath = "photo3.jpg",
+            Latitude = 34.0522,
+            Longitude = -118.2437,
+            PlaceName = "Los Angeles",
+            TakenAt = takenAt3,
+            CreatedAt = DateTime.UtcNow
+        };
 
         await context.Photos.AddAsync(photo1);
         await context.Photos.AddAsync(photo2);
@@ -279,13 +287,16 @@ public class TripViewEndpointTests
         };
         await context.Trips.AddAsync(trip);
 
-        var photo = new PhotoEntityBuilder()
-            .WithTripId(trip.Id)
-            .WithBlobPath("public-photo.jpg")
-            .WithCoordinates(40.7128, -74.0060)
-            .WithPlaceName("New York")
-            .WithTakenAt(DateTime.UtcNow)
-            .Build();
+        var photo = new PhotoEntity
+        {
+            TripId = trip.Id,
+            BlobPath = "public-photo.jpg",
+            Latitude = 40.7128,
+            Longitude = -74.0060,
+            PlaceName = "New York",
+            TakenAt = DateTime.UtcNow,
+            CreatedAt = DateTime.UtcNow
+        };
 
         await context.Photos.AddAsync(photo);
         await context.SaveChangesAsync();
@@ -323,13 +334,16 @@ public class TripViewEndpointTests
 
         for (int i = 0; i < 5; i++)
         {
-            var photo = new PhotoEntityBuilder()
-                .WithTripId(trip.Id)
-                .WithBlobPath($"photo{i}.jpg")
-                .WithCoordinates(40.7128 + i, -74.0060 + i)
-                .WithPlaceName($"Location {i}")
-                .WithTakenAt(DateTime.UtcNow.AddDays(i))
-                .Build();
+            var photo = new PhotoEntity
+            {
+                TripId = trip.Id,
+                BlobPath = $"photo{i}.jpg",
+                Latitude = 40.7128 + i,
+                Longitude = -74.0060 + i,
+                PlaceName = $"Location {i}",
+                TakenAt = DateTime.UtcNow.AddDays(i),
+                CreatedAt = DateTime.UtcNow
+            };
             await context.Photos.AddAsync(photo);
         }
         await context.SaveChangesAsync();

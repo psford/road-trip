@@ -13,8 +13,8 @@ public class PhotoEntity
     public DateTime CreatedAt { get; set; }
 
     // Upload orchestration columns (pending → committed or failed)
-    public required string Status { get; set; } = "committed";
-    public required string StorageTier { get; set; } = "legacy";
+    public string Status { get; set; } = "committed";
+    public string StorageTier { get; set; } = "legacy";
 
     // Lifecycle tracking for idempotency and cleanup
     public Guid? UploadId { get; set; }
