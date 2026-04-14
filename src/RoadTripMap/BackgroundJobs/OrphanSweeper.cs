@@ -30,7 +30,8 @@ public class OrphanSweeper : IOrphanSweeper
     {
         var threshold = utcNow.AddHours(-_staleThresholdHours);
 
-        // Query orphaned photos: pending status, LastActivityAt set and older than threshold
+        // Query orphaned photos: pending status (not 'failed' — reserved for Phase 2), LastActivityAt set and older than threshold
+        // I1: Status='failed' is deferred to Phase 2 (commit-failure handling), so sweep explicitly excludes it for safety
         var orphanedPhotos = await _db.Photos
             .Where(p => p.Status == "pending" &&
                         p.LastActivityAt != null &&

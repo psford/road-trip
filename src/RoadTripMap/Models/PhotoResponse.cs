@@ -3,6 +3,7 @@ namespace RoadTripMap.Models;
 public record PhotoResponse
 {
     public required int Id { get; init; }
+    public Guid? UploadId { get; init; }
     public required string ThumbnailUrl { get; init; }
     public required string DisplayUrl { get; init; }
     public required string OriginalUrl { get; init; }
