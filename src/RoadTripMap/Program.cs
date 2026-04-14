@@ -4,6 +4,7 @@ using Microsoft.Extensions.Azure;
 using RoadTripMap;
 using RoadTripMap.BackgroundJobs;
 using RoadTripMap.Data;
+using RoadTripMap.Endpoints;
 using RoadTripMap.Entities;
 using RoadTripMap.Helpers;
 using RoadTripMap.Models;
@@ -844,6 +845,9 @@ async Task<int> FetchOverpassForViewport(
 
     return totalInserted;
 }
+
+// Map resilient upload endpoints (request-upload, commit, abort)
+app.MapUploadEndpoints();
 
 app.Run();
 
