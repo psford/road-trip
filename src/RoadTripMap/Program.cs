@@ -47,6 +47,10 @@ if (builder.Configuration.GetValue<bool>("Backfill:RunOnStartup"))
     builder.Services.AddHostedService<ContainerBackfillHostedService>();
 }
 
+// Orphan sweeper background job - deletes stale pending photos
+builder.Services.AddScoped<IOrphanSweeper, OrphanSweeper>();
+builder.Services.AddHostedService<OrphanSweeperHostedService>();
+
 builder.Services.AddHttpClient<NominatimGeocodingService>();
 builder.Services.AddHttpClient("Overpass", c => {
     c.DefaultRequestHeaders.Add("User-Agent", "RoadTripMap/1.0");
