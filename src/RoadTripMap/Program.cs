@@ -27,6 +27,15 @@ builder.Services.AddSingleton<UploadRateLimiter>();
 builder.Services.AddSingleton<INominatimRateLimiter, NominatimRateLimiter>();
 builder.Services.AddScoped<IAuthStrategy, SecretTokenAuthStrategy>();
 builder.Services.AddScoped<IPhotoService, PhotoService>();
+
+// Upload service and SAS token issuance
+builder.Services.AddScoped<IUploadService, UploadService>();
+if (builder.Configuration.GetValue<bool>("Blob:UseDevelopmentStorage"))
+    builder.Services.AddScoped<ISasTokenIssuer, AccountKeySasIssuer>();
+else
+    builder.Services.AddScoped<ISasTokenIssuer, UserDelegationSasIssuer>();
+builder.Services.Configure<UploadOptions>(builder.Configuration.GetSection("Upload"));
+
 builder.Services.AddHttpClient<NominatimGeocodingService>();
 builder.Services.AddHttpClient("Overpass", c => {
     c.DefaultRequestHeaders.Add("User-Agent", "RoadTripMap/1.0");
