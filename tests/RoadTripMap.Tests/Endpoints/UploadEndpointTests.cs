@@ -5,6 +5,7 @@ using FluentAssertions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using Moq;
 using RoadTripMap.Data;
 using RoadTripMap.Entities;
 using RoadTripMap.Models;
@@ -70,8 +71,11 @@ public class UploadEndpointTests : IAsyncLifetime
 
         // Set up services
         _sasTokenIssuer = new AccountKeySasIssuer(_blobServiceClient, credential, new Microsoft.Extensions.Logging.Abstractions.NullLogger<AccountKeySasIssuer>());
+        var mockGeocodingService = new Mock<IGeocodingService>();
+        mockGeocodingService.Setup(g => g.ReverseGeocodeAsync(It.IsAny<double>(), It.IsAny<double>()))
+            .ReturnsAsync((string?)null);
         var uploadOptions = Microsoft.Extensions.Options.Options.Create(new UploadOptions { MaxBlockSizeBytes = 4 * 1024 * 1024 });
-        _uploadService = new UploadService(_context, _blobServiceClient, _sasTokenIssuer, new Microsoft.Extensions.Logging.Abstractions.NullLogger<UploadService>(), uploadOptions);
+        _uploadService = new UploadService(_context, _blobServiceClient, _sasTokenIssuer, mockGeocodingService.Object, new Microsoft.Extensions.Logging.Abstractions.NullLogger<UploadService>(), uploadOptions);
     }
 
     public async Task DisposeAsync()
@@ -312,8 +316,11 @@ public class UploadEndpointTests : IAsyncLifetime
         };
 
         // Override upload options for this test: 1-second TTL
+        var mockGeocodingService = new Mock<IGeocodingService>();
+        mockGeocodingService.Setup(g => g.ReverseGeocodeAsync(It.IsAny<double>(), It.IsAny<double>()))
+            .ReturnsAsync((string?)null);
         var shortTtlOptions = Microsoft.Extensions.Options.Options.Create(new UploadOptions { SasTokenTtl = TimeSpan.FromSeconds(1) });
-        var shortTtlService = new UploadService(_context, _blobServiceClient, _sasTokenIssuer, new Microsoft.Extensions.Logging.Abstractions.NullLogger<UploadService>(), shortTtlOptions);
+        var shortTtlService = new UploadService(_context, _blobServiceClient, _sasTokenIssuer, mockGeocodingService.Object, new Microsoft.Extensions.Logging.Abstractions.NullLogger<UploadService>(), shortTtlOptions);
 
         // Act - Request upload with short TTL
         var uploadResponse = await shortTtlService.RequestUploadAsync(_tripToken, uploadRequest, CancellationToken.None);

@@ -97,19 +97,13 @@ public class BlobContainerProvisionerTests
     [Fact]
     public async Task EnsureContainerAsync_InvalidToken_ThrowsException()
     {
-        // Arrange (AC2.5)
+        // Arrange (I5: Fix CS8600 - use null-forgiving operator in ctor call, then test behavior)
+        var mockBlobServiceClient = new Mock<BlobServiceClient>();
         var mockLogger = new Mock<ILogger<BlobContainerProvisioner>>();
 
-        // Create a real BlobServiceClient with invalid endpoint - we won't reach it due to validation
-        // Actually, use a null mock that will fail if accessed
-        BlobServiceClient blobClient = null;
+        var provisioner = new BlobContainerProvisioner(mockBlobServiceClient.Object, mockLogger.Object);
 
-        var provisioner = new BlobContainerProvisioner(
-            blobClient,
-            mockLogger.Object);
-
-        // Token that produces consecutive dashes when formatted
-        // "trip---" will fail the consecutive dash check
+        // Token that produces consecutive dashes when formatted - fails validation
         var invalidToken = "---";
         var ct = CancellationToken.None;
 
