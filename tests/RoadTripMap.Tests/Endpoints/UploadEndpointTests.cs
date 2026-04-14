@@ -292,7 +292,7 @@ public class UploadEndpointTests : IAsyncLifetime
         var ex = await Assert.ThrowsAsync<BadHttpRequestException>(
             () => _uploadService.CommitAsync(_tripToken, uploadId, commitBody, CancellationToken.None));
 
-        ex.Message.Should().Contain("Block list validation failed");
+        ex.Message.Should().Contain("BlockListMismatch");
     }
 
     /// <summary>

@@ -166,11 +166,20 @@ public class UploadService : IUploadService
         var containerClient = _blobServiceClient.GetBlobContainerClient(containerName);
         var blockBlobClient = containerClient.GetBlockBlobClient(photo.BlobPath);
 
-        // AC1.4: Get uncommitted blocks and validate against requested block IDs
-        var blockList = await blockBlobClient.GetBlockListAsync(
-            Azure.Storage.Blobs.Models.BlockListTypes.Uncommitted,
-            cancellationToken: ct);
-        var uncommittedBlockIds = blockList.Value.UncommittedBlocks.Select(b => b.Name).ToList();
+        // AC1.4: Get uncommitted blocks and validate against requested block IDs.
+        // If the blob was never created (no blocks staged), treat it as an empty block list.
+        List<string> uncommittedBlockIds;
+        try
+        {
+            var blockList = await blockBlobClient.GetBlockListAsync(
+                Azure.Storage.Blobs.Models.BlockListTypes.Uncommitted,
+                cancellationToken: ct);
+            uncommittedBlockIds = blockList.Value.UncommittedBlocks.Select(b => b.Name).ToList();
+        }
+        catch (Azure.RequestFailedException ex) when (ex.Status == 404)
+        {
+            uncommittedBlockIds = new List<string>();
+        }
 
         var missing = request.BlockIds.Except(uncommittedBlockIds).ToList();
         if (missing.Count > 0)
@@ -180,9 +189,7 @@ public class UploadService : IUploadService
                 missing.Count,
                 LogSanitizer.SanitizeToken(tripToken));
 
-            throw new BadHttpRequestException(
-                "Block list validation failed",
-                new InvalidOperationException($"BlockListMismatch: missing blocks"));
+            throw new BadHttpRequestException("BlockListMismatch: uploaded blocks do not match committed block IDs");
         }
 
         // AC1.4: Commit the block list
