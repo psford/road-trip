@@ -8,6 +8,7 @@ using RoadTripMap.Entities;
 using RoadTripMap.Helpers;
 using RoadTripMap.Models;
 using RoadTripMap.Services;
+using RoadTripMap.Versioning;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -60,6 +61,9 @@ builder.Services.AddScoped<IGeocodingService, NominatimGeocodingService>();
 
 var app = builder.Build();
 
+// Initialize server version from configuration and assembly metadata
+ServerVersion.Initialize(app.Configuration);
+
 EndpointRegistry.ValidateAll();
 
 // Apply pending migrations on startup (skip for non-relational providers like SQLite in tests)
@@ -89,6 +93,18 @@ using (var scope = app.Services.CreateScope())
 
 // CORS not needed for Phase 1 — frontend served same-origin.
 // If native apps need cross-origin API access later, add CORS policy here.
+
+// Version headers middleware — must be before exception handler so headers survive error path
+app.Use(async (context, next) =>
+{
+    context.Response.OnStarting(() =>
+    {
+        context.Response.Headers["x-server-version"] = ServerVersion.Current;
+        context.Response.Headers["x-client-min-version"] = ServerVersion.ClientMin;
+        return Task.CompletedTask;
+    });
+    await next();
+});
 
 // Global exception handler middleware (returns 500 with generic error message, no stack trace)
 app.Use(async (context, next) =>
@@ -124,6 +140,9 @@ app.UseStaticFiles(new StaticFileOptions { ContentTypeProvider = contentTypeProv
 
 
 app.MapGet("/api/health", () => Results.Ok(new { status = "healthy" }));
+
+app.MapGet("/api/version", () =>
+    Results.Ok(new { server_version = ServerVersion.Current, client_min_version = ServerVersion.ClientMin }));
 
 app.MapGet("/api/geocode", async (double? lat, double? lng, IGeocodingService geocodingService) =>
 {
