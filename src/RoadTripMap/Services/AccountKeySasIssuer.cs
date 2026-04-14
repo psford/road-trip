@@ -1,6 +1,7 @@
 using Azure.Storage.Blobs;
 using Azure.Storage.Sas;
 using Azure.Storage;
+using RoadTripMap.Security;
 
 namespace RoadTripMap.Services;
 
@@ -52,8 +53,8 @@ public class AccountKeySasIssuer : ISasTokenIssuer
 
         _logger.LogInformation(
             "AccountKeySasIssuer: issued SAS for container={container}, blob_path_prefix={pathPrefix}, ttl={ttl}s",
-            containerName,
-            blobPath.Length > 20 ? blobPath.Substring(0, 20) + "..." : blobPath,
+            LogSanitizer.SanitizeContainerName(containerName),
+            LogSanitizer.SanitizeBlobPath(blobPath),
             (int)ttl.TotalSeconds);
 
         return Task.FromResult(sasUri);

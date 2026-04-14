@@ -6,6 +6,8 @@ using Microsoft.Extensions.Options;
 using RoadTripMap.Data;
 using RoadTripMap.Entities;
 using RoadTripMap.Models;
+using RoadTripMap.Security;
+using RoadTripMap.Versioning;
 
 namespace RoadTripMap.Services;
 
@@ -14,6 +16,7 @@ public class UploadService : IUploadService
     private readonly RoadTripDbContext _db;
     private readonly BlobServiceClient _blobServiceClient;
     private readonly ISasTokenIssuer _sasTokenIssuer;
+    private readonly IGeocodingService _geocodingService;
     private readonly ILogger<UploadService> _logger;
     private readonly UploadOptions _options;
 
@@ -21,12 +24,14 @@ public class UploadService : IUploadService
         RoadTripDbContext db,
         BlobServiceClient blobServiceClient,
         ISasTokenIssuer sasTokenIssuer,
+        IGeocodingService geocodingService,
         ILogger<UploadService> logger,
         IOptions<UploadOptions> options)
     {
         _db = db;
         _blobServiceClient = blobServiceClient;
         _sasTokenIssuer = sasTokenIssuer;
+        _geocodingService = geocodingService;
         _logger = logger;
         _options = options.Value;
     }
@@ -39,7 +44,7 @@ public class UploadService : IUploadService
 
         if (trip == null)
         {
-            throw new KeyNotFoundException($"Trip not found: {tripToken}");
+            throw new KeyNotFoundException($"Trip not found: {LogSanitizer.SanitizeToken(tripToken)}");
         }
 
         // AC1.3: Look up existing photo by UploadId; if present and belongs to same trip,
@@ -49,9 +54,31 @@ public class UploadService : IUploadService
 
         if (existingPhoto != null)
         {
+            // I3: Increment upload attempt count for idempotent re-requests
+            existingPhoto.UploadAttemptCount++;
+            existingPhoto.LastActivityAt = DateTime.UtcNow;
+
+            // I4: Delete stale blob with uncommitted blocks to prevent them from being committed in next attempt
+            try
+            {
+                var staleContainerName = $"trip-{tripToken.ToLowerInvariant()}";
+                var staleContainerClient = _blobServiceClient.GetBlobContainerClient(staleContainerName);
+                var staleBlockBlobClient = staleContainerClient.GetBlockBlobClient(existingPhoto.BlobPath);
+                await staleBlockBlobClient.DeleteIfExistsAsync(cancellationToken: ct);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to delete stale blob during idempotent re-request. trip_token_prefix={prefix}",
+                    LogSanitizer.SanitizeToken(tripToken));
+                // Continue anyway - blob will be overwritten on commit
+            }
+
+            _db.Photos.Update(existingPhoto);
+            await _db.SaveChangesAsync(ct);
+
             _logger.LogInformation(
                 "RequestUploadAsync: idempotent call with existing UploadId, returning existing photo_id. trip_token_prefix={prefix}",
-                Sanitize(tripToken.Substring(0, 4)));
+                LogSanitizer.SanitizeToken(tripToken));
 
             var existingSasUrl = await _sasTokenIssuer.IssueWriteSasAsync(
                 $"trip-{tripToken.ToLowerInvariant()}",
@@ -65,8 +92,8 @@ public class UploadService : IUploadService
                 SasUrl = existingSasUrl.ToString(),
                 BlobPath = existingPhoto.BlobPath,
                 MaxBlockSizeBytes = _options.MaxBlockSizeBytes,
-                ServerVersion = "1.0.0",
-                ClientMinVersion = "1.0.0"
+                ServerVersion = ServerVersion.Current,
+                ClientMinVersion = ServerVersion.ClientMin
             };
         }
 
@@ -82,7 +109,11 @@ public class UploadService : IUploadService
             StorageTier = "per-trip",
             UploadId = request.UploadId,
             LastActivityAt = DateTime.UtcNow,
-            // Leave Latitude, Longitude, PlaceName, Caption, TakenAt as defaults initially
+            // Persist EXIF metadata from request
+            Latitude = request.Exif?.GpsLat ?? 0,
+            Longitude = request.Exif?.GpsLon ?? 0,
+            TakenAt = request.Exif?.TakenAt?.UtcDateTime,
+            // Leave PlaceName and Caption as defaults initially (set on commit via reverse geocoding)
         };
 
         await _db.Photos.AddAsync(photo, ct);
@@ -90,7 +121,7 @@ public class UploadService : IUploadService
 
         _logger.LogInformation(
             "RequestUploadAsync: created new photo. trip_token_prefix={prefix}, block_count=0",
-            Sanitize(tripToken.Substring(0, 4)));
+            LogSanitizer.SanitizeToken(tripToken));
 
         // AC1.1: Issue SAS via ISasTokenIssuer
         var containerName = $"trip-{tripToken.ToLowerInvariant()}";
@@ -106,8 +137,8 @@ public class UploadService : IUploadService
             SasUrl = newSasUrl.ToString(),
             BlobPath = blobPath,
             MaxBlockSizeBytes = _options.MaxBlockSizeBytes,
-            ServerVersion = "1.0.0",
-            ClientMinVersion = "1.0.0"
+            ServerVersion = ServerVersion.Current,
+            ClientMinVersion = ServerVersion.ClientMin
         };
     }
 
@@ -119,7 +150,7 @@ public class UploadService : IUploadService
 
         if (trip == null)
         {
-            throw new KeyNotFoundException($"Trip not found: {tripToken}");
+            throw new KeyNotFoundException($"Trip not found: {LogSanitizer.SanitizeToken(tripToken)}");
         }
 
         var photo = await _db.Photos
@@ -146,7 +177,7 @@ public class UploadService : IUploadService
             _logger.LogWarning(
                 "CommitAsync: block list mismatch. missing_blocks={count}, trip_token_prefix={prefix}",
                 missing.Count,
-                Sanitize(tripToken.Substring(0, 4)));
+                LogSanitizer.SanitizeToken(tripToken));
 
             throw new BadHttpRequestException(
                 "Block list validation failed",
@@ -159,7 +190,25 @@ public class UploadService : IUploadService
         _logger.LogInformation(
             "CommitAsync: committed photo. block_count={count}, trip_token_prefix={prefix}",
             request.BlockIds.Count,
-            Sanitize(tripToken.Substring(0, 4)));
+            LogSanitizer.SanitizeToken(tripToken));
+
+        // AC1.4 & C7: Reverse-geocode to set PlaceName if GPS coordinates present
+        if (photo.Latitude != 0 && photo.Longitude != 0 && string.IsNullOrEmpty(photo.PlaceName))
+        {
+            try
+            {
+                var placeName = await _geocodingService.ReverseGeocodeAsync(photo.Latitude, photo.Longitude);
+                if (!string.IsNullOrEmpty(placeName))
+                {
+                    photo.PlaceName = placeName;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to reverse-geocode photo location during commit");
+                // Continue with empty PlaceName if geocoding fails
+            }
+        }
 
         // AC1.4: Update row: status='committed', last_activity_at=UtcNow
         photo.Status = "committed";
@@ -167,10 +216,11 @@ public class UploadService : IUploadService
         _db.Photos.Update(photo);
         await _db.SaveChangesAsync(ct);
 
-        // Return PhotoResponse shaped identically to existing GET /photos endpoint
+        // Return PhotoResponse with both int Id and Guid UploadId for client correlation (I2)
         return new PhotoResponse
         {
             Id = photo.Id,
+            UploadId = photo.UploadId,
             ThumbnailUrl = $"/api/blobs/{photo.BlobPath}/thumbnail",
             DisplayUrl = $"/api/blobs/{photo.BlobPath}/display",
             OriginalUrl = $"/api/blobs/{photo.BlobPath}",
@@ -208,16 +258,7 @@ public class UploadService : IUploadService
 
         _logger.LogInformation(
             "AbortAsync: deleted photo. trip_token_prefix={prefix}",
-            Sanitize(tripToken.Substring(0, 4)));
+            LogSanitizer.SanitizeToken(tripToken));
     }
 
-    /// <summary>
-    /// Sanitize sensitive data (IDs, tokens) for logging.
-    /// </summary>
-    private static string Sanitize(object value)
-    {
-        // For now, just return the value as a string.
-        // This is a placeholder for future log redaction infrastructure.
-        return value.ToString() ?? "?";
-    }
 }

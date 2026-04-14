@@ -1,6 +1,8 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using RoadTripMap.Data;
 using RoadTripMap.Models;
+using RoadTripMap.Security;
 using RoadTripMap.Services;
 
 namespace RoadTripMap.Endpoints;
@@ -53,7 +55,7 @@ public static class UploadEndpoints
             logger.LogInformation(
                 "RequestUploadHandler: success. upload_id={uploadId}, blob_path={blobPath}",
                 request.UploadId,
-                Sanitize(response.BlobPath));
+                LogSanitizer.SanitizeBlobPath(response.BlobPath));
 
             // Return 200 with RequestUploadResponse (includes serverVersion and clientMinVersion)
             return Results.Ok(response);
@@ -65,7 +67,7 @@ public static class UploadEndpoints
         catch (Exception ex)
         {
             logger.LogError(ex, "RequestUploadHandler: unexpected error. token_prefix={prefix}",
-                Sanitize(token.Substring(0, 4)));
+                LogSanitizer.SanitizeToken(token));
             return Results.StatusCode(500);
         }
     }
@@ -102,7 +104,7 @@ public static class UploadEndpoints
             logger.LogInformation(
                 "CommitHandler: photo not found. photo_id={photoId}, token_prefix={prefix}",
                 photoId,
-                Sanitize(token.Substring(0, 4)));
+                LogSanitizer.SanitizeToken(token));
             return Results.NotFound(new { error = "Photo not found or does not belong to this trip" });
         }
         catch (BadHttpRequestException ex) when (ex.Message.Contains("BlockListMismatch"))
@@ -116,7 +118,7 @@ public static class UploadEndpoints
         {
             logger.LogError(ex, "CommitHandler: unexpected error. photo_id={photoId}, token_prefix={prefix}",
                 photoId,
-                Sanitize(token.Substring(0, 4)));
+                LogSanitizer.SanitizeToken(token));
             return Results.StatusCode(500);
         }
     }
@@ -130,12 +132,24 @@ public static class UploadEndpoints
         string token,
         Guid photoId,
         IUploadService uploadService,
+        IAuthStrategy authStrategy,
+        RoadTripDbContext db,
         ILogger<Program> logger,
+        HttpContext context,
         CancellationToken ct)
     {
         try
         {
-            // Validate token via UploadService (it will throw KeyNotFoundException if not found)
+            // Look up trip and validate auth (M3)
+            var trip = await db.Trips.FirstOrDefaultAsync(t => t.SecretToken == token, ct);
+            if (trip == null)
+                return Results.NotFound(new { error = "Trip not found" });
+
+            var authResult = await authStrategy.ValidatePostAccess(context, trip);
+            if (!authResult.IsAuthorized)
+                return Results.Unauthorized();
+
+            // Abort via UploadService (idempotent if photo not found)
             await uploadService.AbortAsync(token, photoId, ct);
 
             logger.LogInformation(
@@ -149,16 +163,9 @@ public static class UploadEndpoints
         {
             logger.LogError(ex, "AbortHandler: unexpected error. photo_id={photoId}, token_prefix={prefix}",
                 photoId,
-                Sanitize(token.Substring(0, 4)));
+                LogSanitizer.SanitizeToken(token));
             return Results.StatusCode(500);
         }
     }
 
-    /// <summary>
-    /// Sanitize sensitive data for logging (tokens, paths).
-    /// </summary>
-    private static string Sanitize(object value)
-    {
-        return value?.ToString() ?? "?";
-    }
 }
