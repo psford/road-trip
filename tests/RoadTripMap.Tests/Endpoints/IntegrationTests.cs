@@ -4,6 +4,7 @@ using SkiaSharp;
 using RoadTripMap.Data;
 using RoadTripMap.Entities;
 using RoadTripMap.Models;
+using RoadTripMap.Tests.Fixtures;
 
 namespace RoadTripMap.Tests.Endpoints;
 
@@ -257,29 +258,23 @@ public class IntegrationTests
         await context.Trips.AddAsync(trip);
         await context.SaveChangesAsync();
 
-        var photo1 = new PhotoEntity
-        {
-            TripId = trip.Id,
-            Latitude = 40.7128,
-            Longitude = -74.0060,
-            Caption = "NYC",
-            TakenAt = DateTime.UtcNow,
-            CreatedAt = DateTime.UtcNow,
-            PlaceName = "New York City",
-            BlobPath = "1/1.jpg"
-        };
+        var photo1 = new PhotoEntityBuilder()
+            .WithTripId(trip.Id)
+            .WithBlobPath("1/1.jpg")
+            .WithCoordinates(40.7128, -74.0060)
+            .WithPlaceName("New York City")
+            .WithCaption("NYC")
+            .WithTakenAt(DateTime.UtcNow)
+            .Build();
 
-        var photo2 = new PhotoEntity
-        {
-            TripId = trip.Id,
-            Latitude = 34.0522,
-            Longitude = -118.2437,
-            Caption = "LA",
-            TakenAt = DateTime.UtcNow.AddHours(1),
-            CreatedAt = DateTime.UtcNow.AddHours(1),
-            PlaceName = "Los Angeles",
-            BlobPath = "1/2.jpg"
-        };
+        var photo2 = new PhotoEntityBuilder()
+            .WithTripId(trip.Id)
+            .WithBlobPath("1/2.jpg")
+            .WithCoordinates(34.0522, -118.2437)
+            .WithPlaceName("Los Angeles")
+            .WithCaption("LA")
+            .WithTakenAt(DateTime.UtcNow.AddHours(1))
+            .Build();
 
         await context.Photos.AddAsync(photo1);
         await context.Photos.AddAsync(photo2);
@@ -318,17 +313,14 @@ public class IntegrationTests
         await context.Trips.AddAsync(trip);
         await context.SaveChangesAsync();
 
-        var photo = new PhotoEntity
-        {
-            TripId = trip.Id,
-            Latitude = 37.7749,
-            Longitude = -122.4194,
-            Caption = "SF",
-            TakenAt = DateTime.UtcNow,
-            CreatedAt = DateTime.UtcNow,
-            PlaceName = "San Francisco",
-            BlobPath = "1/3.jpg"
-        };
+        var photo = new PhotoEntityBuilder()
+            .WithTripId(trip.Id)
+            .WithBlobPath("1/3.jpg")
+            .WithCoordinates(37.7749, -122.4194)
+            .WithPlaceName("San Francisco")
+            .WithCaption("SF")
+            .WithTakenAt(DateTime.UtcNow)
+            .Build();
 
         await context.Photos.AddAsync(photo);
         await context.SaveChangesAsync();

@@ -9,6 +9,7 @@ using RoadTripMap.Data;
 using RoadTripMap.Entities;
 using RoadTripMap.Models;
 using RoadTripMap.Services;
+using RoadTripMap.Tests.Fixtures;
 using System.Text.Json;
 
 namespace RoadTripMap.Tests.Endpoints;
@@ -40,15 +41,12 @@ public class PhotoEndpointTests
         await context.SaveChangesAsync();
 
         // Act
-        var photo = new PhotoEntity
-        {
-            TripId = trip.Id,
-            Latitude = 40.7128,
-            Longitude = -74.0060,
-            Caption = "NYC",
-            TakenAt = DateTime.UtcNow,
-            BlobPath = "1/1.jpg"
-        };
+        var photo = new PhotoEntityBuilder()
+            .WithTripId(trip.Id)
+            .WithCoordinates(40.7128, -74.0060)
+            .WithCaption("NYC")
+            .WithTakenAt(DateTime.UtcNow)
+            .Build();
         await context.Photos.AddAsync(photo);
         await context.SaveChangesAsync();
 
@@ -74,15 +72,12 @@ public class PhotoEndpointTests
         await context.SaveChangesAsync();
 
         // Act
-        var photo = new PhotoEntity
-        {
-            TripId = trip.Id,
-            Latitude = 40.7128,
-            Longitude = -74.0060,
-            Caption = null,
-            TakenAt = DateTime.UtcNow,
-            BlobPath = "1/2.jpg"
-        };
+        var photo = new PhotoEntityBuilder()
+            .WithTripId(trip.Id)
+            .WithCoordinates(40.7128, -74.0060)
+            .WithCaption(null)
+            .WithTakenAt(DateTime.UtcNow)
+            .Build();
         await context.Photos.AddAsync(photo);
         await context.SaveChangesAsync();
 
@@ -107,15 +102,12 @@ public class PhotoEndpointTests
         await context.Trips.AddAsync(trip);
         await context.SaveChangesAsync();
 
-        var photo = new PhotoEntity
-        {
-            TripId = trip.Id,
-            Latitude = 40.7128,
-            Longitude = -74.0060,
-            Caption = "NYC",
-            TakenAt = DateTime.UtcNow,
-            BlobPath = "1/3.jpg"
-        };
+        var photo = new PhotoEntityBuilder()
+            .WithTripId(trip.Id)
+            .WithCoordinates(40.7128, -74.0060)
+            .WithCaption("NYC")
+            .WithTakenAt(DateTime.UtcNow)
+            .Build();
         await context.Photos.AddAsync(photo);
         await context.SaveChangesAsync();
 
@@ -166,15 +158,12 @@ public class PhotoEndpointTests
         await context.SaveChangesAsync();
 
         // Act
-        var photo = new PhotoEntity
-        {
-            TripId = trip.Id,
-            Latitude = 40.7128,
-            Longitude = -74.0060,
-            Caption = "Test",
-            TakenAt = DateTime.UtcNow,
-            BlobPath = "1/4.jpg"
-        };
+        var photo = new PhotoEntityBuilder()
+            .WithTripId(trip.Id)
+            .WithCoordinates(40.7128, -74.0060)
+            .WithCaption("Test")
+            .WithTakenAt(DateTime.UtcNow)
+            .Build();
         await context.Photos.AddAsync(photo);
         await context.SaveChangesAsync();
 
@@ -265,15 +254,12 @@ public class PhotoEndpointTests
         await context.Trips.AddAsync(trip);
         await context.SaveChangesAsync();
 
-        var photo = new PhotoEntity
-        {
-            TripId = trip.Id,
-            Latitude = 40.7128,
-            Longitude = -74.0060,
-            Caption = "Test",
-            TakenAt = DateTime.UtcNow,
-            BlobPath = "1/5.jpg"
-        };
+        var photo = new PhotoEntityBuilder()
+            .WithTripId(trip.Id)
+            .WithCoordinates(40.7128, -74.0060)
+            .WithCaption("Test")
+            .WithTakenAt(DateTime.UtcNow)
+            .Build();
         await context.Photos.AddAsync(photo);
         await context.SaveChangesAsync();
 
@@ -301,15 +287,12 @@ public class PhotoEndpointTests
         await context.Trips.AddAsync(trip);
         await context.SaveChangesAsync();
 
-        var photo = new PhotoEntity
-        {
-            TripId = trip.Id,
-            Latitude = 40.7128,
-            Longitude = -74.0060,
-            Caption = "Test",
-            TakenAt = DateTime.UtcNow,
-            BlobPath = "1/6.jpg"
-        };
+        var photo = new PhotoEntityBuilder()
+            .WithTripId(trip.Id)
+            .WithCoordinates(40.7128, -74.0060)
+            .WithCaption("Test")
+            .WithTakenAt(DateTime.UtcNow)
+            .Build();
         await context.Photos.AddAsync(photo);
         await context.SaveChangesAsync();
 
@@ -337,15 +320,12 @@ public class PhotoEndpointTests
         await context.Trips.AddAsync(trip);
         await context.SaveChangesAsync();
 
-        var photo = new PhotoEntity
-        {
-            TripId = trip.Id,
-            Latitude = 40.7128,
-            Longitude = -74.0060,
-            Caption = "Test",
-            TakenAt = DateTime.UtcNow,
-            BlobPath = "1/7.jpg"
-        };
+        var photo = new PhotoEntityBuilder()
+            .WithTripId(trip.Id)
+            .WithCoordinates(40.7128, -74.0060)
+            .WithCaption("Test")
+            .WithTakenAt(DateTime.UtcNow)
+            .Build();
         await context.Photos.AddAsync(photo);
         await context.SaveChangesAsync();
 
@@ -388,15 +368,12 @@ public class PhotoEndpointTests
         await context.Trips.AddAsync(trip);
         await context.SaveChangesAsync();
 
-        var photo = new PhotoEntity
-        {
-            TripId = trip.Id,
-            Latitude = 40.7128,
-            Longitude = -74.0060,
-            Caption = "Test",
-            TakenAt = DateTime.UtcNow,
-            BlobPath = "1/8.jpg"
-        };
+        var photo = new PhotoEntityBuilder()
+            .WithTripId(trip.Id)
+            .WithCoordinates(40.7128, -74.0060)
+            .WithCaption("Test")
+            .WithTakenAt(DateTime.UtcNow)
+            .Build();
         await context.Photos.AddAsync(photo);
         await context.SaveChangesAsync();
 
@@ -424,15 +401,12 @@ public class PhotoEndpointTests
         await context.Trips.AddAsync(trip);
         await context.SaveChangesAsync();
 
-        var photo = new PhotoEntity
-        {
-            TripId = trip.Id,
-            Latitude = 40.7128,
-            Longitude = -74.0060,
-            Caption = "Test",
-            TakenAt = DateTime.UtcNow,
-            BlobPath = "1/9.jpg"
-        };
+        var photo = new PhotoEntityBuilder()
+            .WithTripId(trip.Id)
+            .WithCoordinates(40.7128, -74.0060)
+            .WithCaption("Test")
+            .WithTakenAt(DateTime.UtcNow)
+            .Build();
         await context.Photos.AddAsync(photo);
         await context.SaveChangesAsync();
 
@@ -475,28 +449,20 @@ public class PhotoEndpointTests
         await context.SaveChangesAsync();
 
         var now = DateTime.UtcNow;
-        var photo1 = new PhotoEntity
-        {
-            TripId = trip.Id,
-            Latitude = 40.7128,
-            Longitude = -74.0060,
-            Caption = "NYC Photo 1",
-            TakenAt = now.AddHours(-1),
-            CreatedAt = now.AddHours(-1),
-            PlaceName = "New York",
-            BlobPath = "1/10.jpg"
-        };
-        var photo2 = new PhotoEntity
-        {
-            TripId = trip.Id,
-            Latitude = 34.0522,
-            Longitude = -118.2437,
-            Caption = null,
-            TakenAt = now,
-            CreatedAt = now,
-            PlaceName = "Los Angeles",
-            BlobPath = "1/11.jpg"
-        };
+        var photo1 = new PhotoEntityBuilder()
+            .WithTripId(trip.Id)
+            .WithCoordinates(40.7128, -74.0060)
+            .WithPlaceName("New York")
+            .WithCaption("NYC Photo 1")
+            .WithTakenAt(now.AddHours(-1))
+            .Build();
+        var photo2 = new PhotoEntityBuilder()
+            .WithTripId(trip.Id)
+            .WithCoordinates(34.0522, -118.2437)
+            .WithPlaceName("Los Angeles")
+            .WithCaption(null)
+            .WithTakenAt(now)
+            .Build();
         await context.Photos.AddAsync(photo1);
         await context.Photos.AddAsync(photo2);
         await context.SaveChangesAsync();
@@ -602,36 +568,24 @@ public class PhotoEndpointTests
         await context.SaveChangesAsync();
 
         var now = DateTime.UtcNow;
-        var photo1 = new PhotoEntity
-        {
-            TripId = trip.Id,
-            Latitude = 40.7128,
-            Longitude = -74.0060,
-            Caption = "First",
-            TakenAt = now.AddHours(-2),
-            CreatedAt = now.AddHours(-2),
-            BlobPath = "1/12.jpg"
-        };
-        var photo2 = new PhotoEntity
-        {
-            TripId = trip.Id,
-            Latitude = 34.0522,
-            Longitude = -118.2437,
-            Caption = "Second",
-            TakenAt = now.AddHours(-1),
-            CreatedAt = now.AddHours(-1),
-            BlobPath = "1/13.jpg"
-        };
-        var photo3 = new PhotoEntity
-        {
-            TripId = trip.Id,
-            Latitude = 41.8781,
-            Longitude = -87.6298,
-            Caption = "Third",
-            TakenAt = now,
-            CreatedAt = now,
-            BlobPath = "1/14.jpg"
-        };
+        var photo1 = new PhotoEntityBuilder()
+            .WithTripId(trip.Id)
+            .WithCoordinates(40.7128, -74.0060)
+            .WithCaption("First")
+            .WithTakenAt(now.AddHours(-2))
+            .Build();
+        var photo2 = new PhotoEntityBuilder()
+            .WithTripId(trip.Id)
+            .WithCoordinates(34.0522, -118.2437)
+            .WithCaption("Second")
+            .WithTakenAt(now.AddHours(-1))
+            .Build();
+        var photo3 = new PhotoEntityBuilder()
+            .WithTripId(trip.Id)
+            .WithCoordinates(41.8781, -87.6298)
+            .WithCaption("Third")
+            .WithTakenAt(now)
+            .Build();
         await context.Photos.AddAsync(photo1);
         await context.Photos.AddAsync(photo2);
         await context.Photos.AddAsync(photo3);
@@ -705,46 +659,30 @@ public class PhotoEndpointTests
         var now = DateTime.UtcNow;
 
         // Create photos with mixed takenAt values (some null, some with dates)
-        var photo1 = new PhotoEntity
-        {
-            TripId = trip.Id,
-            Latitude = 40.7128,
-            Longitude = -74.0060,
-            Caption = "Photo with old date",
-            TakenAt = now.AddDays(-5),
-            CreatedAt = now.AddDays(-5),
-            BlobPath = "1/15.jpg"
-        };
-        var photo2 = new PhotoEntity
-        {
-            TripId = trip.Id,
-            Latitude = 34.0522,
-            Longitude = -118.2437,
-            Caption = "Photo with null takenAt",
-            TakenAt = null,
-            CreatedAt = now.AddDays(-3),
-            BlobPath = "1/16.jpg"
-        };
-        var photo3 = new PhotoEntity
-        {
-            TripId = trip.Id,
-            Latitude = 41.8781,
-            Longitude = -87.6298,
-            Caption = "Photo with recent date",
-            TakenAt = now.AddDays(-1),
-            CreatedAt = now.AddDays(-1),
-            BlobPath = "1/17.jpg"
-        };
-        var photo4 = new PhotoEntity
-        {
-            TripId = trip.Id,
-            Latitude = 39.7392,
-            Longitude = -104.9903,
-            Caption = "Another photo with null takenAt",
-            TakenAt = null,
-            CreatedAt = now,
-            BlobPath = "1/18.jpg"
-        };
+        var photo1 = new PhotoEntityBuilder()
+            .WithTripId(trip.Id)
+            .WithCoordinates(40.7128, -74.0060)
+            .WithCaption("Photo with old date")
+            .WithTakenAt(now.AddDays(-5))
+            .Build();
+        var photo2 = new PhotoEntityBuilder()
+            .WithTripId(trip.Id)
+            .WithCoordinates(34.0522, -118.2437)
+            .WithCaption("Photo with null takenAt")
+            .WithTakenAt(null)
+            .Build();
+        var photo3 = new PhotoEntityBuilder()
+            .WithTripId(trip.Id)
+            .WithCoordinates(41.8781, -87.6298)
+            .WithCaption("Photo with recent date")
+            .WithTakenAt(now.AddDays(-1))
+            .Build();
+        var photo4 = new PhotoEntityBuilder()
+            .WithTripId(trip.Id)
+            .WithCoordinates(39.7392, -104.9903)
+            .WithCaption("Another photo with null takenAt")
+            .WithTakenAt(null)
+            .Build();
 
         await context.Photos.AddAsync(photo1);
         await context.Photos.AddAsync(photo2);

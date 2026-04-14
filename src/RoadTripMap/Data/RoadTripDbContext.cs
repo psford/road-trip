@@ -41,6 +41,20 @@ public class RoadTripDbContext : DbContext
             entity.Property(e => e.PlaceName).HasMaxLength(500);
             entity.Property(e => e.Caption).HasMaxLength(1000);
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+
+            // Upload status and lifecycle columns
+            entity.Property(e => e.Status).HasMaxLength(20).HasDefaultValue("committed").IsRequired();
+            entity.Property(e => e.StorageTier).HasMaxLength(16).HasDefaultValue("legacy").IsRequired();
+            entity.Property(e => e.UploadId).HasColumnType("uniqueidentifier");
+            entity.Property(e => e.LastActivityAt).HasColumnType("datetime2");
+            entity.Property(e => e.UploadAttemptCount).HasDefaultValue(0);
+
+            // Filtered unique index for UploadId (only non-null values are unique)
+            entity.HasIndex(e => e.UploadId)
+                .IsUnique()
+                .HasFilter("[UploadId] IS NOT NULL")
+                .HasDatabaseName("IX_Photos_UploadId");
+
             entity.HasOne(e => e.Trip)
                   .WithMany(t => t.Photos)
                   .HasForeignKey(e => e.TripId)

@@ -278,7 +278,9 @@ app.MapPost("/api/trips/{secretToken}/photos", async (string secretToken, IFormF
         Caption = caption,
         TakenAt = takenAt,
         PlaceName = null, // Will be set by geocoding
-        BlobPath = "" // Placeholder, will be set after upload
+        BlobPath = "", // Placeholder, will be set after upload
+        Status = "committed",
+        StorageTier = "legacy"
     };
 
     db.Photos.Add(photo);

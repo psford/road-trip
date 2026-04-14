@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using RoadTripMap.Data;
 using RoadTripMap.Entities;
 using RoadTripMap.Services;
+using RoadTripMap.Tests.Fixtures;
 using Xunit;
 
 namespace RoadTripMap.Tests.Endpoints;
@@ -63,16 +64,14 @@ public class GeocodeEndpointTests
         await context.SaveChangesAsync();
 
         // Create a photo with valid coordinates
-        var photo = new PhotoEntity
-        {
-            TripId = trip.Id,
-            Latitude = 36.1069,
-            Longitude = -112.1129,
-            Caption = "Test photo",
-            TakenAt = DateTime.UtcNow,
-            BlobPath = "test/photo.jpg",
-            PlaceName = "Grand Canyon, Arizona" // Simulating what endpoint would set
-        };
+        var photo = new PhotoEntityBuilder()
+            .WithTripId(trip.Id)
+            .WithCoordinates(36.1069, -112.1129)
+            .WithCaption("Test photo")
+            .WithTakenAt(DateTime.UtcNow)
+            .WithBlobPath("test/photo.jpg")
+            .WithPlaceName("Grand Canyon, Arizona")
+            .Build();
         context.Photos.Add(photo);
         await context.SaveChangesAsync();
 
@@ -100,16 +99,14 @@ public class GeocodeEndpointTests
         await context.SaveChangesAsync();
 
         // Create a photo with zero coordinates (no GPS data)
-        var photo = new PhotoEntity
-        {
-            TripId = trip.Id,
-            Latitude = 0,
-            Longitude = 0,
-            Caption = "Test photo",
-            TakenAt = DateTime.UtcNow,
-            BlobPath = "test/photo.jpg",
-            PlaceName = "Location not set" // AC2.9 edge case
-        };
+        var photo = new PhotoEntityBuilder()
+            .WithTripId(trip.Id)
+            .WithCoordinates(0, 0)
+            .WithCaption("Test photo")
+            .WithTakenAt(DateTime.UtcNow)
+            .WithBlobPath("test/photo.jpg")
+            .WithPlaceName("Location not set")
+            .Build();
         context.Photos.Add(photo);
         await context.SaveChangesAsync();
 
@@ -137,16 +134,14 @@ public class GeocodeEndpointTests
         await context.SaveChangesAsync();
 
         // Create a photo where geocoding returns null
-        var photo = new PhotoEntity
-        {
-            TripId = trip.Id,
-            Latitude = 40.7128,
-            Longitude = -74.0060,
-            Caption = "Test photo",
-            TakenAt = DateTime.UtcNow,
-            BlobPath = "test/photo.jpg",
-            PlaceName = "Unknown location" // Fallback when geocoding fails
-        };
+        var photo = new PhotoEntityBuilder()
+            .WithTripId(trip.Id)
+            .WithCoordinates(40.7128, -74.0060)
+            .WithCaption("Test photo")
+            .WithTakenAt(DateTime.UtcNow)
+            .WithBlobPath("test/photo.jpg")
+            .WithPlaceName("Unknown location")
+            .Build();
         context.Photos.Add(photo);
         await context.SaveChangesAsync();
 
