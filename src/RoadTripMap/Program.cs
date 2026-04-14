@@ -198,7 +198,7 @@ app.MapGet("/api/trips/view/{viewToken}/photos", async (string viewToken, RoadTr
     return Results.Ok(photos);
 });
 
-app.MapPost("/api/trips", async (CreateTripRequest request, RoadTripDbContext db) =>
+app.MapPost("/api/trips", async (CreateTripRequest request, RoadTripDbContext db, IBlobContainerProvisioner provisioner, ILogger<Program> logger, HttpContext context) =>
 {
     // Validate trip name
     if (string.IsNullOrWhiteSpace(request.Name))
@@ -231,6 +231,19 @@ app.MapPost("/api/trips", async (CreateTripRequest request, RoadTripDbContext db
     db.Trips.Add(trip);
     await db.SaveChangesAsync();
 
+    // Provision per-trip blob container (after trip is saved; do NOT roll back trip row on provisioner failure)
+    try
+    {
+        await provisioner.EnsureContainerAsync(secretToken, context.RequestAborted);
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "Failed to provision blob container for trip {trip_token_prefix}",
+            secretToken.Substring(0, Math.Min(4, secretToken.Length)));
+        // Return 500 but do not roll back the trip row
+        return Results.StatusCode(500);
+    }
+
     // Return response with URLs
     var response = new CreateTripResponse
     {
@@ -242,6 +255,55 @@ app.MapPost("/api/trips", async (CreateTripRequest request, RoadTripDbContext db
     };
 
     return Results.Ok(response);
+});
+
+// DELETE /api/trips/{secretToken} — Delete trip
+app.MapDelete("/api/trips/{secretToken}", async (string secretToken, RoadTripDbContext db, IBlobContainerProvisioner provisioner, IPhotoService photoService, ILogger<Program> logger, HttpContext context) =>
+{
+    // Look up trip by secret token
+    var trip = await db.Trips.FirstOrDefaultAsync(t => t.SecretToken == secretToken);
+    if (trip == null)
+        return Results.NotFound(new { error = "Trip not found" });
+
+    // Delete legacy blobs (existing code path)
+    var legacyPhotos = await db.Photos.Where(p => p.TripId == trip.Id && p.StorageTier == "legacy").ToListAsync();
+    foreach (var photo in legacyPhotos)
+    {
+        if (!string.IsNullOrEmpty(photo.BlobPath))
+        {
+            try
+            {
+                await photoService.DeletePhotoAsync(photo.BlobPath);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Failed to delete legacy blob for photo {photo_id}", photo.Id);
+            }
+        }
+    }
+
+    // Delete per-trip container
+    try
+    {
+        await provisioner.DeleteContainerAsync(secretToken, context.RequestAborted);
+    }
+    catch (Exception ex)
+    {
+        logger.LogWarning(ex, "Failed to delete blob container for trip {trip_token_prefix}",
+            secretToken.Substring(0, Math.Min(4, secretToken.Length)));
+    }
+
+    // Delete trip and all associated photos
+    db.Trips.Remove(trip);
+    var allPhotos = await db.Photos.Where(p => p.TripId == trip.Id).ToListAsync();
+    foreach (var photo in allPhotos)
+    {
+        db.Photos.Remove(photo);
+    }
+
+    await db.SaveChangesAsync();
+
+    return Results.NoContent();
 });
 
 // POST /api/trips/{secretToken}/photos — Upload photo
