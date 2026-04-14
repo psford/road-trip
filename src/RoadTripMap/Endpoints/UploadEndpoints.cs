@@ -16,16 +16,16 @@ public static class UploadEndpoints
     /// </summary>
     public static WebApplication MapUploadEndpoints(this WebApplication app)
     {
-        var group = app.MapGroup("/api/trips/{token}/photos")
-            .WithName("PhotoUpload");
-
-        group.MapPost("request-upload", RequestUploadHandler)
+        // POST /api/trips/{token}/photos/request-upload
+        app.MapPost("/api/trips/{token}/photos/request-upload", RequestUploadHandler)
             .WithName("RequestUpload");
 
-        group.MapPost("{photoId:guid}/commit", CommitHandler)
+        // POST /api/trips/{token}/photos/{photoId:guid}/commit
+        app.MapPost("/api/trips/{token}/photos/{photoId:guid}/commit", CommitHandler)
             .WithName("Commit");
 
-        group.MapPost("{photoId:guid}/abort", AbortHandler)
+        // POST /api/trips/{token}/photos/{photoId:guid}/abort
+        app.MapPost("/api/trips/{token}/photos/{photoId:guid}/abort", AbortHandler)
             .WithName("Abort");
 
         return app;
@@ -40,7 +40,6 @@ public static class UploadEndpoints
     private static async Task<IResult> RequestUploadHandler(
         string token,
         [FromBody] RequestUploadRequest request,
-        RoadTripDbContext db,
         IUploadService uploadService,
         ILogger<Program> logger,
         CancellationToken ct)
@@ -81,7 +80,6 @@ public static class UploadEndpoints
         string token,
         Guid photoId,
         [FromBody] CommitRequest request,
-        RoadTripDbContext db,
         IUploadService uploadService,
         ILogger<Program> logger,
         CancellationToken ct)
@@ -131,7 +129,6 @@ public static class UploadEndpoints
     private static async Task<IResult> AbortHandler(
         string token,
         Guid photoId,
-        RoadTripDbContext db,
         IUploadService uploadService,
         ILogger<Program> logger,
         CancellationToken ct)
