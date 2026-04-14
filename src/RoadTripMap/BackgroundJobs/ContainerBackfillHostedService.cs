@@ -1,5 +1,4 @@
 using Microsoft.EntityFrameworkCore;
-using RoadTripMap.Data;
 using RoadTripMap.Services;
 
 namespace RoadTripMap.BackgroundJobs;
@@ -7,22 +6,20 @@ namespace RoadTripMap.BackgroundJobs;
 /// <summary>
 /// Hosted service that runs on startup to backfill blob containers for all existing trips.
 /// Activated only if Backfill:RunOnStartup is true in configuration.
+/// Creates a new scope per run to avoid captive dependency issues.
 /// </summary>
 public class ContainerBackfillHostedService : IHostedService
 {
-    private readonly RoadTripDbContext _db;
-    private readonly IBlobContainerProvisioner _provisioner;
+    private readonly IServiceProvider _serviceProvider;
     private readonly ILogger<ContainerBackfillHostedService> _logger;
     private readonly bool _runOnStartup;
 
     public ContainerBackfillHostedService(
-        RoadTripDbContext db,
-        IBlobContainerProvisioner provisioner,
+        IServiceProvider serviceProvider,
         ILogger<ContainerBackfillHostedService> logger,
         IConfiguration configuration)
     {
-        _db = db;
-        _provisioner = provisioner;
+        _serviceProvider = serviceProvider;
         _logger = logger;
         _runOnStartup = configuration.GetValue<bool>("Backfill:RunOnStartup");
     }
@@ -36,7 +33,12 @@ public class ContainerBackfillHostedService : IHostedService
 
         _logger.LogInformation("Starting blob container backfill for existing trips");
 
-        var trips = await _db.Trips.ToListAsync();
+        // Create a scope to resolve scoped dependencies (db, provisioner)
+        using var scope = _serviceProvider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<RoadTripMap.Data.RoadTripDbContext>();
+        var provisioner = scope.ServiceProvider.GetRequiredService<IBlobContainerProvisioner>();
+
+        var trips = await db.Trips.ToListAsync(cancellationToken);
         var succeeded = 0;
         var failed = 0;
 
@@ -44,7 +46,7 @@ public class ContainerBackfillHostedService : IHostedService
         {
             try
             {
-                await _provisioner.EnsureContainerAsync(trip.SecretToken, cancellationToken);
+                await provisioner.EnsureContainerAsync(trip.SecretToken, cancellationToken);
                 succeeded++;
             }
             catch (Exception ex)
