@@ -2,20 +2,9 @@
   "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
   "contentVersion": "1.0.0.0",
   "parameters": {
-    "sqlAdminUsername": {
-      "value": "sqladmin"
-    },
-    "sqlAdminPassword": {
-      "value": "#{SQLAdminPassword}#"
-    },
-    "storageConnectionString": {
-      "value": "DefaultEndpointsProtocol=https;AccountName={storage-account-name};AccountKey={storage-account-key};EndpointSuffix=core.windows.net"
-    },
-    "npsApiKey": {
-      "value": "#{NpsApiKey}#"
-    },
-    "environment": {
-      "value": "Production"
-    }
+    "environment": { "value": "Production" },
+    "sqlAdminUsername": { "value": "sqladmin" },
+    "containerImageTag": { "value": "prod-33" },
+    "wsl2TempFirewallIp": { "value": "38.42.115.201" }
   }
 }
