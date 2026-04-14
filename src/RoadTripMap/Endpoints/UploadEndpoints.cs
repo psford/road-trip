@@ -18,38 +18,50 @@ public static class UploadEndpoints
     /// </summary>
     public static WebApplication MapUploadEndpoints(this WebApplication app)
     {
-        // POST /api/trips/{token}/photos/request-upload
-        app.MapPost("/api/trips/{token}/photos/request-upload", RequestUploadHandler)
+        // POST /api/trips/{secretToken}/photos/request-upload
+        app.MapPost("/api/trips/{secretToken}/photos/request-upload", RequestUploadHandler)
             .WithName("RequestUpload");
 
-        // POST /api/trips/{token}/photos/{photoId:guid}/commit
-        app.MapPost("/api/trips/{token}/photos/{photoId:guid}/commit", CommitHandler)
+        // POST /api/trips/{secretToken}/photos/{photoId:guid}/commit
+        app.MapPost("/api/trips/{secretToken}/photos/{photoId:guid}/commit", CommitHandler)
             .WithName("Commit");
 
-        // POST /api/trips/{token}/photos/{photoId:guid}/abort
-        app.MapPost("/api/trips/{token}/photos/{photoId:guid}/abort", AbortHandler)
+        // POST /api/trips/{secretToken}/photos/{photoId:guid}/abort
+        app.MapPost("/api/trips/{secretToken}/photos/{photoId:guid}/abort", AbortHandler)
             .WithName("Abort");
 
         return app;
     }
 
     /// <summary>
-    /// POST /api/trips/{token}/photos/request-upload
+    /// POST /api/trips/{secretToken}/photos/request-upload
     /// Initiates a photo upload and returns a SAS-signed URL for block uploads.
     /// AC1.1: Creates row with status='pending', issues SAS token, returns RequestUploadResponse.
     /// AC1.3: Idempotent on upload_id; returns existing photo_id if present.
     /// </summary>
     private static async Task<IResult> RequestUploadHandler(
-        string token,
+        string secretToken,
         [FromBody] RequestUploadRequest request,
         IUploadService uploadService,
+        IAuthStrategy authStrategy,
+        RoadTripDbContext db,
         ILogger<Program> logger,
+        HttpContext context,
         CancellationToken ct)
     {
         try
         {
-            // Validate token via UploadService (it will throw KeyNotFoundException if not found)
-            var response = await uploadService.RequestUploadAsync(token, request, ct);
+            // Look up trip and validate auth
+            var trip = await db.Trips.FirstOrDefaultAsync(t => t.SecretToken == secretToken, ct);
+            if (trip == null)
+                return Results.NotFound(new { error = "Trip not found" });
+
+            var authResult = await authStrategy.ValidatePostAccess(context, trip);
+            if (!authResult.IsAuthorized)
+                return Results.Unauthorized();
+
+            // Initiate upload via UploadService
+            var response = await uploadService.RequestUploadAsync(secretToken, request, ct);
 
             // Log success with sanitized data
             logger.LogInformation(
@@ -60,36 +72,44 @@ public static class UploadEndpoints
             // Return 200 with RequestUploadResponse (includes serverVersion and clientMinVersion)
             return Results.Ok(response);
         }
-        catch (KeyNotFoundException)
-        {
-            return Results.NotFound(new { error = "Trip not found" });
-        }
         catch (Exception ex)
         {
             logger.LogError(ex, "RequestUploadHandler: unexpected error. token_prefix={prefix}",
-                LogSanitizer.SanitizeToken(token));
+                LogSanitizer.SanitizeToken(secretToken));
             return Results.StatusCode(500);
         }
     }
 
     /// <summary>
-    /// POST /api/trips/{token}/photos/{photoId:guid}/commit
+    /// POST /api/trips/{secretToken}/photos/{photoId:guid}/commit
     /// Finalizes a photo upload by committing the staged blocks into a blob.
     /// AC1.4: Validates block list; returns 400 on mismatch.
     /// AC1.6: Returns 404 if photo_id doesn't belong to this trip.
     /// </summary>
     private static async Task<IResult> CommitHandler(
-        string token,
+        string secretToken,
         Guid photoId,
         [FromBody] CommitRequest request,
         IUploadService uploadService,
+        IAuthStrategy authStrategy,
+        RoadTripDbContext db,
         ILogger<Program> logger,
+        HttpContext context,
         CancellationToken ct)
     {
         try
         {
-            // Validate token via UploadService (it will throw KeyNotFoundException if not found)
-            var response = await uploadService.CommitAsync(token, photoId, request, ct);
+            // Look up trip and validate auth
+            var trip = await db.Trips.FirstOrDefaultAsync(t => t.SecretToken == secretToken, ct);
+            if (trip == null)
+                return Results.NotFound(new { error = "Trip not found" });
+
+            var authResult = await authStrategy.ValidatePostAccess(context, trip);
+            if (!authResult.IsAuthorized)
+                return Results.Unauthorized();
+
+            // Commit via UploadService
+            var response = await uploadService.CommitAsync(secretToken, photoId, request, ct);
 
             logger.LogInformation(
                 "CommitHandler: success. photo_id={photoId}, block_count={blockCount}",
@@ -104,7 +124,7 @@ public static class UploadEndpoints
             logger.LogInformation(
                 "CommitHandler: photo not found. photo_id={photoId}, token_prefix={prefix}",
                 photoId,
-                LogSanitizer.SanitizeToken(token));
+                LogSanitizer.SanitizeToken(secretToken));
             return Results.NotFound(new { error = "Photo not found or does not belong to this trip" });
         }
         catch (BadHttpRequestException ex) when (ex.Message.Contains("BlockListMismatch"))
@@ -118,18 +138,18 @@ public static class UploadEndpoints
         {
             logger.LogError(ex, "CommitHandler: unexpected error. photo_id={photoId}, token_prefix={prefix}",
                 photoId,
-                LogSanitizer.SanitizeToken(token));
+                LogSanitizer.SanitizeToken(secretToken));
             return Results.StatusCode(500);
         }
     }
 
     /// <summary>
-    /// POST /api/trips/{token}/photos/{photoId:guid}/abort
+    /// POST /api/trips/{secretToken}/photos/{photoId:guid}/abort
     /// Cancels an in-progress upload, deleting the pending photo row.
     /// AC1.7: Idempotent; no-op if photo not found.
     /// </summary>
     private static async Task<IResult> AbortHandler(
-        string token,
+        string secretToken,
         Guid photoId,
         IUploadService uploadService,
         IAuthStrategy authStrategy,
@@ -141,7 +161,7 @@ public static class UploadEndpoints
         try
         {
             // Look up trip and validate auth (M3)
-            var trip = await db.Trips.FirstOrDefaultAsync(t => t.SecretToken == token, ct);
+            var trip = await db.Trips.FirstOrDefaultAsync(t => t.SecretToken == secretToken, ct);
             if (trip == null)
                 return Results.NotFound(new { error = "Trip not found" });
 
@@ -150,7 +170,7 @@ public static class UploadEndpoints
                 return Results.Unauthorized();
 
             // Abort via UploadService (idempotent if photo not found)
-            await uploadService.AbortAsync(token, photoId, ct);
+            await uploadService.AbortAsync(secretToken, photoId, ct);
 
             logger.LogInformation(
                 "AbortHandler: success (or idempotent no-op). photo_id={photoId}",
@@ -163,7 +183,7 @@ public static class UploadEndpoints
         {
             logger.LogError(ex, "AbortHandler: unexpected error. photo_id={photoId}, token_prefix={prefix}",
                 photoId,
-                LogSanitizer.SanitizeToken(token));
+                LogSanitizer.SanitizeToken(secretToken));
             return Results.StatusCode(500);
         }
     }

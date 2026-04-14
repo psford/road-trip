@@ -109,6 +109,7 @@ public class UploadService : IUploadService
             StorageTier = "per-trip",
             UploadId = request.UploadId,
             LastActivityAt = DateTime.UtcNow,
+            CreatedAt = DateTime.UtcNow,
             // Persist EXIF metadata from request
             Latitude = request.Exif?.GpsLat ?? 0,
             Longitude = request.Exif?.GpsLon ?? 0,
