@@ -28,6 +28,7 @@ builder.Services.AddSingleton<UploadRateLimiter>();
 builder.Services.AddSingleton<INominatimRateLimiter, NominatimRateLimiter>();
 builder.Services.AddScoped<IAuthStrategy, SecretTokenAuthStrategy>();
 builder.Services.AddScoped<IPhotoService, PhotoService>();
+builder.Services.AddScoped<IPhotoReadService, PhotoReadService>();
 
 // Upload service and SAS token issuance
 builder.Services.AddScoped<IUploadService, UploadService>();
@@ -436,34 +437,17 @@ app.MapGet("/api/post/{secretToken}", async (string secretToken, RoadTripDbConte
 });
 
 // GET /api/post/{secretToken}/photos — Get photos for a trip (distinct from slug-based endpoint)
-app.MapGet("/api/post/{secretToken}/photos", async (string secretToken, RoadTripDbContext db) =>
+app.MapGet("/api/post/{secretToken}/photos", async (string secretToken, IPhotoReadService photoReadService, HttpContext context) =>
 {
-    // Look up trip by secret token
-    var trip = await db.Trips.FirstOrDefaultAsync(t => t.SecretToken == secretToken);
-    if (trip == null)
+    try
+    {
+        var photos = await photoReadService.GetPhotosForTripAsync(secretToken, context.RequestAborted);
+        return Results.Ok(photos);
+    }
+    catch (KeyNotFoundException)
+    {
         return Results.NotFound(new { error = "Trip not found" });
-
-    // Query photos, ordered by takenAt ascending (chronological)
-    // Nulls sort last: OrderBy(p => p.TakenAt == null) returns false (0) for non-null, true (1) for null
-    var photos = await db.Photos
-        .Where(p => p.TripId == trip.Id)
-        .OrderBy(p => p.TakenAt == null)
-        .ThenBy(p => p.TakenAt)
-        .Select(p => new PhotoResponse
-        {
-            Id = p.Id,
-            ThumbnailUrl = $"/api/photos/{trip.Id}/{p.Id}/thumb",
-            DisplayUrl = $"/api/photos/{trip.Id}/{p.Id}/display",
-            OriginalUrl = $"/api/photos/{trip.Id}/{p.Id}/original",
-            Lat = p.Latitude,
-            Lng = p.Longitude,
-            PlaceName = p.PlaceName ?? "",
-            Caption = p.Caption,
-            TakenAt = p.TakenAt
-        })
-        .ToListAsync();
-
-    return Results.Ok(photos);
+    }
 });
 
 // DELETE /api/trips/{secretToken}/photos/{id} — Delete photo
