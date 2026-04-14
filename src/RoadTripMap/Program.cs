@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Azure;
 using RoadTripMap;
+using RoadTripMap.BackgroundJobs;
 using RoadTripMap.Data;
 using RoadTripMap.Entities;
 using RoadTripMap.Helpers;
@@ -38,6 +39,12 @@ builder.Services.Configure<UploadOptions>(builder.Configuration.GetSection("Uplo
 
 // Blob container provisioner for per-trip containers
 builder.Services.AddScoped<IBlobContainerProvisioner, BlobContainerProvisioner>();
+
+// Backfill hosted service for provisioning containers on startup
+if (builder.Configuration.GetValue<bool>("Backfill:RunOnStartup"))
+{
+    builder.Services.AddHostedService<ContainerBackfillHostedService>();
+}
 
 builder.Services.AddHttpClient<NominatimGeocodingService>();
 builder.Services.AddHttpClient("Overpass", c => {
