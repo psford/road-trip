@@ -1,4 +1,5 @@
 using Azure.Storage.Blobs;
+using RoadTripMap.Data;
 using SkiaSharp;
 
 namespace RoadTripMap.Services;
@@ -6,11 +7,13 @@ namespace RoadTripMap.Services;
 public class PhotoService : IPhotoService
 {
     private readonly BlobServiceClient _blobServiceClient;
+    private readonly RoadTripDbContext _db;
     private const string ContainerName = "road-trip-photos";
 
-    public PhotoService(BlobServiceClient blobServiceClient)
+    public PhotoService(BlobServiceClient blobServiceClient, RoadTripDbContext db)
     {
         _blobServiceClient = blobServiceClient;
+        _db = db;
     }
 
     public async Task<PhotoUploadResult> ProcessAndUploadAsync(Stream imageStream, int tripId, int photoId, string originalFileName)
@@ -48,15 +51,26 @@ public class PhotoService : IPhotoService
 
     public async Task<Stream> GetPhotoAsync(string blobPath, string size)
     {
+        // Legacy path: use default container (road-trip-photos)
+        return await GetPhotoAsync(blobPath, size, "legacy", ContainerName);
+    }
+
+    public async Task<Stream> GetPhotoAsync(string blobPath, string size, string storageTier, string? containerName)
+    {
         var validSizes = new[] { "original", "display", "thumb" };
         if (!validSizes.Contains(size))
             throw new ArgumentException($"Invalid size: {size}. Must be one of: original, display, thumb");
 
-        var containerClient = _blobServiceClient.GetBlobContainerClient(ContainerName);
+        if (string.IsNullOrEmpty(containerName))
+            containerName = ContainerName;
+
+        var container = _blobServiceClient.GetBlobContainerClient(containerName);
+
+        // For per-trip: blobPath is "{uploadId}_original.jpg", insert size suffix before extension
+        // For legacy: blobPath is "{tripId}/{photoId}.jpg", same suffix logic
         var suffix = size == "original" ? "" : $"_{size}";
-        // blobPath is "{tripId}/{photoId}.jpg" — insert size suffix before extension
         var sizedPath = blobPath.Replace(".jpg", $"{suffix}.jpg");
-        var blobClient = containerClient.GetBlobClient(sizedPath);
+        var blobClient = container.GetBlobClient(sizedPath);
 
         var download = await blobClient.DownloadAsync();
         return download.Value.Content;

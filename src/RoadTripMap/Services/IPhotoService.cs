@@ -4,6 +4,7 @@ public interface IPhotoService
 {
     Task<PhotoUploadResult> ProcessAndUploadAsync(Stream imageStream, int tripId, int photoId, string originalFileName);
     Task<Stream> GetPhotoAsync(string blobPath, string size);
+    Task<Stream> GetPhotoAsync(string blobPath, string size, string storageTier, string? containerName);
     Task DeletePhotoAsync(string blobPath);
 }
 
