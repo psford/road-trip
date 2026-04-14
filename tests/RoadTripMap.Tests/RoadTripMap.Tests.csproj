@@ -29,6 +29,7 @@
   <ItemGroup>
     <EmbeddedResource Include="Fixtures\*.json" Exclude="Fixtures\test-endpoints.json" />
     <None Include="Fixtures\test-endpoints.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\tests\docker-compose.azurite.yml" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>
