@@ -44,6 +44,7 @@ beforeAll(() => {
     loadGlobal('uploadSemaphore.js');
     loadGlobal('storageAdapter.js');
     loadGlobal('uploadTransport.js');
+    loadGlobal('uploadTelemetry.js');
     loadGlobal('versionProtocol.js');
     loadGlobal('uploadQueue.js');
     loadGlobal('progressPanel.js');

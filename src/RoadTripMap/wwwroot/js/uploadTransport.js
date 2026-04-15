@@ -199,6 +199,9 @@ const UploadTransport = {
                             attempts: attempt,
                         });
 
+                        // Record block completion telemetry
+                        UploadTelemetry.recordBlockCompleted(uploadId, blockInfo.index, attempt, 0);
+
                         lastError = null;
                         uploadSucceeded = true;
                         break; // Exit retry loop
@@ -227,8 +230,12 @@ const UploadTransport = {
                         // Handle retryable errors: wait and retry
                         if (error instanceof UploadTransport.RetryableError) {
                             if (attempt < maxRetries - 1) {
-                                // Sleep before retry using backoff
+                                // Record retry telemetry
+                                const statusCode = error.message.match(/\d{3}/) ? parseInt(error.message.match(/\d{3}/)[0]) : 0;
                                 const delayMs = UploadUtils.backoffMs(attempt);
+                                UploadTelemetry.recordBlockRetry(uploadId, blockInfo.index, attempt + 1, statusCode, delayMs);
+
+                                // Sleep before retry using backoff
                                 await new Promise(resolve => setTimeout(resolve, delayMs));
                                 continue;
                             }

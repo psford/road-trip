@@ -374,6 +374,10 @@ const UploadQueue = {
      */
     async _doRequestUpload(uploadId, tripToken, item) {
         try {
+            // Record telemetry: upload requested
+            const exifPresent = item.exif && Object.keys(item.exif).length > 0;
+            UploadTelemetry.recordUploadRequested(uploadId, tripToken, item.size, exifPresent);
+
             await StorageAdapter.updateItemStatus(uploadId, 'requesting');
 
             const response = await API.requestUpload(tripToken, {
@@ -393,6 +397,8 @@ const UploadQueue = {
             return await StorageAdapter.getItem(uploadId);
         } catch (err) {
             console.error(`Request upload failed for ${uploadId}:`, err.message);
+            // Record failure telemetry
+            UploadTelemetry.recordFailed(uploadId, 'request_upload_failed', err.message, 1);
             throw err;
         }
     },
@@ -446,6 +452,9 @@ const UploadQueue = {
         await StorageAdapter.updateItemStatus(uploadId, 'uploading', {
             sas_url: response.sasUrl,
         });
+
+        // Record SAS refresh event
+        UploadTelemetry.recordSasRefreshed(uploadId);
 
         return response.sasUrl;
     },
@@ -551,6 +560,11 @@ const UploadQueue = {
         // Clear retry counter
         this._blockListMismatchRetries.delete(uploadId);
 
+        // Record committed event
+        const blocks = await StorageAdapter.listBlocks(uploadId);
+        const blockCount = blocks ? blocks.length : 0;
+        UploadTelemetry.recordCommitted(uploadId, item.photo_id, 0, blockCount);
+
         // Emit event
         document.dispatchEvent(
             new CustomEvent('upload:committed', {
@@ -589,6 +603,9 @@ const UploadQueue = {
 
         // Clear retry counter
         this._blockListMismatchRetries.delete(uploadId);
+
+        // Record failure telemetry
+        UploadTelemetry.recordFailed(uploadId, 'error', error.message, 1);
 
         // Emit event
         document.dispatchEvent(

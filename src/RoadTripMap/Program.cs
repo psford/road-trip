@@ -107,6 +107,21 @@ using (var scope = app.Services.CreateScope())
 // CORS not needed for Phase 1 — frontend served same-origin.
 // If native apps need cross-origin API access later, add CORS policy here.
 
+// Correlation ID middleware — generates x-correlation-id header on each request
+app.Use(async (context, next) =>
+{
+    var correlationId = context.Request.Headers["x-correlation-id"].FirstOrDefault() ?? Guid.NewGuid().ToString();
+    context.Items["CorrelationId"] = correlationId;
+
+    context.Response.OnStarting(() =>
+    {
+        context.Response.Headers["x-correlation-id"] = correlationId;
+        return Task.CompletedTask;
+    });
+
+    await next();
+});
+
 // Version headers middleware — must be before exception handler so headers survive error path
 app.Use(async (context, next) =>
 {
