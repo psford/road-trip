@@ -117,7 +117,7 @@ Road Trip Photo Map allows users to:
 | FR-003.7 | A trip with zero photos must show an empty map with a "No photos yet" message |
 | FR-003.8 | A trip with one photo must center the map on that pin (no route line) |
 | FR-003.9 | Viewing a trip map requires only the view token URL -- no login or additional authentication |
-| FR-003.10 | The map must use OpenStreetMap tiles via Leaflet.js |
+| FR-003.10 | The map must render with MapLibre GL JS using MapTiler vector tiles (migrated from Leaflet/OSM raster tiles on 2026-03-24 to resolve a mobile popup auto-pan bug) |
 
 **User Story:** *As a family member at home, I want to open a link and see a map of where my parents are on their road trip, with photos pinned at each stop.*
 
@@ -310,7 +310,7 @@ Map page (/trips/{slug})
            │
            ▼
 ┌─────────────────────┐
-│ Render Leaflet map  │
+│ Render MapLibre map │
 │ with photo pins     │
 │ (auto-fit bounds)   │
 └──────────┬──────────┘
