@@ -303,7 +303,7 @@ public class UploadService : IUploadService
         // Validate GPS coordinates per CLAUDE.md invariants: lat [-90,90], lng [-180,180]
         if (gpsLat < -90 || gpsLat > 90 || gpsLon < -180 || gpsLon > 180)
         {
-            throw new ArgumentException("Invalid coordinates: latitude must be between -90 and 90, longitude between -180 and 180");
+            throw new BadHttpRequestException("Invalid coordinates: latitude must be between -90 and 90, longitude between -180 and 180");
         }
 
         // Update GPS coordinates and timestamp

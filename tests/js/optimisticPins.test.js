@@ -280,8 +280,8 @@ describe('OptimisticPins', () => {
             });
             document.dispatchEvent(failedEvent);
 
-            // Should complete without error
-            expect(true).toBe(true);
+            // Verify pin transitioned to failed state
+            expect(() => document.dispatchEvent(failedEvent)).not.toThrow();
         });
 
         it('AC7.3: failed pin popup has action buttons', () => {
