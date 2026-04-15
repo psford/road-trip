@@ -339,6 +339,141 @@ describe('UploadQueue', () => {
                 globalThis.BroadcastChannel = OriginalBroadcastChannel;
             }
         });
+
+        it('prevents two tabs from both processing the same upload_id (AC4.5 contention test)', async () => {
+            const tripToken = 'test-token';
+            const uploadId = 'upload-1';
+            const file = new File(['test'], 'test.jpg', { type: 'image/jpeg' });
+
+            // Mock API calls
+            API.requestUpload.mockResolvedValue({
+                photoId: 'photo-1',
+                sasUrl: 'https://...',
+            });
+            UploadTransport.uploadFile.mockResolvedValue(['blockId0']);
+            API.commit.mockResolvedValue({ id: 'photo-1' });
+
+            // Create a real BroadcastChannel mock that simulates cross-tab communication
+            const broadcastChannels = new Map(); // channelName -> set of listeners
+            const OriginalBroadcastChannel = globalThis.BroadcastChannel;
+
+            globalThis.BroadcastChannel = class MockBroadcastChannel {
+                constructor(name) {
+                    this.name = name;
+                    if (!broadcastChannels.has(name)) {
+                        broadcastChannels.set(name, new Set());
+                    }
+                    broadcastChannels.get(name).add(this);
+                    this._messageHandlers = [];
+                }
+
+                postMessage(msg) {
+                    // Broadcast to all other listeners on the same channel
+                    const listeners = broadcastChannels.get(this.name);
+                    for (const listener of listeners) {
+                        if (listener !== this) {
+                            // Simulate async delivery with microtask
+                            queueMicrotask(() => {
+                                for (const handler of listener._messageHandlers || []) {
+                                    handler({ data: msg });
+                                }
+                            });
+                        }
+                    }
+                }
+
+                addEventListener(type, handler) {
+                    if (type === 'message') {
+                        this._messageHandlers.push(handler);
+                    }
+                }
+
+                removeEventListener(type, handler) {
+                    if (type === 'message') {
+                        const idx = this._messageHandlers.indexOf(handler);
+                        if (idx >= 0) this._messageHandlers.splice(idx, 1);
+                    }
+                }
+
+                close() {
+                    const listeners = broadcastChannels.get(this.name);
+                    if (listeners) {
+                        listeners.delete(this);
+                    }
+                }
+            };
+
+            try {
+                // Simulate: Tab 1 has started processing, Tab 2 is trying to claim the same upload_id
+                // Seed the upload_id in the database in a state that Tab 1 has already begun processing
+                await StorageAdapter.putItem({
+                    upload_id: uploadId,
+                    trip_token: tripToken,
+                    filename: 'test.jpg',
+                    size: 100,
+                    content_type: 'image/jpeg',
+                    exif: {},
+                    status: 'requesting',  // Already past pending, so Tab 1 is claiming it
+                    photo_id: 'photo-1',
+                    sas_url: 'https://...',
+                    created_at: new Date().toISOString(),
+                    last_activity_at: new Date().toISOString(),
+                    persistent: true,
+                });
+
+                // Create two separate queue instances (simulating two tabs)
+                const tab1Queue = Object.create(UploadQueue);
+                const tab2Queue = Object.create(UploadQueue);
+
+                // Initialize each with different claimantIds
+                tab1Queue._claimantId = 'tab-1-claimant-id';
+                tab2Queue._claimantId = 'tab-2-claimant-id';
+                tab1Queue._channels = new Map();
+                tab2Queue._channels = new Map();
+                tab1Queue._processingPromises = new Map();
+                tab2Queue._processingPromises = new Map();
+                tab1Queue._blockListMismatchRetries = new Map();
+                tab2Queue._blockListMismatchRetries = new Map();
+
+                // Tab 1: Set up the channel and its persistent listener
+                // (This happens in _claimItem but we need to set it up before Tab 2 claims)
+                const channelName = `roadtrip-uploads-${tripToken}`;
+                const tab1Channel = new (globalThis.BroadcastChannel)(channelName);
+                tab1Queue._channels.set(tripToken, tab1Channel);
+
+                // Add Tab 1's persistent listener (as uploadQueue.js does)
+                tab1Channel.addEventListener('message', (event) => {
+                    const { type, uploadId: claimedUploadId, claimantId: senderClaimantId, respondTo } = event.data || {};
+                    if (type === 'claim') {
+                        if (respondTo !== tab1Queue._claimantId && tab1Queue._processingPromises.has(claimedUploadId)) {
+                            tab1Channel.postMessage({
+                                type: 'owned',
+                                uploadId: claimedUploadId,
+                                claimantId: tab1Queue._claimantId,
+                            });
+                        }
+                    }
+                });
+
+                // Add a fake promise to indicate Tab 1 is processing this uploadId
+                const tab1FakePromise = new Promise(() => {}); // Never resolves (we'll stop waiting)
+                tab1Queue._processingPromises.set(uploadId, tab1FakePromise);
+
+                // Now Tab 2 tries to claim the same upload_id (via resume or competing start)
+                const tab2Result = await tab2Queue._claimItem(uploadId, tripToken);
+
+                // Tab 2 should have received 'owned' from Tab 1's persistent listener
+                // This means Tab 2 should yield (isOwned = false)
+                expect(tab2Result).toBe(false);
+
+                // Verify only Tab 1's promise is in its processing map
+                expect(tab1Queue._processingPromises.has(uploadId)).toBe(true);
+                expect(tab2Queue._processingPromises.has(uploadId)).toBe(false);
+            } finally {
+                globalThis.BroadcastChannel = OriginalBroadcastChannel;
+                broadcastChannels.clear();
+            }
+        });
     });
 
     describe('Event subscription convenience methods', () => {

@@ -313,8 +313,8 @@ const UploadQueue = {
             channel.addEventListener('message', (event) => {
                 const { type, uploadId: claimedUploadId, claimantId, respondTo } = event.data || {};
 
-                if (type === 'claim' && claimedUploadId === uploadId) {
-                    // Another tab is claiming this upload_id
+                if (type === 'claim') {
+                    // Another tab is claiming an upload_id
                     // If we already own it and are past requesting, respond with ownership
                     if (respondTo !== this._claimantId && this._processingPromises.has(claimedUploadId)) {
                         channel.postMessage({
@@ -332,9 +332,9 @@ const UploadQueue = {
         let isOwned = true;
         const claimPromise = new Promise((resolve) => {
             const handler = (event) => {
-                const { type, claimantId } = event.data || {};
-                if (type === 'owned' && claimantId !== this._claimantId) {
-                    // Another tab owns this; yield
+                const { type, uploadId: responseUploadId, claimantId } = event.data || {};
+                if (type === 'owned' && responseUploadId === uploadId && claimantId !== this._claimantId) {
+                    // Another tab owns this upload; yield
                     isOwned = false;
                     cleanup();
                     resolve();
