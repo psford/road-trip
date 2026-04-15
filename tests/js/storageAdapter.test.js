@@ -6,11 +6,17 @@ describe('StorageAdapter', () => {
         const dbs = await indexedDB.databases?.() || [];
         for (const db of dbs) {
             if (db.name === 'RoadTripUploadQueue') {
-                indexedDB.deleteDatabase(db.name);
+                // Wait for deleteDatabase to complete via success callback with timeout
+                await Promise.race([
+                    new Promise((resolve, reject) => {
+                        const request = indexedDB.deleteDatabase(db.name);
+                        request.onsuccess = () => resolve();
+                        request.onerror = () => reject(request.error);
+                    }),
+                    new Promise((resolve) => setTimeout(resolve, 2000)) // Fallback timeout
+                ]);
             }
         }
-        // Small delay to allow DB deletion to complete
-        await new Promise(r => setTimeout(r, 50));
     });
 
     describe('putItem and getItem', () => {

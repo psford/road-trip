@@ -203,7 +203,9 @@ const API = {
         });
         if (!response.ok) {
             const error = await response.json().catch(() => ({}));
-            throw new Error(error.code || error.error || 'Failed to request upload');
+            const errorObj = new Error(error.message || error.error || 'Failed to request upload');
+            errorObj.code = error.code;
+            throw errorObj;
         }
         return response.json();
     },
@@ -223,7 +225,9 @@ const API = {
         });
         if (!response.ok) {
             const error = await response.json().catch(() => ({}));
-            throw new Error(error.code || error.error || 'Failed to commit upload');
+            const errorObj = new Error(error.message || error.error || 'Failed to commit upload');
+            errorObj.code = error.code;
+            throw errorObj;
         }
         return response.json();
     },

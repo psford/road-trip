@@ -141,7 +141,7 @@ describe('postUI integration with UploadQueue', () => {
         });
 
         // Wait for processing to complete
-        await UploadQueue._waitForAll();
+        await UploadQueueTestHelper.waitForAll();
 
         // AC3.1: Events fire in correct order
         expect(uploadCreatedEvents).toHaveLength(1);
@@ -222,7 +222,7 @@ describe('postUI integration with UploadQueue', () => {
 
         // Wait for processing to complete
         await resumePromise;
-        await UploadQueue._waitForAll();
+        await UploadQueueTestHelper.waitForAll();
 
         // Verify state was transitioned to committed
         const item = await StorageAdapter.getItem(uploadId);

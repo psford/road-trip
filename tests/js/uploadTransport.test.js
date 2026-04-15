@@ -205,17 +205,14 @@ describe('UploadTransport', () => {
                 onSasExpired: vi.fn(),
             });
 
+            // Use proper rejection handling pattern before advancing timers
+            const rejectionPromise = expect(uploadPromise).rejects.toThrow(UploadTransport.RetryableError);
+
             // Advance all timers to let all retries and backoff delays complete
             await vi.runAllTimersAsync();
 
-            // Should reject with RetryableError
-            let caughtError;
-            try {
-                await uploadPromise;
-            } catch (error) {
-                caughtError = error;
-            }
-            expect(caughtError).toBeInstanceOf(UploadTransport.RetryableError);
+            // Wait for rejection assertion to complete
+            await rejectionPromise;
 
             // Storage should record the block as failed
             expect(mockStorageAdapter.updateBlock).toHaveBeenCalledWith(
@@ -443,12 +440,59 @@ describe('UploadTransport', () => {
     });
 
     describe('Log Sanitization', () => {
-        it('never logs raw SAS URLs in console.log (verified indirectly via test structure)', () => {
-            // This test verifies the principle: the implementation must use redactSasForLog
-            // The actual verification happens in code review of uploadTransport.js
-            // Test structure prevents us from easily verifying console.log calls, but
-            // the implementation MUST use UploadUtils.redactSasForLog before any logging
-            expect(UploadUtils.redactSasForLog).toBeDefined();
+        it('never logs raw SAS URLs in console output', async () => {
+            const file = new File(['a'.repeat(1024)], 'test.jpg', { type: 'image/jpeg' });
+            const uploadId = UploadUtils.newGuid();
+            const rawSasUrl = 'https://storage.blob.core.windows.net/container/blob?sv=2024-11-04&sig=secret123&se=2024-04-15T10:00:00Z';
+
+            fetchStub.mockResolvedValue({
+                ok: true,
+                status: 201,
+                headers: new Headers(),
+            });
+
+            mockStorageAdapter.listBlocks.mockResolvedValueOnce([]);
+
+            // Spy on console methods
+            const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+            const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+            const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+            try {
+                await UploadTransport.uploadFile({
+                    file,
+                    uploadId,
+                    tripToken: 'test-token',
+                    photoId: UploadUtils.newGuid(),
+                    sasUrl: rawSasUrl,
+                    storageAdapter: mockStorageAdapter,
+                    semaphores: mockSemaphores,
+                    onProgress: vi.fn(),
+                    onSasExpired: vi.fn(),
+                });
+
+                // Check all logged output for raw SAS URL patterns
+                const allCalls = [
+                    ...logSpy.mock.calls,
+                    ...warnSpy.mock.calls,
+                    ...errorSpy.mock.calls
+                ];
+
+                for (const callArgs of allCalls) {
+                    const loggedText = callArgs.join(' ');
+                    // Verify no raw SAS signature or expiry parameters appear
+                    expect(loggedText).not.toContain('sig=secret123');
+                    expect(loggedText).not.toContain('se=2024-04-15');
+                    // Verify redaction is applied if SAS URL is logged
+                    if (loggedText.includes('sig=') || loggedText.includes('se=')) {
+                        expect(loggedText).toContain('REDACTED');
+                    }
+                }
+            } finally {
+                logSpy.mockRestore();
+                warnSpy.mockRestore();
+                errorSpy.mockRestore();
+            }
         });
     });
 });

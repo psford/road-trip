@@ -47,6 +47,7 @@ const UploadQueue = {
                 trip_token: tripToken,
                 filename: item.file.name,
                 size: item.file.size,
+                content_type: item.file.type || 'application/octet-stream',
                 exif: item.metadata || {},
                 status: 'pending',
                 created_at: now,
@@ -236,14 +237,6 @@ const UploadQueue = {
         });
     },
 
-    /**
-     * Wait for all pending uploads to complete (testing only)
-     * @private
-     */
-    async _waitForAll() {
-        const promises = Array.from(this._processingPromises.values());
-        return Promise.all(promises);
-    },
 
     /**
      * Process a single upload item through state machine
@@ -273,7 +266,11 @@ const UploadQueue = {
                 }
 
                 // State: requesting → uploading
-                if (item.status === 'requesting' && file) {
+                if (item.status === 'requesting') {
+                    if (!file) {
+                        // File is unavailable after page reload - cannot resume
+                        throw new Error('File unavailable after page reload — retry from UI');
+                    }
                     item = await this._doUploadBlocks(uploadId, tripToken, file, item);
                     continue;
                 }
@@ -301,18 +298,74 @@ const UploadQueue = {
 
     /**
      * Claim item ownership via BroadcastChannel
+     * Implements cross-tab singleton: only one tab processes a given upload_id
      * @private
      */
     async _claimItem(uploadId, tripToken) {
         const channelName = `roadtrip-uploads-${tripToken}`;
-        if (!this._channels.has(tripToken)) {
-            this._channels.set(tripToken, new BroadcastChannel(channelName));
+        let channel = this._channels.get(tripToken);
+
+        if (!channel) {
+            channel = new BroadcastChannel(channelName);
+            this._channels.set(tripToken, channel);
+
+            // Set up listener for claim/owned messages
+            channel.addEventListener('message', (event) => {
+                const { type, uploadId: claimedUploadId, claimantId, respondTo } = event.data || {};
+
+                if (type === 'claim' && claimedUploadId === uploadId) {
+                    // Another tab is claiming this upload_id
+                    // If we already own it and are past requesting, respond with ownership
+                    if (respondTo !== this._claimantId && this._processingPromises.has(claimedUploadId)) {
+                        channel.postMessage({
+                            type: 'owned',
+                            uploadId: claimedUploadId,
+                            claimantId: this._claimantId,
+                        });
+                    }
+                }
+            });
         }
 
-        // For simplicity in this version, just check if another instance has claimed it
-        // In a real implementation, we'd use BroadcastChannel message exchange
-        // For now, allow all items to be processed (tests will mock this)
-        return true;
+        // Broadcast claim for this upload_id
+        // Wait for either acknowledgment of ownership or timeout
+        let isOwned = true;
+        const claimPromise = new Promise((resolve) => {
+            const handler = (event) => {
+                const { type, claimantId } = event.data || {};
+                if (type === 'owned' && claimantId !== this._claimantId) {
+                    // Another tab owns this; yield
+                    isOwned = false;
+                    cleanup();
+                    resolve();
+                }
+            };
+
+            const cleanup = () => {
+                channel.removeEventListener('message', handler);
+                clearTimeout(timeoutId);
+            };
+
+            const timeoutId = setTimeout(() => {
+                cleanup();
+                resolve();
+            }, 100); // Short timeout to avoid blocking
+
+            channel.addEventListener('message', handler);
+        });
+
+        // Broadcast the claim message
+        channel.postMessage({
+            type: 'claim',
+            uploadId,
+            claimantId: this._claimantId,
+            respondTo: this._claimantId,
+        });
+
+        // Wait for claim protocol to settle
+        await claimPromise;
+
+        return isOwned;
     },
 
     /**
@@ -326,7 +379,7 @@ const UploadQueue = {
             const response = await API.requestUpload(tripToken, {
                 upload_id: uploadId,
                 filename: item.filename,
-                content_type: 'image/jpeg',
+                content_type: item.content_type || 'application/octet-stream',
                 size_bytes: item.size,
                 exif: item.exif,
             });
@@ -385,7 +438,7 @@ const UploadQueue = {
         const response = await API.requestUpload(tripToken, {
             upload_id: uploadId,
             filename: item.filename,
-            content_type: 'image/jpeg',
+            content_type: item.content_type || 'application/octet-stream',
             size_bytes: item.size,
             exif: item.exif,
         });
@@ -435,7 +488,7 @@ const UploadQueue = {
                         const response = await API.requestUpload(tripToken, {
                             upload_id: uploadId,
                             filename: item.filename,
-                            content_type: 'image/jpeg',
+                            content_type: item.content_type || 'application/octet-stream',
                             size_bytes: item.size,
                             exif: item.exif,
                         });

@@ -48,6 +48,16 @@ beforeAll(() => {
     loadGlobal('postUI.js');
 });
 
+/**
+ * Test helper to wait for all UploadQueue processing to complete
+ */
+globalThis.UploadQueueTestHelper = {
+    waitForAll: async () => {
+        const promises = Array.from(globalThis.UploadQueue._processingPromises.values());
+        return Promise.all(promises);
+    }
+};
+
 afterEach(() => {
     vi.clearAllMocks();
 });

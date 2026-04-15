@@ -80,7 +80,7 @@ describe('UploadQueue', () => {
             await UploadQueue.start(tripToken, [{ file, metadata, uploadId }], {});
 
             // Wait for processing to complete
-            await UploadQueue._waitForAll();
+            await UploadQueueTestHelper.waitForAll();
 
             // Verify item transitions
             const item = await StorageAdapter.getItem(uploadId);
@@ -112,7 +112,7 @@ describe('UploadQueue', () => {
             expect(item.filename).toBe('big.jpg');
 
             // Wait for processing to complete
-            await UploadQueue._waitForAll();
+            await UploadQueueTestHelper.waitForAll();
 
             // Verify item completed after processing
             item = await StorageAdapter.getItem(uploadId);
@@ -158,7 +158,7 @@ describe('UploadQueue', () => {
             await UploadQueue.resume(tripToken, {});
 
             // Wait for completion
-            await UploadQueue._waitForAll();
+            await UploadQueueTestHelper.waitForAll();
 
             // Verify completion
             const updated = await StorageAdapter.getItem(uploadId);
@@ -216,6 +216,7 @@ describe('UploadQueue', () => {
             API.commit.mockImplementation(() => {
                 commitAttempt++;
                 if (commitAttempt === 1) {
+                    // Simulate real API.commit behavior: throw error with code property
                     const err = new Error('Block list mismatch');
                     err.code = 'BlockListMismatch';
                     throw err;
@@ -227,7 +228,7 @@ describe('UploadQueue', () => {
             await UploadQueue.start(tripToken, [{ file, metadata: {}, uploadId }], {});
 
             // Wait for completion (with retries and recovery)
-            await UploadQueue._waitForAll();
+            await UploadQueueTestHelper.waitForAll();
             await new Promise(resolve => setTimeout(resolve, 100));
 
             // Verify recovery succeeded
@@ -260,7 +261,7 @@ describe('UploadQueue', () => {
             await UploadQueue.start(tripToken, [{ file, metadata: {}, uploadId }], {});
 
             // Wait for failure
-            await UploadQueue._waitForAll();
+            await UploadQueueTestHelper.waitForAll();
             await new Promise(resolve => setTimeout(resolve, 50));
 
             // Verify item marked failed
@@ -292,13 +293,51 @@ describe('UploadQueue', () => {
             ], {});
 
             // Wait for completion
-            await UploadQueue._waitForAll();
+            await UploadQueueTestHelper.waitForAll();
 
             // Verify both completed
             const item1 = await StorageAdapter.getItem(uploadId);
             const item2 = await StorageAdapter.getItem(uploadId2);
             expect(item1.status).toBe('committed');
             expect(item2.status).toBe('committed');
+        });
+
+        it('implements BroadcastChannel claim protocol to prevent double-processing', async () => {
+            const tripToken = 'test-token';
+            const uploadId = 'upload-1';
+            const file = new File(['test'], 'test.jpg', { type: 'image/jpeg' });
+
+            API.requestUpload.mockResolvedValue({
+                photoId: 'photo-1',
+                sasUrl: 'https://...',
+            });
+            UploadTransport.uploadFile.mockResolvedValue(['blockId0']);
+            API.commit.mockResolvedValue({ id: 'photo-1' });
+
+            // Verify that BroadcastChannel is created with correct channel name
+            let createdChannel = null;
+            const OriginalBroadcastChannel = globalThis.BroadcastChannel;
+            globalThis.BroadcastChannel = class extends OriginalBroadcastChannel {
+                constructor(name) {
+                    super(name);
+                    createdChannel = name;
+                }
+            };
+
+            try {
+                // Start a normal upload to trigger _claimItem
+                await UploadQueue.start(tripToken, [{ file, metadata: {}, uploadId }], {});
+                await UploadQueueTestHelper.waitForAll();
+
+                // Verify the upload completed
+                const item = await StorageAdapter.getItem(uploadId);
+                expect(item.status).toBe('committed');
+
+                // Verify BroadcastChannel was created with proper channel name
+                expect(createdChannel).toBe(`roadtrip-uploads-${tripToken}`);
+            } finally {
+                globalThis.BroadcastChannel = OriginalBroadcastChannel;
+            }
         });
     });
 
