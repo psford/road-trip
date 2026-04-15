@@ -30,6 +30,10 @@ public static class UploadEndpoints
         app.MapPost("/api/trips/{secretToken}/photos/{photoId:guid}/abort", AbortHandler)
             .WithName("Abort");
 
+        // POST /api/trips/{secretToken}/photos/{photoId:guid}/pin-drop
+        app.MapPost("/api/trips/{secretToken}/photos/{photoId:guid}/pin-drop", PinDropHandler)
+            .WithName("PinDrop");
+
         return app;
     }
 
@@ -182,6 +186,77 @@ public static class UploadEndpoints
         catch (Exception ex)
         {
             logger.LogError(ex, "AbortHandler: unexpected error. photo_id={photoId}, token_prefix={prefix}",
+                photoId,
+                LogSanitizer.SanitizeToken(secretToken));
+            return Results.StatusCode(500);
+        }
+    }
+
+    /// <summary>
+    /// POST /api/trips/{secretToken}/photos/{photoId:guid}/pin-drop
+    /// Manually updates photo GPS coordinates via pin-drop UI.
+    /// AC5.3, AC7.3: User clicks [📍 Pin manually] on a failed/committed photo → saves manual location.
+    /// Returns 409 if photo is not in committed status.
+    /// </summary>
+    private static async Task<IResult> PinDropHandler(
+        string secretToken,
+        Guid photoId,
+        [FromBody] PinDropRequest request,
+        IUploadService uploadService,
+        IAuthStrategy authStrategy,
+        RoadTripDbContext db,
+        ILogger<Program> logger,
+        HttpContext context,
+        CancellationToken ct)
+    {
+        try
+        {
+            // Look up trip and validate auth
+            var trip = await db.Trips.FirstOrDefaultAsync(t => t.SecretToken == secretToken, ct);
+            if (trip == null)
+                return Results.NotFound(new { error = "Trip not found" });
+
+            var authResult = await authStrategy.ValidatePostAccess(context, trip);
+            if (!authResult.IsAuthorized)
+                return Results.Unauthorized();
+
+            // Pin-drop via UploadService
+            var response = await uploadService.PinDropAsync(secretToken, photoId, request.GpsLat, request.GpsLon, ct);
+
+            logger.LogInformation(
+                "PinDropHandler: success. photo_id={photoId}",
+                photoId);
+
+            // Return 200 with PhotoResponse
+            return Results.Ok(response);
+        }
+        catch (KeyNotFoundException)
+        {
+            logger.LogInformation(
+                "PinDropHandler: photo not found. photo_id={photoId}, token_prefix={prefix}",
+                photoId,
+                LogSanitizer.SanitizeToken(secretToken));
+            return Results.NotFound(new { error = "Photo not found or does not belong to this trip" });
+        }
+        catch (BadHttpRequestException ex) when (ex.Message.Contains("Pin-drop only allowed"))
+        {
+            logger.LogWarning(
+                "PinDropHandler: pin-drop rejected on non-committed photo. photo_id={photoId}",
+                photoId);
+            return Results.Json(
+                new { error = "Conflict: pin-drop only allowed on committed photos" },
+                statusCode: 409);
+        }
+        catch (BadHttpRequestException ex)
+        {
+            logger.LogWarning(
+                "PinDropHandler: bad request. photo_id={photoId}",
+                photoId);
+            return Results.BadRequest(new { error = ex.Message });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "PinDropHandler: unexpected error. photo_id={photoId}, token_prefix={prefix}",
                 photoId,
                 LogSanitizer.SanitizeToken(secretToken));
             return Results.StatusCode(500);

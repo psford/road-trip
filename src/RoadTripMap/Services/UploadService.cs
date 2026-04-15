@@ -269,4 +269,85 @@ public class UploadService : IUploadService
             LogSanitizer.SanitizeToken(tripToken));
     }
 
+    /// <summary>
+    /// PinDropAsync: Update photo GPS coordinates via manual pin-drop.
+    /// AC5.3, AC7.3: User clicks [📍 Pin manually] on a committed photo → manual pin location saved.
+    /// Scope: Only succeeds on committed photos (409 on failed/pending photos).
+    /// </summary>
+    public async Task<PhotoResponse> PinDropAsync(string tripToken, Guid photoId, double gpsLat, double gpsLon, CancellationToken ct)
+    {
+        // Load trip by secretToken
+        var trip = await _db.Trips
+            .FirstOrDefaultAsync(t => t.SecretToken == tripToken, ct);
+
+        if (trip == null)
+        {
+            throw new KeyNotFoundException($"Trip not found: {LogSanitizer.SanitizeToken(tripToken)}");
+        }
+
+        // Load photo by photoId (using UploadId) and trip match
+        var photo = await _db.Photos
+            .FirstOrDefaultAsync(p => p.UploadId == photoId && p.TripId == trip.Id, ct);
+
+        if (photo == null)
+        {
+            throw new KeyNotFoundException($"Photo not found: {photoId}");
+        }
+
+        // Only allow pin-drop on committed photos (AC7.3 scope)
+        if (photo.Status != "committed")
+        {
+            throw new BadHttpRequestException($"Pin-drop only allowed on committed photos, current status: {photo.Status}");
+        }
+
+        // Validate GPS coordinates per CLAUDE.md invariants: lat [-90,90], lng [-180,180]
+        if (gpsLat < -90 || gpsLat > 90 || gpsLon < -180 || gpsLon > 180)
+        {
+            throw new BadHttpRequestException("Invalid coordinates: latitude must be between -90 and 90, longitude between -180 and 180");
+        }
+
+        // Update GPS coordinates and timestamp
+        photo.Latitude = gpsLat;
+        photo.Longitude = gpsLon;
+        photo.LastActivityAt = DateTime.UtcNow;
+
+        // Always reverse-geocode on pin-drop (user is explicitly changing location)
+        try
+        {
+            var placeName = await _geocodingService.ReverseGeocodeAsync(gpsLat, gpsLon);
+            if (!string.IsNullOrEmpty(placeName))
+            {
+                photo.PlaceName = placeName;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to reverse-geocode photo location during pin-drop");
+            // Continue with existing PlaceName if geocoding fails
+        }
+
+        _db.Photos.Update(photo);
+        await _db.SaveChangesAsync(ct);
+
+        _logger.LogInformation(
+            "PinDropAsync: updated photo GPS. photo_id={photoId}, trip_token_prefix={prefix}",
+            photoId,
+            LogSanitizer.SanitizeToken(tripToken));
+
+        // Return updated PhotoResponse
+        return new PhotoResponse
+        {
+            Id = photo.Id,
+            UploadId = photo.UploadId,
+            ThumbnailUrl = $"/api/blobs/{photo.BlobPath}/thumbnail",
+            DisplayUrl = $"/api/blobs/{photo.BlobPath}/display",
+            OriginalUrl = $"/api/blobs/{photo.BlobPath}",
+            Lat = photo.Latitude,
+            Lng = photo.Longitude,
+            PlaceName = photo.PlaceName ?? string.Empty,
+            Caption = photo.Caption,
+            TakenAt = photo.TakenAt
+        };
+    }
+
 }

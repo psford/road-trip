@@ -572,7 +572,974 @@ All commands are annotated with the required shell. Quick reference:
 
 ---
 
-**Document Version:** 1.0  
+---
+
+## Phase 2 — Web upload rollout
+
+**Phase:** Phase 2 (Subcomponents A–H, Tasks 1–16)  
+**Scope:** Deploy browser-based direct-to-blob upload state machine, IndexedDB persistence, retry policy, and CORS configuration. No user-visible UI changes; Phase 3 adds the progress panel and resume banner.
+
+### Prerequisites
+
+Before starting Phase 2 deployment:
+
+- **Phase 1 deployed and healthy**: Verify via `curl https://app-roadtripmap-prod.azurewebsites.net/api/version` returning 200 with version headers.
+- **PR merged**: The Phase 2 feature branch is merged to `main` with all CI checks passing.
+- **Local tooling (WSL bash)**:
+  - `az` CLI 2.50+
+  - `curl`
+  - `jq` (for JSON parsing)
+  - `git`
+
+---
+
+### 1. Pre-flight
+
+#### [bash/WSL] Confirm Git State
+
+```bash
+cd /home/patrick/projects/road-trip
+git fetch origin
+gh pr list --head develop --base main --state open
+```
+
+**Expected outcome:** Exactly one open PR (the Phase 2 feature branch). Review and confirm readiness.
+
+#### [bash/WSL] Verify Phase 1 Healthy
+
+```bash
+curl -i https://app-roadtripmap-prod.azurewebsites.net/api/version
+```
+
+**Expected output:**
+- **HTTP Status:** `200 OK`
+- **Headers:** `x-server-version` and `x-client-min-version` present
+- **Response body:** JSON with `server_version` and `client_min_version`
+
+**Deviation log entry:**  
+[ ] Phase 2 PR open and reviewed  
+[ ] Phase 1 production healthy  
+
+---
+
+### 2. CORS Deploy
+
+#### [bash/WSL] Snapshot Current CORS Configuration
+
+Before deploying, snapshot the current state (should be empty or missing):
+
+```bash
+az storage account blob-service-properties show \
+  --account-name storoadtripmapprod \
+  --query cors
+```
+
+**Expected outcome:** `null` or empty CORS rules (Phase 1 had no CORS).
+
+#### [bash/WSL] Preview Bicep Changes
+
+```bash
+cd /home/patrick/projects/road-trip
+
+az deployment group create \
+  --resource-group rg-roadtripmap-prod \
+  --template-file infrastructure/azure/main.bicep \
+  --parameters @infrastructure/azure/parameters.json \
+  --what-if
+```
+
+**Expected output:** Diff preview showing:
+- **NEW:** `Microsoft.Storage/storageAccounts/blobServices` resource
+- **Properties:** CORS rules with origins `https://roadtripmap.azurewebsites.net` and `https://localhost:5001`
+- **Methods:** `GET`, `PUT`, `HEAD`, `OPTIONS`
+- **NO OTHER CHANGES** (no role assignments, SQL, key vault modifications)
+
+If the what-if shows unexpected changes, **STOP and investigate** before proceeding.
+
+#### [bash/WSL] Apply Bicep Deployment
+
+```bash
+# Remove --what-if to actually deploy
+az deployment group create \
+  --resource-group rg-roadtripmap-prod \
+  --template-file infrastructure/azure/main.bicep \
+  --parameters @infrastructure/azure/parameters.json
+```
+
+**Expected output:** Deployment completes with status `"Succeeded"`.
+
+#### [bash/WSL] Verify CORS Configuration
+
+```bash
+az storage account blob-service-properties show \
+  --account-name storoadtripmapprod \
+  --query "cors.corsRules[0]" -o json
+```
+
+**Expected output:** JSON showing:
+```json
+{
+  "allowedOrigins": [
+    "https://roadtripmap.azurewebsites.net",
+    "https://localhost:5001"
+  ],
+  "allowedMethods": ["GET", "PUT", "HEAD", "OPTIONS"],
+  "allowedHeaders": ["*"],
+  "exposedHeaders": ["x-ms-*"],
+  "maxAgeInSeconds": 3600
+}
+```
+
+#### [bash/WSL] CORS Preflight Smoke Test
+
+Test that the CORS preflight succeeds:
+
+```bash
+curl -i -X OPTIONS \
+  -H 'Origin: https://roadtripmap.azurewebsites.net' \
+  -H 'Access-Control-Request-Method: PUT' \
+  -H 'Access-Control-Request-Headers: content-length' \
+  'https://storoadtripmapprod.blob.core.windows.net/road-trip-photos/'
+```
+
+**Expected output:**
+- **HTTP Status:** `200 OK`
+- **Header:** `Access-Control-Allow-Methods` containing `PUT`
+- **Header:** `Access-Control-Allow-Origin: https://roadtripmap.azurewebsites.net`
+
+**Deviation log entry:**  
+[ ] Current CORS snapshot saved  
+[ ] Bicep what-if validated (only blobServices resource)  
+[ ] Bicep deployment succeeded  
+[ ] CORS configuration verified  
+[ ] Preflight smoke test passed  
+
+---
+
+### 3. App Service Deploy
+
+#### [GitHub web] Merge Phase 2 PR and Trigger CI/CD
+
+1. Navigate to the Phase 2 feature branch PR on GitHub.
+2. Confirm status: all CI checks passing.
+3. Click **Merge pull request** (via GitHub web, not CLI).
+4. Confirm the merge to `main`.
+
+Expected: The `roadtrip-ci.yml` workflow on the `main` branch will auto-trigger, then the manual deploy workflow becomes available.
+
+#### [bash/WSL] Verify Static Assets Deployed
+
+Wait 30 seconds for the new deployment to stabilize, then verify new JS files are served:
+
+```bash
+# Check uploadUtils.js is served (Task 1)
+curl -I https://app-roadtripmap-prod.azurewebsites.net/js/uploadUtils.js
+
+# Check uploadSemaphore.js is served (Task 2)
+curl -I https://app-roadtripmap-prod.azurewebsites.net/js/uploadSemaphore.js
+
+# Check storageAdapter.js is served (Task 4)
+curl -I https://app-roadtripmap-prod.azurewebsites.net/js/storageAdapter.js
+
+# Check uploadTransport.js is served (Task 6)
+curl -I https://app-roadtripmap-prod.azurewebsites.net/js/uploadTransport.js
+
+# Check versionProtocol.js is served (Task 11)
+curl -I https://app-roadtripmap-prod.azurewebsites.net/js/versionProtocol.js
+```
+
+**Expected output:** All return **HTTP 200**.
+
+**Deviation log entry:**  
+[ ] Phase 2 PR merged to main  
+[ ] All static JS files deployed (200 OK)  
+
+---
+
+### 4. Smoke Tests
+
+#### [Browser] Manual Upload Round Trip
+
+1. Navigate to `https://app-roadtripmap-prod.azurewebsites.net`.
+2. Create a new trip (or use an existing test trip).
+3. Open **DevTools** → **Network** tab (to observe requests).
+4. Upload a single small photo (< 4 MB, with EXIF GPS data).
+
+**Observe in Network tab:**
+- `POST /api/trips/{token}/photos/request-upload` → HTTP 200 with `sas_url` and `photo_id`
+- `PUT https://storoadtripmapprod.blob.core.windows.net/trip-{token}/...?comp=block&blockid=...` → HTTP 201 (block upload)
+- `POST /api/trips/{token}/photos/{photoId}/commit` → HTTP 200
+- Page auto-refreshes photo list (or manually refresh)
+
+**Expected outcome:** Photo appears in the trip's photo carousel.
+
+#### [Browser] Large File Multi-Block Upload
+
+1. Upload a 15 MB photo.
+
+**Observe in Network tab:**
+- Multiple block PUT requests (4 × 4 MB blocks, one 3 MB block)
+- All PUTs return HTTP 201
+- Single commit POST with all block IDs
+- Photo appears in list
+
+**Expected outcome:** Large file successfully split, uploaded in blocks, and committed.
+
+#### [Browser] Mid-Upload Interruption and Resume
+
+1. Start uploading a photo.
+2. While blocks are uploading (mid-flight), close the browser tab.
+3. Re-open the trip page.
+
+**Observe:**
+- Open DevTools → **Application** → **IndexedDB** → **RoadTripUploadQueue**
+- Check `upload_items` and `block_state` stores contain the interrupted upload
+- **Note:** Phase 2 does not surface a resume UI banner; the queue auto-resumes on page load. (Phase 3 will add the banner.)
+- Check Network tab: new block PUTs for remaining blocks (starting from where it stopped)
+
+**Expected outcome:** Upload resumes automatically; interrupted upload continues without user action.
+
+#### [Browser] Version Protocol Event (Optional, for Phase 2 foundation)
+
+If you have access to change server version headers (e.g., via a test endpoint), verify:
+
+1. Request any API endpoint.
+2. Inspect response headers: `x-server-version` and `x-client-min-version`.
+3. Open DevTools **Console** and check for any `version:reload-required` events logged (if Phase 2 wires the listener).
+
+**Expected outcome:** No errors or exceptions related to missing version headers (AC8.3 graceful degradation).
+
+**Deviation log entry:**  
+[ ] Single-photo upload round trip succeeded  
+[ ] 15 MB multi-block upload succeeded  
+[ ] Mid-upload interruption + auto-resume confirmed in IndexedDB  
+[ ] Version protocol headers present (no crashes on missing headers)  
+
+---
+
+### 5. Rollback
+
+If any critical issue arises after Phase 2 deployment, execute the following steps **in reverse order** (bottom to top):
+
+#### Rollback Step 1: Revert App Service
+
+```bash
+# Swap staging and production slots to restore Phase 1 version
+az webapp deployment slot swap \
+  --resource-group rg-roadtripmap-prod \
+  --name app-roadtripmap-prod \
+  --slot staging
+```
+
+Wait 2–3 minutes for the swap to complete, then re-test the `/api/version` endpoint and manual upload flow.
+
+#### Rollback Step 2: Remove CORS Configuration
+
+```bash
+# Obtain the pre-Phase-2 Bicep template (from git history)
+git show HEAD~1:infrastructure/azure/main.bicep > /tmp/main.bicep.prev
+
+# Redeploy without CORS
+az deployment group create \
+  --resource-group rg-roadtripmap-prod \
+  --template-file /tmp/main.bicep.prev \
+  --parameters @infrastructure/azure/parameters.json
+```
+
+The CORS configuration will be removed from blob services.
+
+---
+
+### 6. Sign-Off and Deviation Log
+
+#### Approval Chain
+
+After completing all sections above, obtain sign-off from Patrick:
+
+| Section | Status | Signed By | Timestamp (UTC) |
+|---------|--------|-----------|-----------------|
+| 1. Pre-flight | ☐ Pass / ☐ Deviation | | |
+| 2. CORS Deploy | ☐ Pass / ☐ Deviation | | |
+| 3. App Service Deploy | ☐ Pass / ☐ Deviation | | |
+| 4. Smoke Tests | ☐ Pass / ☐ Deviation | | |
+
+#### Deviation Log
+
+Record any deviations from the runbook below:
+
+| Step | Expected | Actual | Resolution | Sign-off |
+|------|----------|--------|------------|----------|
+| | | | | |
+| | | | | |
+| | | | | |
+
+**Final Status:** ☐ **PHASE 2 DEPLOYMENT SUCCEEDED** / ☐ **PHASE 2 DEPLOYMENT ROLLED BACK**
+
+**Patrick's Final Sign-Off:**
+
+```
+Initials: _____
+UTC Timestamp: _____
+Commit this runbook with any deviations recorded.
+```
+
+---
+
+## Phase 3 — Resilient uploads UI (dark release)
+
+**Phase:** Phase 3 (Subcomponents A–H, Tasks 1–13)  
+**Scope:** Deploy browser-based progress panel, resume banner, optimistic map pins, and pin-drop fallback. Feature-flagged dark release: deploy with flag OFF, validate in staging with flag ON, cutover to production.
+
+### Prerequisites
+
+Before starting Phase 3 deployment:
+
+- **Phase 2 deployed and healthy**: Verify via `curl https://app-roadtripmap-prod.azurewebsites.net/api/version` returning 200 with version headers.
+- **UI visual design approved**: `docs/implementation-plans/2026-04-13-resilient-uploads/ui-review-notes.md` contains Patrick's approval with timestamp (ACX.4).
+- **PR merged**: The Phase 3 feature branch is merged to `main` with all CI checks passing.
+- **Local tooling (WSL bash)**:
+  - `az` CLI 2.50+
+  - `curl`
+  - `jq` (for JSON parsing)
+  - `git`
+
+---
+
+### 1. Pre-flight
+
+#### [bash/WSL] Confirm Git State
+
+```bash
+cd /home/patrick/projects/road-trip
+git fetch origin
+git log --oneline origin/main -1
+```
+
+**Expected outcome:** Latest commit is the Phase 3 PR merge.
+
+#### [bash/WSL] Verify Phase 2 Healthy
+
+```bash
+curl -i https://app-roadtripmap-prod.azurewebsites.net/api/version
+```
+
+**Expected output:**
+- **HTTP Status:** `200 OK`
+- **Headers:** `x-server-version` and `x-client-min-version` present
+- **Response body:** JSON with `server_version` and `client_min_version`
+
+#### [bash/WSL] Verify UI Design Review Approved
+
+```bash
+cat docs/implementation-plans/2026-04-13-resilient-uploads/ui-review-notes.md | grep -i "approved"
+```
+
+**Expected outcome:** File contains "Approved on YYYY-MM-DD by Patrick" with a date before today.
+
+**Deviation log entry:**  
+[ ] Phase 2 production healthy  
+[ ] UI review approved and recorded in ui-review-notes.md  
+
+---
+
+### 2. Deploy with Feature Flag OFF
+
+#### [bash/WSL] Snapshot Current Feature Flag Setting
+
+```bash
+az webapp config appsettings list \
+  --resource-group rg-roadtripmap-prod \
+  --name app-roadtripmap-prod \
+  --query "[?name=='FeatureFlags__ResilientUploadsUI'].value" -o tsv
+```
+
+**Expected outcome:** Output is empty, `false`, or not present (flag defaults to false in Production).
+
+#### [bash/WSL] Verify Bicep Configuration
+
+Inspect `infrastructure/azure/parameters.json` or `appsettings.Production.json` to confirm:
+- `FeatureFlags:ResilientUploadsUI` is set to `false` (default)
+
+If not already false, you must set it explicitly:
+
+```bash
+az webapp config appsettings set \
+  --resource-group rg-roadtripmap-prod \
+  --name app-roadtripmap-prod \
+  --settings FeatureFlags__ResilientUploadsUI=false
+
+# Restart the app for changes to take effect
+az webapp restart \
+  --resource-group rg-roadtripmap-prod \
+  --name app-roadtripmap-prod
+```
+
+#### [GitHub web] Merge Phase 3 PR and Trigger CI/CD
+
+1. Navigate to the Phase 3 feature branch PR on GitHub.
+2. Confirm status: all CI checks passing.
+3. Click **Merge pull request** (via GitHub web, not CLI).
+4. Confirm the merge to `main`.
+
+**Expected:** The `roadtrip-ci.yml` workflow on the `main` branch will auto-trigger, then the manual deploy workflow becomes available.
+
+#### [bash/WSL] Verify Static Assets Deployed
+
+Wait 30 seconds for the new deployment to stabilize, then verify new JS files are served:
+
+```bash
+# Check progressPanel.js is served (Task 3)
+curl -I https://app-roadtripmap-prod.azurewebsites.net/js/progressPanel.js
+
+# Check optimisticPins.js is served (Task 8)
+curl -I https://app-roadtripmap-prod.azurewebsites.net/js/optimisticPins.js
+
+# Check resumeBanner.js is served (Task 5)
+curl -I https://app-roadtripmap-prod.azurewebsites.net/js/resumeBanner.js
+```
+
+**Expected output:** All return **HTTP 200**.
+
+#### [bash/WSL] Smoke Test: Legacy Status Bar Still Works
+
+1. Create a test trip (or use an existing one with a known token):
+
+```bash
+curl -s -X POST \
+  https://app-roadtripmap-prod.azurewebsites.net/api/trips \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Phase 3 flag=OFF smoke test"}' | jq '.secret_token'
+```
+
+2. Open a browser to `/post/{token}` and upload a small photo (or simulate via API).
+
+3. **Verify in DevTools Console:** No JavaScript errors.
+
+4. **Verify in DevTools Elements:** The **legacy** status bar appears (not the new progress panel). If the flag is off correctly, you should NOT see `<div class="upload-panel" role="region">`.
+
+**Deviation log entry:**  
+[ ] Feature flag confirmed OFF in production  
+[ ] New JS files deployed (200 OK)  
+[ ] Legacy status bar renders (flag OFF verified)  
+
+---
+
+### 3. Staging Validation with Feature Flag ON
+
+#### [Azure Portal] Flip Feature Flag to ON in Staging Slot
+
+1. Navigate to [Azure Portal](https://portal.azure.com).
+2. Open **App Services** → **app-roadtripmap-prod** → **Configuration** (left sidebar).
+3. Open **Application settings** tab.
+4. Click **+ New application setting**.
+5. **Name:** `FeatureFlags__ResilientUploadsUI`
+6. **Value:** `true`
+7. Click **OK**.
+8. Click **Save** at the top.
+
+Wait 30 seconds for the setting to propagate.
+
+#### [Azure Portal] Restart Staging Slot (Optional)
+
+If the app does not pick up the setting immediately:
+
+1. Open **App Services** → **app-roadtripmap-prod**.
+2. Open **Deployment slots** (left sidebar) → **staging**.
+3. Click **Restart**.
+
+Wait 2–3 minutes for restart to complete.
+
+#### [Browser] Validate UI in Staging
+
+1. Create a test trip in staging: `https://app-roadtripmap-prod-staging.azurewebsites.net/api/trips`
+
+```bash
+STAGING_TOKEN=$(curl -s -X POST \
+  https://app-roadtripmap-prod-staging.azurewebsites.net/api/trips \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Phase 3 staging validation"}' | jq -r '.secret_token')
+
+echo "Staging test trip: $STAGING_TOKEN"
+```
+
+2. Navigate to `https://app-roadtripmap-prod-staging.azurewebsites.net/post/{token}` in a browser.
+
+3. **Verify in DevTools Elements:** The **new** progress panel appears:
+   - `<div class="upload-panel" role="region" aria-label="Upload progress">`
+   - Per-file rows with status icons
+   - Collapse toggle
+   - Action buttons (retry, pin-drop, discard)
+
+4. **Upload a photo** and verify:
+   - Progress panel shows the row with filename, size, progress bar
+   - Optimistic pin appears on the map (pending styling if EXIF GPS is present)
+   - On success, pin turns green and progress panel shows "committed" status
+
+5. **Force a failure** (or simulate via API) and verify:
+   - Failed row shows retry affordances
+   - Pin turns red
+   - "gave up after 6 attempts" message visible if retries exhausted
+
+6. **Patrick visually inspects** the UI against the approved mockups in `ui-review-notes.md`.
+
+#### [bash/WSL] Patrick Signs Off in ui-review-notes.md
+
+Once Patrick approves the staging validation:
+
+```bash
+# Edit the file to record staging approval
+cat >> docs/implementation-plans/2026-04-13-resilient-uploads/ui-review-notes.md << 'EOF'
+
+## Staging Validation Sign-Off
+
+Staging validation completed on YYYY-MM-DD at HH:MM UTC.
+All UI elements match approved design. Ready for production cutover.
+
+Patrick: _____ (Initials)
+EOF
+```
+
+**Deviation log entry:**  
+[ ] Feature flag toggled to ON in staging  
+[ ] UI renders correctly (new progress panel visible)  
+[ ] Upload flow tested (photo uploads with new UI)  
+[ ] Patrick approved staging validation  
+
+---
+
+### 4. Production Cutover
+
+#### [bash/WSL] Flip Feature Flag to ON in Production
+
+```bash
+az webapp config appsettings set \
+  --resource-group rg-roadtripmap-prod \
+  --name app-roadtripmap-prod \
+  --settings FeatureFlags__ResilientUploadsUI=true
+
+# Restart the app for changes to take effect
+az webapp restart \
+  --resource-group rg-roadtripmap-prod \
+  --name app-roadtripmap-prod
+```
+
+Wait 2–3 minutes for the restart to complete.
+
+#### [bash/WSL] Verify Flag Is Set
+
+```bash
+az webapp config appsettings list \
+  --resource-group rg-roadtripmap-prod \
+  --name app-roadtripmap-prod \
+  --query "[?name=='FeatureFlags__ResilientUploadsUI'].value" -o tsv
+```
+
+**Expected output:** `true`
+
+#### [Browser] Production Smoke Test
+
+1. Navigate to a real production trip: `https://app-roadtripmap-prod.azurewebsites.net/post/{token}`
+
+2. **Verify in DevTools Elements:** The **new** progress panel is visible.
+
+3. **Verify in DevTools Network:** Observe upload requests:
+   - `POST /api/trips/{token}/photos/request-upload` → 200 (SAS URL issued)
+   - `PUT blob.core.windows.net/trip-{token}/...` → 201 (block upload)
+   - `POST /api/trips/{token}/photos/{photoId}/commit` → 200 (photo committed)
+
+4. **Verify in DevTools Console:** No JavaScript errors.
+
+5. **Upload a real photo** and observe:
+   - Progress panel renders with filename, size, progress bar
+   - On success, row transitions to "committed" status
+   - Photo appears in the carousel (Phase 1–2 behavior unchanged)
+
+**Deviation log entry:**  
+[ ] Feature flag set to ON in production  
+[ ] New progress panel visible in production  
+[ ] Real photo upload succeeded with new UI  
+[ ] No console errors  
+
+---
+
+### 5. Rollback (if needed)
+
+If a critical issue arises after production cutover, execute the following steps **immediately**:
+
+#### Rollback Step 1: Flip Feature Flag to OFF
+
+```bash
+az webapp config appsettings set \
+  --resource-group rg-roadtripmap-prod \
+  --name app-roadtripmap-prod \
+  --settings FeatureFlags__ResilientUploadsUI=false
+
+# Restart the app
+az webapp restart \
+  --resource-group rg-roadtripmap-prod \
+  --name app-roadtripmap-prod
+```
+
+Wait 2–3 minutes for the restart. Users will immediately see the legacy status bar again. No code revert needed; the flag flip is the rollback.
+
+#### Rollback Step 2: Code Revert (Optional)
+
+If the flag flip alone is insufficient (e.g., back-end endpoint crashes), revert to Phase 2 code:
+
+```bash
+# Swap staging and production slots to restore Phase 2 version
+az webapp deployment slot swap \
+  --resource-group rg-roadtripmap-prod \
+  --name app-roadtripmap-prod \
+  --slot staging
+```
+
+Wait 2–3 minutes for the swap. Re-test the `/api/version` endpoint and manual upload flow.
+
+---
+
+### 6. Sign-Off
+
+#### Approval Chain
+
+After completing all sections above, obtain sign-off from Patrick:
+
+| Section | Status | Signed By | Timestamp (UTC) |
+|---------|--------|-----------|-----------------|
+| 1. Pre-flight | ☐ Pass / ☐ Deviation | | |
+| 2. Deploy with flag OFF | ☐ Pass / ☐ Deviation | | |
+| 3. Staging validation with flag ON | ☐ Pass / ☐ Deviation | | |
+| 4. Production cutover | ☐ Pass / ☐ Deviation | | |
+
+#### Deviation Log
+
+Record any deviations from the runbook below:
+
+| Step | Expected | Actual | Resolution | Sign-off |
+|------|----------|--------|------------|----------|
+| | | | | |
+| | | | | |
+| | | | | |
+
+**Final Status:** ☐ **PHASE 3 DEPLOYMENT SUCCEEDED** / ☐ **PHASE 3 DEPLOYMENT ROLLED BACK**
+
+**Patrick's Final Sign-Off:**
+
+```
+Initials: _____
+UTC Timestamp: _____
+Commit this runbook with any deviations recorded.
+```
+
+---
+
+## Phase 4 — Stabilization + flag removal
+
+**Phase:** Phase 4 (Subcomponents A–E, Tasks 1–8)  
+**Scope:** Validate resilient-upload pipeline under real-world conditions with Patrick's active trip, add structured telemetry with correlation IDs, conduct legacy-trip audit, and remove the feature flag after acceptance sign-off.
+
+### Prerequisites
+
+Before starting Phase 4 deployment:
+
+- **Phase 3 deployed and healthy**: Verify via `curl https://app-roadtripmap-prod.azurewebsites.net/api/version` returning 200 with version headers.
+- **PR merged**: The Phase 4 feature branch is merged to `main` with all CI checks passing.
+- **Acceptance artifacts ready**:
+  - `docs/implementation-plans/2026-04-13-resilient-uploads/phase-4-acceptance.md` contains Patrick's sign-off.
+  - Legacy-trip audit (`Task 6`) is complete with zero unresolved entries.
+- **Local tooling (WSL bash)**:
+  - `az` CLI 2.50+
+  - `curl`
+  - `jq` (for JSON parsing)
+  - `git`
+
+---
+
+### 1. Pre-flight
+
+#### [bash/WSL] Confirm Git State
+
+```bash
+cd /home/patrick/projects/road-trip
+git fetch origin
+gh pr list --head develop --base main --state open
+```
+
+**Expected outcome:** Exactly one open PR (the Phase 4 feature branch) or zero if already merged.
+
+#### [bash/WSL] Verify Phase 3 Healthy
+
+```bash
+curl -i https://app-roadtripmap-prod.azurewebsites.net/api/version
+```
+
+**Expected output:**
+- **HTTP Status:** `200 OK`
+- **Headers:** `x-server-version` and `x-client-min-version` present
+- **Response body:** JSON with `server_version` and `client_min_version`
+
+#### [File] Verify Patrick's Sign-Off in Acceptance Document
+
+```bash
+cd /home/patrick/projects/road-trip
+grep -i "Accepted by Patrick on" docs/implementation-plans/2026-04-13-resilient-uploads/phase-4-acceptance.md
+```
+
+**Expected outcome:** A line matching `Accepted by Patrick on YYYY-MM-DD` (no defect list blocking progression).
+
+#### [File] Verify Legacy-Trip Audit Closed
+
+```bash
+grep -i "all flagged rows resolved\|audit.*closed\|zero unresolved" docs/implementation-plans/2026-04-13-resilient-uploads/phase-4-acceptance.md
+```
+
+**Expected outcome:** An entry confirming all legacy-trip failed uploads have been resolved (retried, pin-dropped, or marked orphan-swept).
+
+**Deviation log entry:**  
+[ ] Phase 4 PR merged (or verified ready)  
+[ ] Phase 3 production healthy  
+[ ] Patrick's acceptance sign-off confirmed  
+[ ] Legacy-trip audit closed with zero unresolved entries  
+
+---
+
+### 2. Deploy Code Change (Feature Flag Removal)
+
+#### [GitHub web] Verify Phase 4 Code Merged
+
+1. Navigate to the [road-trip repository on GitHub](https://github.com/psford/road-trip).
+2. Open **Commits** on the `main` branch.
+3. Verify the most recent commit message includes `Phase 4` and `flag removal`.
+4. Confirm CI status: **✅ All checks passed**.
+
+#### [bash/WSL] Build and Test Locally (Optional, for verification)
+
+If desired, verify the flag-removal code locally:
+
+```bash
+cd /home/patrick/projects/road-trip
+
+# Build
+dotnet build RoadTripMap.sln --configuration Release
+
+# Run tests
+dotnet test RoadTripMap.sln --configuration Release --no-build
+```
+
+**Expected output:** All tests pass; no flag-related code errors.
+
+#### [bash/WSL] Smoke Test: Page Load without Feature Flag
+
+Wait 30 seconds for the production deployment to stabilize (if auto-deployed via CI/CD), then verify:
+
+```bash
+curl -I https://app-roadtripmap-prod.azurewebsites.net/post/<valid-trip-token>
+```
+
+**Expected:**
+- HTTP 200 OK
+- No `data-resilient-uploads-ui` attribute in the HTML (flag removed from POST.cshtml)
+- DevTools Elements shows the new resilient-upload UI is the only path (no legacy status bar code)
+
+#### [Browser] Manual Verification
+
+1. Navigate to `https://app-roadtripmap-prod.azurewebsites.net/post/<valid-trip-token>` in a browser.
+2. Open **DevTools** → **Elements**.
+3. Search for `data-resilient-uploads-ui` — **should NOT be found**.
+4. Search for `.upload-status-bar` CSS class — **should NOT be found** (only new `.upload-progress-panel` should be present).
+5. Upload one test photo.
+6. Verify the upload succeeds with the new progress panel UI (no legacy status bar).
+
+**Deviation log entry:**  
+[ ] Phase 4 code merged and CI passed  
+[ ] Page loads without feature flag attribute  
+[ ] New UI is the only code path (legacy dead code removed)  
+[ ] Test photo upload succeeded  
+
+---
+
+### 3. Remove the Feature Flag from App Service Config
+
+#### [bash/WSL] Delete the Feature Flag Setting
+
+```bash
+az webapp config appsettings delete \
+  --resource-group rg-roadtripmap-prod \
+  --name app-roadtripmap-prod \
+  --setting-names FeatureFlags__ResilientUploadsUI
+```
+
+**Expected output:** Deletion succeeds without error.
+
+#### [bash/WSL] Verify Deletion
+
+```bash
+az webapp config appsettings list \
+  --resource-group rg-roadtripmap-prod \
+  --name app-roadtripmap-prod \
+  --query "[?name=='FeatureFlags__ResilientUploadsUI']"
+```
+
+**Expected output:** Empty array `[]` (setting no longer exists).
+
+**Deviation log entry:**  
+[ ] Feature flag deleted from App Service config  
+[ ] Deletion verified (empty query result)  
+
+---
+
+### 4. Observability Check
+
+#### [bash/WSL] Query Structured Logs for Upload Failures
+
+Query the App Service logs or Application Insights for the last 24 hours of upload telemetry:
+
+```bash
+# Option A: If using Application Insights, query via CLI
+az monitor app-insights query \
+  --app kv-roadtripmap-prod \
+  --analytics-query "
+    customEvents
+    | where name == 'upload.failed'
+    | where timestamp > ago(24h)
+    | summarize Count = count() by tostring(customDimensions['reason'])
+  "
+```
+
+Alternatively, tail the App Service logs and look for structured JSON events:
+
+```bash
+az webapp log tail \
+  --resource-group rg-roadtripmap-prod \
+  --name app-roadtripmap-prod \
+  --follow
+```
+
+Look for log entries matching:
+```json
+{"event":"upload.failed","reason":"...","uploadId":"...","ts":"..."}
+```
+
+**Expected:**
+- Zero `upload.failed` events with `reason='silent'` (indicating an unexpected, unhandled failure).
+- Any `upload.failed` entries should have a documented reason (e.g., `"SAS refresh failure"`, `"permanent network error"`).
+- All failure events are paired with corresponding user-visible error messages or telemetry events.
+
+**Deviation log entry:**  
+[ ] Structured logs queried for last 24 hours  
+[ ] Zero "silent" failures detected  
+[ ] All failure reasons are expected and documented  
+
+---
+
+### 5. Rollback Procedure
+
+Feature-flag removal is a heavier rollback than earlier phases. The new resilient-upload path is now the only code path. Rollback requires reverting the code change entirely.
+
+#### Rollback Step 1: Create Revert Commit
+
+```bash
+cd /home/patrick/projects/road-trip
+
+# Create a new branch off main
+git checkout main
+git pull origin main
+git checkout -b rollback/phase-4-flag-removal
+
+# Revert the Phase 4 flag-removal commit (do NOT revert the entire Phase 4 PR)
+# Find the commit hash for "chore: remove ResilientUploadsUI feature flag after Phase 4 acceptance"
+git log --oneline --all | grep -i "remove.*feature flag"
+
+# Revert it (replace <commit-hash> with the hash from above)
+git revert <commit-hash>
+
+# Verify the revert restored the flag usage
+git show HEAD | grep -A5 -B5 "FeatureFlags:ResilientUploadsUI"
+```
+
+**Expected:** The revert commit shows the flag conditionals and settings restored.
+
+#### Rollback Step 2: Push and Create PR
+
+```bash
+git push origin rollback/phase-4-flag-removal
+
+# Create a PR via GitHub web (faster than gh CLI)
+# Or via CLI:
+gh pr create \
+  --base main \
+  --head rollback/phase-4-flag-removal \
+  --title "rollback: Phase 4 flag removal — revert to flag-gated path" \
+  --body "Emergency rollback of Phase 4 flag removal. Restores feature flag conditionals and App Service configuration."
+```
+
+#### Rollback Step 3: Merge and Redeploy
+
+Wait for CI to pass, then merge the PR via GitHub web. The App Service deployment workflow will trigger automatically (if enabled) or manually via:
+
+```bash
+gh workflow run deploy.yml \
+  --ref main \
+  -f confirm_deploy="deploy" \
+  -f reason="Phase 4 rollback: flag removal reverted"
+```
+
+Wait for deployment to complete (5–10 minutes). Then restore the feature flag in App Service config:
+
+```bash
+az webapp config appsettings set \
+  --resource-group rg-roadtripmap-prod \
+  --name app-roadtripmap-prod \
+  --settings FeatureFlags__ResilientUploadsUI=false
+
+# Restart the app
+az webapp restart \
+  --resource-group rg-roadtripmap-prod \
+  --name app-roadtripmap-prod
+```
+
+**Staging can flip the flag back to `true` for further testing**, or leave it `false` to serve the legacy UI path.
+
+**Note:** Accepting Phase 4 and removing the feature flag is a commitment to the new resilient-upload path. Rollback requires code revert and is not a simple configuration flip like earlier phases.
+
+---
+
+### 6. Sign-Off
+
+#### Approval Chain
+
+After completing all sections above, obtain sign-off from Patrick:
+
+| Section | Status | Signed By | Timestamp (UTC) |
+|---------|--------|-----------|-----------------|
+| 1. Pre-flight | ☐ Pass / ☐ Deviation | | |
+| 2. Deploy code change (flag removal) | ☐ Pass / ☐ Deviation | | |
+| 3. Remove flag from App Service config | ☐ Pass / ☐ Deviation | | |
+| 4. Observability check | ☐ Pass / ☐ Deviation | | |
+
+#### Deviation Log
+
+Record any deviations from the runbook below:
+
+| Step | Expected | Actual | Resolution | Sign-off |
+|------|----------|--------|------------|----------|
+| | | | | |
+| | | | | |
+| | | | | |
+
+**Final Status:** ☐ **PHASE 4 DEPLOYMENT SUCCEEDED** / ☐ **PHASE 4 DEPLOYMENT ROLLED BACK**
+
+**Patrick's Final Sign-Off:**
+
+```
+Initials: _____
+UTC Timestamp: _____
+Commit this runbook with deviations and final sign-off recorded.
+```
+
+---
+
+**Document Version:** 1.3  
 **Created:** April 2026 (Phase 1 Implementation)  
 **Author:** Claude Code  
-**Last Reviewed:** (to be filled during deployment)
+**Last Reviewed:** (to be filled during Phase 4 deployment)

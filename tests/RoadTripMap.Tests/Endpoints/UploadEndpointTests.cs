@@ -399,6 +399,143 @@ public class UploadEndpointTests : IAsyncLifetime
         var blobProperties = await blobClient.GetPropertiesAsync();
         blobProperties.Value.ContentLength.Should().Be(15 * 1024 * 1024);
     }
+
+    /// <summary>
+    /// AC5.3, AC7.3: Pin-drop happy path - update GPS on committed photo.
+    /// </summary>
+    [Fact]
+    public async Task PinDrop_OnCommittedPhoto_Succeeds()
+    {
+        // Arrange - AC5.3: create and commit a photo, then pin-drop
+        if (_uploadService == null || _tripToken == null || _context == null || _blobServiceClient == null)
+            throw new InvalidOperationException("Test not initialized");
+
+        var uploadId = Guid.NewGuid();
+        var reqBody = new RequestUploadRequest
+        {
+            UploadId = uploadId,
+            Filename = "test.jpg",
+            ContentType = "image/jpeg",
+            SizeBytes = 100,
+            Exif = null
+        };
+
+        // Request and commit a photo
+        var uploadResp = await _uploadService.RequestUploadAsync(_tripToken, reqBody, CancellationToken.None);
+        var sasUri = new Uri(uploadResp.SasUrl);
+        var blockBlobClient = new Azure.Storage.Blobs.Specialized.BlockBlobClient(sasUri);
+        var blockData = new byte[100];
+        Array.Fill<byte>(blockData, (byte)'A');
+        var blockId = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes("block-0"));
+        await blockBlobClient.StageBlockAsync(blockId, new System.IO.MemoryStream(blockData));
+
+        var commitReq = new CommitRequest { BlockIds = new List<string> { blockId } };
+        var photoResp = await _uploadService.CommitAsync(_tripToken, uploadId, commitReq, CancellationToken.None);
+
+        // Photo should be committed with lat=0, lng=0
+        var photo = await _context.Photos.FirstOrDefaultAsync(p => p.UploadId == uploadId);
+        photo!.Status.Should().Be("committed");
+        photo.Latitude.Should().Be(0);
+        photo.Longitude.Should().Be(0);
+
+        // Act - Pin-drop with new coordinates
+        var gpsLat = 40.7128;
+        var gpsLon = -74.0060;
+        var pinDropResp = await _uploadService.PinDropAsync(_tripToken, uploadId, gpsLat, gpsLon, CancellationToken.None);
+
+        // Assert - GPS updated, PhotoResponse contains new coordinates
+        pinDropResp.Should().NotBeNull();
+        pinDropResp.Lat.Should().Be(gpsLat);
+        pinDropResp.Lng.Should().Be(gpsLon);
+
+        // Verify DB updated
+        photo = await _context.Photos.FirstOrDefaultAsync(p => p.UploadId == uploadId);
+        photo!.Latitude.Should().Be(gpsLat);
+        photo.Longitude.Should().Be(gpsLon);
+        photo.Status.Should().Be("committed"); // Should remain committed
+    }
+
+    /// <summary>
+    /// AC7.3: Pin-drop rejected on non-committed photo (409 Conflict).
+    /// </summary>
+    [Fact]
+    public async Task PinDrop_OnPendingPhoto_Returns409()
+    {
+        // Arrange - AC7.3: create pending photo, try to pin-drop (should fail)
+        if (_uploadService == null || _tripToken == null)
+            throw new InvalidOperationException("Test not initialized");
+
+        var uploadId = Guid.NewGuid();
+        var reqBody = new RequestUploadRequest
+        {
+            UploadId = uploadId,
+            Filename = "test.jpg",
+            ContentType = "image/jpeg",
+            SizeBytes = 100,
+            Exif = null
+        };
+
+        // Request upload (photo is pending)
+        await _uploadService.RequestUploadAsync(_tripToken, reqBody, CancellationToken.None);
+
+        // Act & Assert - Pin-drop on pending photo should throw BadHttpRequestException
+        var ex = await Assert.ThrowsAsync<BadHttpRequestException>(
+            () => _uploadService.PinDropAsync(_tripToken, uploadId, 40.7128, -74.0060, CancellationToken.None));
+
+        ex.Message.Should().Contain("Pin-drop only allowed on committed photos");
+    }
+
+    /// <summary>
+    /// AC5.3: Pin-drop on cross-trip photo returns 404.
+    /// </summary>
+    [Fact]
+    public async Task PinDrop_OnCrossTripPhoto_Returns404()
+    {
+        // Arrange - AC5.3: commit photo in trip1, try to pin-drop via trip2's token (should fail)
+        if (_uploadService == null || _context == null)
+            throw new InvalidOperationException("Test not initialized");
+
+        // Create second trip
+        var trip2Token = Guid.NewGuid().ToString();
+        var trip2 = new TripEntity
+        {
+            Slug = "cross-trip-test",
+            Name = "Cross-Trip Test",
+            SecretToken = trip2Token,
+            ViewToken = Guid.NewGuid().ToString()
+        };
+        await _context.Trips.AddAsync(trip2);
+        await _context.SaveChangesAsync();
+
+        // Commit photo in trip1
+        if (_tripToken == null || _blobServiceClient == null)
+            throw new InvalidOperationException("Test not initialized");
+
+        var uploadId = Guid.NewGuid();
+        var reqBody = new RequestUploadRequest
+        {
+            UploadId = uploadId,
+            Filename = "test.jpg",
+            ContentType = "image/jpeg",
+            SizeBytes = 100,
+            Exif = null
+        };
+
+        var uploadResp = await _uploadService.RequestUploadAsync(_tripToken, reqBody, CancellationToken.None);
+        var sasUri = new Uri(uploadResp.SasUrl);
+        var blockBlobClient = new Azure.Storage.Blobs.Specialized.BlockBlobClient(sasUri);
+        var blockData = new byte[100];
+        Array.Fill<byte>(blockData, (byte)'A');
+        var blockId = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes("block-0"));
+        await blockBlobClient.StageBlockAsync(blockId, new System.IO.MemoryStream(blockData));
+
+        var commitReq = new CommitRequest { BlockIds = new List<string> { blockId } };
+        await _uploadService.CommitAsync(_tripToken, uploadId, commitReq, CancellationToken.None);
+
+        // Act & Assert - Try to pin-drop using trip2's token (should fail with KeyNotFoundException -> 404)
+        var ex = await Assert.ThrowsAsync<KeyNotFoundException>(
+            () => _uploadService.PinDropAsync(trip2Token, uploadId, 40.7128, -74.0060, CancellationToken.None));
+    }
 }
 
 /// <summary>

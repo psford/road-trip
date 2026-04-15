@@ -2,6 +2,7 @@
  * Vitest setup — loads wwwroot/js global-namespace modules into jsdom scope.
  * These files use `const Foo = {...}` pattern, not ES modules.
  */
+import 'fake-indexeddb/auto';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
 
@@ -9,14 +10,11 @@ const wwwroot = resolve(process.cwd(), 'src/RoadTripMap/wwwroot/js');
 
 function loadGlobal(filename) {
     const code = readFileSync(resolve(wwwroot, filename), 'utf-8');
-    // Execute in global scope so const declarations become global
-    const script = new Function(code.replace(/^const /gm, 'globalThis.'));
-    try {
-        script();
-    } catch (e) {
-        // Fallback: eval in global context
-        eval(code.replace(/^const /gm, 'globalThis.'));
-    }
+    // Execute in global scope so declarations become global
+    // Convert const X = {...} to globalThis.X = {...}
+    let modifiedCode = code.replace(/^const (\w+) = /gm, 'globalThis.$1 = ');
+    // Execute in eval to ensure true global scope
+    eval(modifiedCode);
 }
 
 beforeAll(() => {
@@ -39,10 +37,34 @@ beforeAll(() => {
     }
 
     // Load modules
+    loadGlobal('featureFlags.js');
     loadGlobal('api.js');
     loadGlobal('mapCache.js');
+    loadGlobal('uploadUtils.js');
+    loadGlobal('uploadSemaphore.js');
+    loadGlobal('storageAdapter.js');
+    loadGlobal('uploadTelemetry.js');
+    loadGlobal('uploadTransport.js');
+    loadGlobal('versionProtocol.js');
+    loadGlobal('uploadQueue.js');
+    loadGlobal('progressPanel.js');
+    loadGlobal('resumeBanner.js');
+    loadGlobal('postUI.js');
 });
+
+/**
+ * Test helper to wait for all UploadQueue processing to complete
+ */
+globalThis.UploadQueueTestHelper = {
+    waitForAll: async () => {
+        const promises = Array.from(globalThis.UploadQueue._processingPromises.values());
+        return Promise.all(promises);
+    }
+};
 
 afterEach(() => {
     vi.clearAllMocks();
+    // Clear DOM modifications made during test
+    document.body.innerHTML = '';
+    document.head.innerHTML = '';
 });

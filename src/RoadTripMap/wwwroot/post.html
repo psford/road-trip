@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="robots" content="noindex, nofollow">
+    <meta name="client-version" content="1.0.0">
+    <meta id="featureFlags" data-resilient-uploads-ui="">
     <title>Post Photo - Road Trip Map</title>
     <link rel="stylesheet" href="/css/styles.css?v=4">
     <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.21.0/dist/maplibre-gl.css"
@@ -22,6 +24,12 @@
 
         <!-- Error message -->
         <div id="errorMessage" class="message error hidden"></div>
+
+        <!-- Resume Banner (paused uploads notification) -->
+        <div id="resumeBannerContainer"></div>
+
+        <!-- Progress Panel (upload progress and actions) -->
+        <div id="progressPanelContainer"></div>
 
         <!-- Add Photo Button -->
         <button id="addPhotoButton" class="button button-primary add-photo-button">
@@ -89,6 +97,7 @@
 
     <!-- Scripts -->
     <script src="/lib/exifr/full.umd.js"></script>
+    <script src="/js/featureFlags.js"></script>
     <script src="/js/exifUtil.js"></script>
     <script src="/js/api.js"></script>
     <script src="/js/mapCache.js"></script>
@@ -101,7 +110,16 @@
     <script src="/js/parkStyle.js"></script>
     <script src="/js/stateParkLayer.js"></script>
     <script src="/js/photoCarousel.js"></script>
+    <script src="/js/uploadUtils.js"></script>
+    <script src="/js/uploadSemaphore.js"></script>
+    <script src="/js/storageAdapter.js"></script>
+    <script src="/js/uploadTelemetry.js"></script>
+    <script src="/js/uploadTransport.js"></script>
+    <script src="/js/versionProtocol.js"></script>
     <script src="/js/uploadQueue.js"></script>
+    <script src="/js/progressPanel.js"></script>
+    <script src="/js/resumeBanner.js"></script>
+    <script src="/js/optimisticPins.js"></script>
     <script src="/js/postUI.js"></script>
 </body>
 </html>

@@ -23,4 +23,11 @@ public interface IUploadService
     /// Idempotent: no-op if the photo doesn't exist.
     /// </summary>
     Task AbortAsync(string tripToken, Guid photoId, CancellationToken ct);
+
+    /// <summary>
+    /// Manually updates a photo's GPS coordinates via pin-drop.
+    /// AC5.3, AC7.3: User clicks [📍 Pin manually] on a committed photo to save manual location.
+    /// Only succeeds on committed photos; rejects pending/failed with 409.
+    /// </summary>
+    Task<PhotoResponse> PinDropAsync(string tripToken, Guid photoId, double gpsLat, double gpsLon, CancellationToken ct);
 }
