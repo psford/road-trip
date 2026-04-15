@@ -1,0 +1,5 @@
+{
+  "env": {
+    "SPEC_STALENESS_PATH": "docs/TECHNICAL_SPEC.md"
+  }
+}
