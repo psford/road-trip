@@ -17,6 +17,7 @@ const UploadQueue = {
     _claimantId: null, // Unique ID for this tab/page load
     _processingPromises: new Map(), // uploadId -> Promise
     _blockListMismatchRetries: new Map(), // uploadId -> retry count
+    _uploadStartTimes: new Map(), // uploadId -> Date.now() at start
 
     /**
      * Initialize queue on page load
@@ -374,6 +375,9 @@ const UploadQueue = {
      */
     async _doRequestUpload(uploadId, tripToken, item) {
         try {
+            // Record start time for duration tracking
+            this._uploadStartTimes.set(uploadId, Date.now());
+
             // Record telemetry: upload requested
             const exifPresent = item.exif && Object.keys(item.exif).length > 0;
             UploadTelemetry.recordUploadRequested(uploadId, tripToken, item.size, exifPresent);
@@ -563,7 +567,10 @@ const UploadQueue = {
         // Record committed event
         const blocks = await StorageAdapter.listBlocks(uploadId);
         const blockCount = blocks ? blocks.length : 0;
-        UploadTelemetry.recordCommitted(uploadId, item.photo_id, 0, blockCount);
+        const startTime = this._uploadStartTimes.get(uploadId) || 0;
+        const totalDurationMs = startTime ? Date.now() - startTime : 0;
+        this._uploadStartTimes.delete(uploadId);
+        UploadTelemetry.recordCommitted(uploadId, item.photo_id, totalDurationMs, blockCount);
 
         // Emit event
         document.dispatchEvent(

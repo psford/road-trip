@@ -184,6 +184,7 @@ const UploadTransport = {
 
             try {
                 for (let attempt = 0; attempt < maxRetries; attempt++) {
+                    const blockStartMs = Date.now();
                     try {
                         // Upload block
                         await UploadTransport.putBlock(
@@ -200,7 +201,7 @@ const UploadTransport = {
                         });
 
                         // Record block completion telemetry
-                        UploadTelemetry.recordBlockCompleted(uploadId, blockInfo.index, attempt, 0);
+                        UploadTelemetry.recordBlockCompleted(uploadId, blockInfo.index, attempt, Date.now() - blockStartMs);
 
                         lastError = null;
                         uploadSucceeded = true;
@@ -231,7 +232,8 @@ const UploadTransport = {
                         if (error instanceof UploadTransport.RetryableError) {
                             if (attempt < maxRetries - 1) {
                                 // Record retry telemetry
-                                const statusCode = error.message.match(/\d{3}/) ? parseInt(error.message.match(/\d{3}/)[0]) : 0;
+                                const statusMatch = error.message.match(/\b([45]\d{2})\b/);
+                                const statusCode = statusMatch ? parseInt(statusMatch[1]) : 0;
                                 const delayMs = UploadUtils.backoffMs(attempt);
                                 UploadTelemetry.recordBlockRetry(uploadId, blockInfo.index, attempt + 1, statusCode, delayMs);
 

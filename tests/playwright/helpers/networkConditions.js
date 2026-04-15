@@ -98,26 +98,22 @@ async function clearNetworkConditions(page) {
  * @param {number} timeoutMs - Timeout in milliseconds
  * @returns {Promise<void>}
  */
-async function waitForUploadsComplete(page, timeoutMs = 60000) {
+/**
+ * NOTE: This is structural scaffolding. Requires a running server to function.
+ * When running against a live server, this polls the progress panel for committed status.
+ */
+async function waitForUploadsComplete(page, expectedCount, timeoutMs = 60000) {
     const startTime = Date.now();
 
-    // Poll for upload completion by checking console logs
     while (Date.now() - startTime < timeoutMs) {
-        // Check if any uploads are still in progress by looking at the page state
-        // This is a simplified check - in real scenarios, you'd monitor:
-        // - Database for 'committed' status
-        // - Progress panel UI
-        // - Network idle
-
-        // Wait a bit before next check
+        const committedCount = await page.evaluate(() => {
+            const rows = document.querySelectorAll('.upload-panel__row[data-status="committed"]');
+            return rows.length;
+        });
+        if (committedCount >= expectedCount) return;
         await page.waitForTimeout(500);
-
-        // In a real test, you'd verify:
-        // const committedCount = await page.evaluate(() => {
-        //     return window.uploadCommittedCount || 0;
-        // });
-        // If all uploads have completed, break out
     }
+    throw new Error(`Timed out waiting for ${expectedCount} uploads to complete after ${timeoutMs}ms`);
 }
 
 // Export all helpers

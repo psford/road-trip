@@ -15,7 +15,7 @@ set -euo pipefail
 echo "Fetching prod connection string from Key Vault..."
 CONN=$(az keyvault secret show \
   --vault-name kv-roadtripmap-prod \
-  --name RoadTripDbConnection \
+  --name DbConnectionString \
   --query value -o tsv)
 
 if [ -z "$CONN" ]; then
