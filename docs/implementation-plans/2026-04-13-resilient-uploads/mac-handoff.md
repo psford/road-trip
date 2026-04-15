@@ -2,6 +2,15 @@
 
 Continuation guide for executing Phases 2–7 on a Mac after Phase 1 has landed on `main`.
 
+**Status (2026-04-14, updated after deploy):**
+- Phase 1 is merged (PRs #37, #38, #39, #40) and **deployed to prod**.
+- `app-roadtripmap-prod` is serving `roadtripmap:prod-33`; `/api/version` returns `1.0.0` with headers.
+- EF migration `AddUploadStatusColumns` is applied to `roadtripmap-db`.
+- Storage Blob Data Contributor role granted to the App Service MSI on the shared `stockanalyzerblob` account.
+- 39 per-trip containers (`trip-*`) were backfilled; `Backfill__RunOnStartup` is cleared.
+- `main.bicep` is the faithful source of truth; `what-if` against prod shows no functional drift.
+- Project docs (CLAUDE.md, TECHNICAL_SPEC 3.0, FUNCTIONAL_SPEC) are current as of merge of PR #39.
+
 ## Why a Mac
 
 - Phase 5 introduces a Capacitor iOS shell. `npx cap sync ios` and Xcode builds run on macOS only.
@@ -29,25 +38,20 @@ Clone and bootstrap:
 cd ~/projects
 git clone git@github.com:psford/road-trip.git
 cd road-trip
-git fetch --all
-git checkout feat/resilient-uploads          # Phase 1 branch, still open in PR #37
-# OR if Phase 1 has merged:
 git checkout main
-git pull
+git pull --ff-only
 ```
 
-Claude-env bootstrap is not strictly required on Mac (no WSL2 isolation needed), but the hooks and helpers under `/home/patrick/projects/claude-env/` can be cloned to `~/projects/claude-env/` for consistency if you want identical dev ergonomics.
+Phase 1 is already merged — there's no outstanding branch to check out. Start Phase 2 directly off `main`.
+
+Claude-env bootstrap is not strictly required on Mac (no WSL2 isolation needed), but the hooks and helpers under `claude-env` should be cloned to `~/projects/claude-env/` so the spec-staleness guard, endpoint registry guard, azure SP identity guard, etc. still fire during Phase 2 work. If the hooks aren't wired, the Mac session loses the guardrails that caught the docs drift on this Phase 1.
 
 ## Starting Phase 2 execution
 
-Phase 2 requires a merged `main` with Phase 1 in it. If PR #37 is still open, either:
-
-- Land PR #37 via GitHub web (standard flow per CLAUDE.md), then continue from `main`.
-- Or execute Phase 2 on top of `feat/resilient-uploads` and open a stacked PR.
-
-Invoke the execution skill with the same pattern used for Phase 1:
+Prereq: Phase 1 merged (it is). Create a feature branch off `main` and execute:
 
 ```
+git checkout -b feat/resilient-uploads-phase2
 /ed3d-plan-and-execute:execute-implementation-plan
   <absolute-path-to>/docs/implementation-plans/2026-04-13-resilient-uploads/
   <absolute-path-to>/
@@ -126,12 +130,11 @@ For Azurite, the Phase 1 fixture already bakes in the well-known `devstoreaccoun
 
 ## What Phase 1 left on the table
 
-See PR #37 description and the commit log in `docs/implementation-plans/2026-04-13-resilient-uploads/`. Key deferred items:
+See `overnight-report.md` and `deployment-log-2026-04-14.md` for the full trail. Carry-over to Phase 2+:
 
-- `Status='failed'` client→server write path (Phase 2 concern).
-- Full HTTP round-trip test of `PhotoServingEndpoint` fetching a per-trip photo via the API proxy (service-layer test + Program.cs branch verified by hand; not wired into a WebApplicationFactory assertion).
-- `az deployment group create --what-if` against prod RG — gated on deployment runbook.
-- Actual prod deploy of Phase 1 — runbook step, not a code task.
+- `Status='failed'` client→server write path (Phase 2 concern — client sets row to failed after retry exhaustion; `OrphanSweeper` already filters to `status='pending'` only, so no follow-on change needed there).
+- Full HTTP round-trip test of `PhotoServingEndpoint` fetching a per-trip photo via the API proxy (the storage-tier branch is code-verified in `PhotoService` and service-layer tested, but there is no WebApplicationFactory test that GETs `/api/photos/{tripId}/{photoId}/{size}` for a per-trip blob and asserts the bytes).
+- Optional: wire EF migration + Bicep `what-if`/apply steps into `deploy.yml` so Phase 1-style manual runbook steps aren't repeated for every future migration or infra change.
 
 ## Runbook location
 
@@ -139,7 +142,13 @@ See PR #37 description and the commit log in `docs/implementation-plans/2026-04-
 
 ## Contact / context
 
-- Phase 1 PR: https://github.com/psford/road-trip/pull/37
+- Phase 1 PRs: [#37](https://github.com/psford/road-trip/pull/37) (implementation), [#38](https://github.com/psford/road-trip/pull/38) (Bicep reconcile), [#39](https://github.com/psford/road-trip/pull/39) (docs refresh), [#40](https://github.com/psford/road-trip/pull/40) (settings pin) — all merged.
 - Plan directory: `docs/implementation-plans/2026-04-13-resilient-uploads/`
+  - `phase_01.md`–`phase_07.md` — per-phase implementation plans
+  - `test-requirements.md` — acceptance-criteria test map
+  - `deployment-runbook.md` — Phase 1 prod deploy playbook (followed 2026-04-14)
+  - `deployment-log-2026-04-14.md` — filled-in execution log for the Phase 1 deploy
+  - `overnight-report.md` — narrative of the autonomous Phase 1 implementation session
 - Design: `docs/design-plans/2026-04-13-resilient-uploads.md`
-- Retrospective for Phase 1 (if Patrick writes one): `docs/retrospectives/...`
+- Tech reference: `docs/TECHNICAL_SPEC.md` v3.0 (current as of 2026-04-14)
+- Prod infra reference in memory: `reference_roadtrip_prod_infra` (cross-RG topology, principal IDs, deploy pipeline)
