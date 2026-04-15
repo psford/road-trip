@@ -72,6 +72,39 @@ const PostUI = {
         // Load trip info and existing photos
         this.loadTripInfo();
         this.loadPhotoList();
+
+        // Resume uploads from previous session
+        this.resumeUploads();
+
+        // Listen for upload events
+        this.setupUploadEventListeners();
+    },
+
+    async resumeUploads() {
+        try {
+            await UploadQueue.resume(this.secretToken);
+        } catch (err) {
+            console.warn('Failed to resume uploads:', err);
+        }
+    },
+
+    setupUploadEventListeners() {
+        // On committed upload, refresh the photo list
+        UploadQueue.subscribe('upload:committed', (detail) => {
+            console.log(`[PostUI] Upload committed: ${detail.uploadId}`);
+            this.refreshPhotoList();
+        });
+
+        // On version reload required, alert the user (Phase 3 will add proper banner)
+        UploadQueue.subscribe('version:reload-required', (detail) => {
+            console.warn(
+                `[PostUI] Version reload required. Server version: ${detail.serverVersion}, ` +
+                `client minimum: ${detail.clientMin}, current: ${detail.currentVersion}`
+            );
+            alert(
+                'A new version of this app is available. Please reload the page to get the latest features.'
+            );
+        });
     },
 
     isIOSSafari() {
@@ -304,9 +337,16 @@ const PostUI = {
         const gpsFiles = withMetadata.filter(f => f.metadata.gps);
         const noGpsFiles = withMetadata.filter(f => !f.metadata.gps);
 
-        // Start GPS uploads immediately via queue
+        // Start GPS uploads immediately via queue with new format
         if (gpsFiles.length > 0) {
-            UploadQueue.start(this.secretToken, gpsFiles, {
+            // Transform to resilient queue format: each item needs { file, metadata, uploadId }
+            const filesWithUploadIds = gpsFiles.map(item => ({
+                file: item.file,
+                metadata: item.metadata,
+                uploadId: UploadUtils.newGuid()
+            }));
+
+            UploadQueue.start(this.secretToken, filesWithUploadIds, {
                 onEachComplete: () => this.refreshPhotoList(),
                 onAllComplete: () => this.handleNoGpsFiles(noGpsFiles)
             });
@@ -317,9 +357,12 @@ const PostUI = {
         // Show non-GPS info
         if (noGpsFiles.length > 0 && gpsFiles.length > 0) {
             if (noGpsFiles.length <= 5) {
-                UploadQueue.addMessage(`${noGpsFiles.length} photo${noGpsFiles.length > 1 ? 's' : ''} need a location — set pins after upload`);
+                this.showToast(
+                    `${noGpsFiles.length} photo${noGpsFiles.length > 1 ? 's' : ''} need a location — set pins after upload`,
+                    'info'
+                );
             } else {
-                UploadQueue.addMessage(`${noGpsFiles.length} photos skipped — no GPS data`);
+                this.showToast(`${noGpsFiles.length} photos skipped — no GPS data`, 'info');
             }
         }
     },
