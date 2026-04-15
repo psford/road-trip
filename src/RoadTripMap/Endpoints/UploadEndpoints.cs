@@ -247,6 +247,13 @@ public static class UploadEndpoints
                 new { error = "Conflict: pin-drop only allowed on committed photos" },
                 statusCode: 409);
         }
+        catch (BadHttpRequestException ex)
+        {
+            logger.LogWarning(
+                "PinDropHandler: bad request. photo_id={photoId}",
+                photoId);
+            return Results.BadRequest(new { error = ex.Message });
+        }
         catch (Exception ex)
         {
             logger.LogError(ex, "PinDropHandler: unexpected error. photo_id={photoId}, token_prefix={prefix}",
