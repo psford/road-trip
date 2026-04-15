@@ -72,3 +72,15 @@ public record CommitRequest
     [JsonPropertyName("blockIds")]
     public required List<string> BlockIds { get; init; }
 }
+
+/// <summary>
+/// Request to manually update a photo's GPS coordinates via pin-drop.
+/// </summary>
+public record PinDropRequest
+{
+    [JsonPropertyName("gpsLat")]
+    public required double GpsLat { get; init; }
+
+    [JsonPropertyName("gpsLon")]
+    public required double GpsLon { get; init; }
+}

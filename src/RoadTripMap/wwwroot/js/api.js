@@ -260,4 +260,26 @@ const API = {
         }
         return response.json();
     },
+
+    /**
+     * Manually update a photo's GPS coordinates via pin-drop
+     * @param {string} secretToken - Trip secret token
+     * @param {Object} body - Request body { photoId, gpsLat, gpsLon }
+     * @returns {Promise<PhotoResponse>}
+     */
+    async pinDropPhoto(secretToken, body) {
+        const { photoId, gpsLat, gpsLon } = body;
+        const response = await fetch(`${this.baseUrl}/trips/${secretToken}/photos/${photoId}/pin-drop`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ gpsLat, gpsLon })
+        });
+        if (!response.ok) {
+            const error = await response.json().catch(() => ({}));
+            const errorObj = new Error(error.message || error.error || 'Failed to pin-drop photo');
+            errorObj.code = error.code;
+            throw errorObj;
+        }
+        return response.json();
+    },
 };

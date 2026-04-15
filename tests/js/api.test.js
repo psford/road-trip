@@ -269,3 +269,90 @@ describe('API.getVersion', () => {
             .rejects.toThrow();
     });
 });
+
+describe('API.pinDropPhoto', () => {
+    it('POSTs to pin-drop endpoint with GPS coordinates', async () => {
+        const secretToken = 'test-token-123';
+        const photoId = 'f47ac10b-58cc-4372-a567-0e02b2c3d479';
+        const body = {
+            photoId: photoId,
+            gpsLat: 40.7128,
+            gpsLon: -74.0060
+        };
+
+        fetch.mockResolvedValueOnce({
+            ok: true,
+            json: async () => ({
+                id: 123,
+                uploadId: photoId,
+                lat: 40.7128,
+                lng: -74.0060,
+                placeName: 'New York, NY'
+            })
+        });
+
+        const result = await API.pinDropPhoto(secretToken, body);
+
+        expect(fetch).toHaveBeenCalledWith(
+            `/api/trips/test-token-123/photos/${photoId}/pin-drop`,
+            {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ gpsLat: 40.7128, gpsLon: -74.0060 })
+            }
+        );
+        expect(result.lat).toBe(40.7128);
+        expect(result.lng).toBe(-74.0060);
+    });
+
+    it('throws on 409 conflict (non-committed photo)', async () => {
+        const secretToken = 'test-token-123';
+        const photoId = 'f47ac10b-58cc-4372-a567-0e02b2c3d479';
+
+        fetch.mockResolvedValueOnce({
+            ok: false,
+            status: 409,
+            json: async () => ({ error: 'Conflict: pin-drop only allowed on committed photos' })
+        });
+
+        await expect(API.pinDropPhoto(secretToken, {
+            photoId: photoId,
+            gpsLat: 40.7128,
+            gpsLon: -74.0060
+        })).rejects.toThrow();
+    });
+
+    it('throws on 404 (photo not found)', async () => {
+        const secretToken = 'test-token-123';
+        const photoId = 'f47ac10b-58cc-4372-a567-0e02b2c3d479';
+
+        fetch.mockResolvedValueOnce({
+            ok: false,
+            status: 404,
+            json: async () => ({ error: 'Photo not found or does not belong to this trip' })
+        });
+
+        await expect(API.pinDropPhoto(secretToken, {
+            photoId: photoId,
+            gpsLat: 40.7128,
+            gpsLon: -74.0060
+        })).rejects.toThrow();
+    });
+
+    it('throws on other error status', async () => {
+        const secretToken = 'test-token-123';
+        const photoId = 'f47ac10b-58cc-4372-a567-0e02b2c3d479';
+
+        fetch.mockResolvedValueOnce({
+            ok: false,
+            status: 500,
+            json: async () => ({ error: 'Internal server error' })
+        });
+
+        await expect(API.pinDropPhoto(secretToken, {
+            photoId: photoId,
+            gpsLat: 40.7128,
+            gpsLon: -74.0060
+        })).rejects.toThrow();
+    });
+});
