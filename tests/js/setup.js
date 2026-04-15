@@ -37,6 +37,7 @@ beforeAll(() => {
     }
 
     // Load modules
+    loadGlobal('featureFlags.js');
     loadGlobal('api.js');
     loadGlobal('mapCache.js');
     loadGlobal('uploadUtils.js');
@@ -60,4 +61,7 @@ globalThis.UploadQueueTestHelper = {
 
 afterEach(() => {
     vi.clearAllMocks();
+    // Clear DOM modifications made during test
+    document.body.innerHTML = '';
+    document.head.innerHTML = '';
 });

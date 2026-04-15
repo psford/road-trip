@@ -151,6 +151,36 @@ var contentTypeProvider = new Microsoft.AspNetCore.StaticFiles.FileExtensionCont
 contentTypeProvider.Mappings[".geojson"] = "application/geo+json";
 app.UseStaticFiles(new StaticFileOptions { ContentTypeProvider = contentTypeProvider });
 
+// Middleware to inject feature flags into post.html before returning it
+app.Use(async (context, next) =>
+{
+    if (context.Request.Path.StartsWithSegments("/post", StringComparison.OrdinalIgnoreCase))
+    {
+        var originalBodyStream = context.Response.Body;
+        using var memoryStream = new MemoryStream();
+        context.Response.Body = memoryStream;
+
+        await next();
+
+        memoryStream.Position = 0;
+        using var reader = new StreamReader(memoryStream);
+        var content = await reader.ReadToEndAsync();
+
+        // Inject feature flags into the meta tag
+        var resilientUploadsUI = app.Configuration.GetValue<bool>("FeatureFlags:ResilientUploadsUI");
+        content = content.Replace(
+            """<meta id="featureFlags" data-resilient-uploads-ui="">""",
+            $"""<meta id="featureFlags" data-resilient-uploads-ui="{resilientUploadsUI.ToString().ToLower()}">""");
+
+        var bytes = System.Text.Encoding.UTF8.GetBytes(content);
+        await originalBodyStream.WriteAsync(bytes, 0, bytes.Length);
+        context.Response.Body = originalBodyStream;
+    }
+    else
+    {
+        await next();
+    }
+});
 
 app.MapGet("/api/health", () => Results.Ok(new { status = "healthy" }));
 
