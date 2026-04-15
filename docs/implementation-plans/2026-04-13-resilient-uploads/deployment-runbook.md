@@ -885,7 +885,355 @@ Commit this runbook with any deviations recorded.
 
 ---
 
-**Document Version:** 1.1  
+## Phase 3 — Resilient uploads UI (dark release)
+
+**Phase:** Phase 3 (Subcomponents A–H, Tasks 1–13)  
+**Scope:** Deploy browser-based progress panel, resume banner, optimistic map pins, and pin-drop fallback. Feature-flagged dark release: deploy with flag OFF, validate in staging with flag ON, cutover to production.
+
+### Prerequisites
+
+Before starting Phase 3 deployment:
+
+- **Phase 2 deployed and healthy**: Verify via `curl https://app-roadtripmap-prod.azurewebsites.net/api/version` returning 200 with version headers.
+- **UI visual design approved**: `docs/implementation-plans/2026-04-13-resilient-uploads/ui-review-notes.md` contains Patrick's approval with timestamp (ACX.4).
+- **PR merged**: The Phase 3 feature branch is merged to `main` with all CI checks passing.
+- **Local tooling (WSL bash)**:
+  - `az` CLI 2.50+
+  - `curl`
+  - `jq` (for JSON parsing)
+  - `git`
+
+---
+
+### 1. Pre-flight
+
+#### [bash/WSL] Confirm Git State
+
+```bash
+cd /home/patrick/projects/road-trip
+git fetch origin
+git log --oneline origin/main -1
+```
+
+**Expected outcome:** Latest commit is the Phase 3 PR merge.
+
+#### [bash/WSL] Verify Phase 2 Healthy
+
+```bash
+curl -i https://app-roadtripmap-prod.azurewebsites.net/api/version
+```
+
+**Expected output:**
+- **HTTP Status:** `200 OK`
+- **Headers:** `x-server-version` and `x-client-min-version` present
+- **Response body:** JSON with `server_version` and `client_min_version`
+
+#### [bash/WSL] Verify UI Design Review Approved
+
+```bash
+cat docs/implementation-plans/2026-04-13-resilient-uploads/ui-review-notes.md | grep -i "approved"
+```
+
+**Expected outcome:** File contains "Approved on YYYY-MM-DD by Patrick" with a date before today.
+
+**Deviation log entry:**  
+[ ] Phase 2 production healthy  
+[ ] UI review approved and recorded in ui-review-notes.md  
+
+---
+
+### 2. Deploy with Feature Flag OFF
+
+#### [bash/WSL] Snapshot Current Feature Flag Setting
+
+```bash
+az webapp config appsettings list \
+  --resource-group rg-roadtripmap-prod \
+  --name app-roadtripmap-prod \
+  --query "[?name=='FeatureFlags__ResilientUploadsUI'].value" -o tsv
+```
+
+**Expected outcome:** Output is empty, `false`, or not present (flag defaults to false in Production).
+
+#### [bash/WSL] Verify Bicep Configuration
+
+Inspect `infrastructure/azure/parameters.json` or `appsettings.Production.json` to confirm:
+- `FeatureFlags:ResilientUploadsUI` is set to `false` (default)
+
+If not already false, you must set it explicitly:
+
+```bash
+az webapp config appsettings set \
+  --resource-group rg-roadtripmap-prod \
+  --name app-roadtripmap-prod \
+  --settings FeatureFlags__ResilientUploadsUI=false
+
+# Restart the app for changes to take effect
+az webapp restart \
+  --resource-group rg-roadtripmap-prod \
+  --name app-roadtripmap-prod
+```
+
+#### [GitHub web] Merge Phase 3 PR and Trigger CI/CD
+
+1. Navigate to the Phase 3 feature branch PR on GitHub.
+2. Confirm status: all CI checks passing.
+3. Click **Merge pull request** (via GitHub web, not CLI).
+4. Confirm the merge to `main`.
+
+**Expected:** The `roadtrip-ci.yml` workflow on the `main` branch will auto-trigger, then the manual deploy workflow becomes available.
+
+#### [bash/WSL] Verify Static Assets Deployed
+
+Wait 30 seconds for the new deployment to stabilize, then verify new JS files are served:
+
+```bash
+# Check progressPanel.js is served (Task 3)
+curl -I https://app-roadtripmap-prod.azurewebsites.net/js/progressPanel.js
+
+# Check optimisticPins.js is served (Task 8)
+curl -I https://app-roadtripmap-prod.azurewebsites.net/js/optimisticPins.js
+
+# Check resumeBanner.js is served (Task 5)
+curl -I https://app-roadtripmap-prod.azurewebsites.net/js/resumeBanner.js
+```
+
+**Expected output:** All return **HTTP 200**.
+
+#### [bash/WSL] Smoke Test: Legacy Status Bar Still Works
+
+1. Create a test trip (or use an existing one with a known token):
+
+```bash
+curl -s -X POST \
+  https://app-roadtripmap-prod.azurewebsites.net/api/trips \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Phase 3 flag=OFF smoke test"}' | jq '.secret_token'
+```
+
+2. Open a browser to `/post/{token}` and upload a small photo (or simulate via API).
+
+3. **Verify in DevTools Console:** No JavaScript errors.
+
+4. **Verify in DevTools Elements:** The **legacy** status bar appears (not the new progress panel). If the flag is off correctly, you should NOT see `<div class="upload-panel" role="region">`.
+
+**Deviation log entry:**  
+[ ] Feature flag confirmed OFF in production  
+[ ] New JS files deployed (200 OK)  
+[ ] Legacy status bar renders (flag OFF verified)  
+
+---
+
+### 3. Staging Validation with Feature Flag ON
+
+#### [Azure Portal] Flip Feature Flag to ON in Staging Slot
+
+1. Navigate to [Azure Portal](https://portal.azure.com).
+2. Open **App Services** → **app-roadtripmap-prod** → **Configuration** (left sidebar).
+3. Open **Application settings** tab.
+4. Click **+ New application setting**.
+5. **Name:** `FeatureFlags__ResilientUploadsUI`
+6. **Value:** `true`
+7. Click **OK**.
+8. Click **Save** at the top.
+
+Wait 30 seconds for the setting to propagate.
+
+#### [Azure Portal] Restart Staging Slot (Optional)
+
+If the app does not pick up the setting immediately:
+
+1. Open **App Services** → **app-roadtripmap-prod**.
+2. Open **Deployment slots** (left sidebar) → **staging**.
+3. Click **Restart**.
+
+Wait 2–3 minutes for restart to complete.
+
+#### [Browser] Validate UI in Staging
+
+1. Create a test trip in staging: `https://app-roadtripmap-prod-staging.azurewebsites.net/api/trips`
+
+```bash
+STAGING_TOKEN=$(curl -s -X POST \
+  https://app-roadtripmap-prod-staging.azurewebsites.net/api/trips \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Phase 3 staging validation"}' | jq -r '.secret_token')
+
+echo "Staging test trip: $STAGING_TOKEN"
+```
+
+2. Navigate to `https://app-roadtripmap-prod-staging.azurewebsites.net/post/{token}` in a browser.
+
+3. **Verify in DevTools Elements:** The **new** progress panel appears:
+   - `<div class="upload-panel" role="region" aria-label="Upload progress">`
+   - Per-file rows with status icons
+   - Collapse toggle
+   - Action buttons (retry, pin-drop, discard)
+
+4. **Upload a photo** and verify:
+   - Progress panel shows the row with filename, size, progress bar
+   - Optimistic pin appears on the map (pending styling if EXIF GPS is present)
+   - On success, pin turns green and progress panel shows "committed" status
+
+5. **Force a failure** (or simulate via API) and verify:
+   - Failed row shows retry affordances
+   - Pin turns red
+   - "gave up after 6 attempts" message visible if retries exhausted
+
+6. **Patrick visually inspects** the UI against the approved mockups in `ui-review-notes.md`.
+
+#### [bash/WSL] Patrick Signs Off in ui-review-notes.md
+
+Once Patrick approves the staging validation:
+
+```bash
+# Edit the file to record staging approval
+cat >> docs/implementation-plans/2026-04-13-resilient-uploads/ui-review-notes.md << 'EOF'
+
+## Staging Validation Sign-Off
+
+Staging validation completed on YYYY-MM-DD at HH:MM UTC.
+All UI elements match approved design. Ready for production cutover.
+
+Patrick: _____ (Initials)
+EOF
+```
+
+**Deviation log entry:**  
+[ ] Feature flag toggled to ON in staging  
+[ ] UI renders correctly (new progress panel visible)  
+[ ] Upload flow tested (photo uploads with new UI)  
+[ ] Patrick approved staging validation  
+
+---
+
+### 4. Production Cutover
+
+#### [bash/WSL] Flip Feature Flag to ON in Production
+
+```bash
+az webapp config appsettings set \
+  --resource-group rg-roadtripmap-prod \
+  --name app-roadtripmap-prod \
+  --settings FeatureFlags__ResilientUploadsUI=true
+
+# Restart the app for changes to take effect
+az webapp restart \
+  --resource-group rg-roadtripmap-prod \
+  --name app-roadtripmap-prod
+```
+
+Wait 2–3 minutes for the restart to complete.
+
+#### [bash/WSL] Verify Flag Is Set
+
+```bash
+az webapp config appsettings list \
+  --resource-group rg-roadtripmap-prod \
+  --name app-roadtripmap-prod \
+  --query "[?name=='FeatureFlags__ResilientUploadsUI'].value" -o tsv
+```
+
+**Expected output:** `true`
+
+#### [Browser] Production Smoke Test
+
+1. Navigate to a real production trip: `https://app-roadtripmap-prod.azurewebsites.net/post/{token}`
+
+2. **Verify in DevTools Elements:** The **new** progress panel is visible.
+
+3. **Verify in DevTools Network:** Observe upload requests:
+   - `POST /api/trips/{token}/photos/request-upload` → 200 (SAS URL issued)
+   - `PUT blob.core.windows.net/trip-{token}/...` → 201 (block upload)
+   - `POST /api/trips/{token}/photos/{photoId}/commit` → 200 (photo committed)
+
+4. **Verify in DevTools Console:** No JavaScript errors.
+
+5. **Upload a real photo** and observe:
+   - Progress panel renders with filename, size, progress bar
+   - On success, row transitions to "committed" status
+   - Photo appears in the carousel (Phase 1–2 behavior unchanged)
+
+**Deviation log entry:**  
+[ ] Feature flag set to ON in production  
+[ ] New progress panel visible in production  
+[ ] Real photo upload succeeded with new UI  
+[ ] No console errors  
+
+---
+
+### 5. Rollback (if needed)
+
+If a critical issue arises after production cutover, execute the following steps **immediately**:
+
+#### Rollback Step 1: Flip Feature Flag to OFF
+
+```bash
+az webapp config appsettings set \
+  --resource-group rg-roadtripmap-prod \
+  --name app-roadtripmap-prod \
+  --settings FeatureFlags__ResilientUploadsUI=false
+
+# Restart the app
+az webapp restart \
+  --resource-group rg-roadtripmap-prod \
+  --name app-roadtripmap-prod
+```
+
+Wait 2–3 minutes for the restart. Users will immediately see the legacy status bar again. No code revert needed; the flag flip is the rollback.
+
+#### Rollback Step 2: Code Revert (Optional)
+
+If the flag flip alone is insufficient (e.g., back-end endpoint crashes), revert to Phase 2 code:
+
+```bash
+# Swap staging and production slots to restore Phase 2 version
+az webapp deployment slot swap \
+  --resource-group rg-roadtripmap-prod \
+  --name app-roadtripmap-prod \
+  --slot staging
+```
+
+Wait 2–3 minutes for the swap. Re-test the `/api/version` endpoint and manual upload flow.
+
+---
+
+### 6. Sign-Off
+
+#### Approval Chain
+
+After completing all sections above, obtain sign-off from Patrick:
+
+| Section | Status | Signed By | Timestamp (UTC) |
+|---------|--------|-----------|-----------------|
+| 1. Pre-flight | ☐ Pass / ☐ Deviation | | |
+| 2. Deploy with flag OFF | ☐ Pass / ☐ Deviation | | |
+| 3. Staging validation with flag ON | ☐ Pass / ☐ Deviation | | |
+| 4. Production cutover | ☐ Pass / ☐ Deviation | | |
+
+#### Deviation Log
+
+Record any deviations from the runbook below:
+
+| Step | Expected | Actual | Resolution | Sign-off |
+|------|----------|--------|------------|----------|
+| | | | | |
+| | | | | |
+| | | | | |
+
+**Final Status:** ☐ **PHASE 3 DEPLOYMENT SUCCEEDED** / ☐ **PHASE 3 DEPLOYMENT ROLLED BACK**
+
+**Patrick's Final Sign-Off:**
+
+```
+Initials: _____
+UTC Timestamp: _____
+Commit this runbook with any deviations recorded.
+```
+
+---
+
+**Document Version:** 1.2  
 **Created:** April 2026 (Phase 1 Implementation)  
 **Author:** Claude Code  
-**Last Reviewed:** (to be filled during Phase 2 deployment)
+**Last Reviewed:** (to be filled during Phase 3 deployment)
