@@ -42,6 +42,7 @@ beforeAll(() => {
     loadGlobal('uploadUtils.js');
     loadGlobal('uploadSemaphore.js');
     loadGlobal('storageAdapter.js');
+    loadGlobal('uploadTransport.js');
 });
 
 afterEach(() => {
