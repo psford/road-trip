@@ -396,7 +396,22 @@ const PostUI = {
         }
     },
 
-    handleNoGpsFiles(noGpsFiles) {
+    /**
+     * Handle files without GPS data — either queue for sequential pin-drop
+     * or route failed upload to manual pin-drop endpoint.
+     * @param {Array} noGpsFiles - Array of {file, metadata} objects without GPS
+     * @param {Object} options - Optional config
+     * @param {string} options.uploadId - If provided, route to pin-drop endpoint for failed upload
+     */
+    async handleNoGpsFiles(noGpsFiles, { uploadId = null } = {}) {
+        if (uploadId) {
+            // Failure routing: user clicked [📍 Pin manually] on a failed upload
+            // Delegate to manualPinDropFor which opens the pin-drop map
+            await this.manualPinDropFor(uploadId);
+            return;
+        }
+
+        // Normal path: queue for sequential pin-drop (new files from bulk upload)
         if (noGpsFiles.length === 0) return;
 
         if (noGpsFiles.length <= 5) {
