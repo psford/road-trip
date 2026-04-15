@@ -9,6 +9,7 @@ const ResumeBanner = (() => {
   let _container = null;
   let _tripToken = null;
   let _isVisible = false;
+  let _eventHandlers = {}; // Store handler references for removal
 
   /**
    * Render the banner HTML
@@ -93,20 +94,37 @@ const ResumeBanner = (() => {
       await recountAndUpdate();
     };
 
+    // Store handler references for cleanup on unmount
+    _eventHandlers.uploadCommitted = handleUploadEvent;
+    _eventHandlers.uploadFailed = handleUploadEvent;
+    _eventHandlers.uploadAborted = handleUploadEvent;
+
     // Listen for events that affect the count
-    document.addEventListener('upload:committed', handleUploadEvent);
-    document.addEventListener('upload:failed', handleUploadEvent);
-    document.addEventListener('upload:aborted', handleUploadEvent);
+    document.addEventListener('upload:committed', _eventHandlers.uploadCommitted);
+    document.addEventListener('upload:failed', _eventHandlers.uploadFailed);
+    document.addEventListener('upload:aborted', _eventHandlers.uploadAborted);
   }
 
   /**
-   * Unmount the banner
+   * Unmount the banner and remove event listeners
    */
   function unmount() {
     if (_container) {
       _container.innerHTML = '';
       _isVisible = false;
     }
+
+    // Remove event listeners to prevent memory leak
+    if (_eventHandlers.uploadCommitted) {
+      document.removeEventListener('upload:committed', _eventHandlers.uploadCommitted);
+    }
+    if (_eventHandlers.uploadFailed) {
+      document.removeEventListener('upload:failed', _eventHandlers.uploadFailed);
+    }
+    if (_eventHandlers.uploadAborted) {
+      document.removeEventListener('upload:aborted', _eventHandlers.uploadAborted);
+    }
+    _eventHandlers = {};
   }
 
   return {

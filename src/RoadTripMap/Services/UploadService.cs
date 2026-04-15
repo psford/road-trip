@@ -300,27 +300,30 @@ public class UploadService : IUploadService
             throw new BadHttpRequestException($"Pin-drop only allowed on committed photos, current status: {photo.Status}");
         }
 
+        // Validate GPS coordinates per CLAUDE.md invariants: lat [-90,90], lng [-180,180]
+        if (gpsLat < -90 || gpsLat > 90 || gpsLon < -180 || gpsLon > 180)
+        {
+            throw new ArgumentException("Invalid coordinates: latitude must be between -90 and 90, longitude between -180 and 180");
+        }
+
         // Update GPS coordinates and timestamp
         photo.Latitude = gpsLat;
         photo.Longitude = gpsLon;
         photo.LastActivityAt = DateTime.UtcNow;
 
-        // Reverse-geocode to set PlaceName if changed
-        if (string.IsNullOrEmpty(photo.PlaceName))
+        // Always reverse-geocode on pin-drop (user is explicitly changing location)
+        try
         {
-            try
+            var placeName = await _geocodingService.ReverseGeocodeAsync(gpsLat, gpsLon);
+            if (!string.IsNullOrEmpty(placeName))
             {
-                var placeName = await _geocodingService.ReverseGeocodeAsync(gpsLat, gpsLon);
-                if (!string.IsNullOrEmpty(placeName))
-                {
-                    photo.PlaceName = placeName;
-                }
+                photo.PlaceName = placeName;
             }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Failed to reverse-geocode photo location during pin-drop");
-                // Continue with empty PlaceName if geocoding fails
-            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to reverse-geocode photo location during pin-drop");
+            // Continue with existing PlaceName if geocoding fails
         }
 
         _db.Photos.Update(photo);

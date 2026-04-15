@@ -224,10 +224,8 @@ public static class UploadEndpoints
             var response = await uploadService.PinDropAsync(secretToken, photoId, request.GpsLat, request.GpsLon, ct);
 
             logger.LogInformation(
-                "PinDropHandler: success. photo_id={photoId}, gps=({lat}, {lng})",
-                photoId,
-                request.GpsLat,
-                request.GpsLon);
+                "PinDropHandler: success. photo_id={photoId}",
+                photoId);
 
             // Return 200 with PhotoResponse
             return Results.Ok(response);
@@ -245,7 +243,9 @@ public static class UploadEndpoints
             logger.LogWarning(
                 "PinDropHandler: pin-drop rejected on non-committed photo. photo_id={photoId}",
                 photoId);
-            return Results.StatusCode(409, new { error = "Conflict: pin-drop only allowed on committed photos" });
+            return Results.Json(
+                new { error = "Conflict: pin-drop only allowed on committed photos" },
+                statusCode: 409);
         }
         catch (Exception ex)
         {

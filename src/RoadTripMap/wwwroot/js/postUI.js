@@ -805,7 +805,7 @@ const PostUI = {
 
             // Call the pin-drop API
             const result = await API.pinDropPhoto(this.secretToken, {
-                uploadId,
+                photoId: uploadId,
                 gpsLat: lat,
                 gpsLon: lng,
             });
