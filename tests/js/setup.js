@@ -47,6 +47,7 @@ beforeAll(() => {
     loadGlobal('versionProtocol.js');
     loadGlobal('uploadQueue.js');
     loadGlobal('progressPanel.js');
+    loadGlobal('resumeBanner.js');
     loadGlobal('postUI.js');
 });
 

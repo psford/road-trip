@@ -1600,3 +1600,84 @@ body.map-page .maplibregl-ctrl-top-left {
   color: var(--color-error);
   margin-top: 4px;
 }
+
+/* Resume Banner — Non-terminal upload notification */
+.resume-banner {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  background-color: var(--color-warning-bg, rgba(255, 193, 7, 0.1));
+  border-bottom: 2px solid var(--color-warning, #ffc107);
+  padding: var(--space-sm);
+  animation: slideDown 0.3s ease-out;
+}
+
+@keyframes slideDown {
+  from {
+    transform: translateY(-100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.resume-banner__content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  max-width: 1200px;
+  margin: 0 auto;
+  flex-wrap: wrap;
+}
+
+.resume-banner__message {
+  font-weight: 500;
+  color: var(--color-text);
+  flex: 1;
+  min-width: 200px;
+}
+
+.resume-banner__buttons {
+  display: flex;
+  gap: var(--space-xs, 8px);
+  flex-wrap: wrap;
+}
+
+.resume-banner__resume,
+.resume-banner__retry-failed,
+.resume-banner__discard-all {
+  background-color: var(--color-primary);
+  color: white;
+  border: none;
+  border-radius: var(--radius);
+  padding: 6px 12px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.resume-banner__resume:hover,
+.resume-banner__retry-failed:hover {
+  background-color: var(--color-primary-dark, #1976d2);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.resume-banner__discard-all {
+  background-color: var(--color-error);
+}
+
+.resume-banner__discard-all:hover {
+  background-color: var(--color-error-dark, #d32f2f);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.resume-banner__resume:active,
+.resume-banner__retry-failed:active,
+.resume-banner__discard-all:active {
+  transform: scale(0.98);
+}

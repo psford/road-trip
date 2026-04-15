@@ -76,8 +76,37 @@ const PostUI = {
         // Resume uploads from previous session
         this.resumeUploads();
 
+        // Mount new resilient uploads UI behind feature flag
+        if (FeatureFlags.isEnabled('resilient-uploads-ui')) {
+            this.mountResilientUploadsUI();
+        }
+
         // Listen for upload events
         this.setupUploadEventListeners();
+    },
+
+    async mountResilientUploadsUI() {
+        try {
+            // Mount progress panel
+            const progressPanelContainer = document.getElementById('progressPanelContainer');
+            if (progressPanelContainer) {
+                ProgressPanel.mount(progressPanelContainer);
+            }
+
+            // Mount resume banner
+            const resumeBannerContainer = document.getElementById('resumeBannerContainer');
+            if (resumeBannerContainer) {
+                await ResumeBanner.mount(resumeBannerContainer, this.secretToken);
+            }
+
+            // Initialize optimistic pins (Task 8)
+            // Note: OptimisticPins may not exist yet in earlier phases
+            if (typeof OptimisticPins !== 'undefined') {
+                OptimisticPins.init(this.mapUI);
+            }
+        } catch (err) {
+            console.warn('Failed to mount resilient uploads UI:', err);
+        }
     },
 
     async resumeUploads() {
@@ -625,6 +654,13 @@ const PostUI = {
                 placeNameEl.classList.remove('no-gps');
             }
 
+            // If this is a manual pin-drop for a failed upload, submit it to the API
+            if (this._manualPinDropUploadId) {
+                await this.submitManualPinDrop(lat, lng);
+                this._manualPinDropUploadId = null;
+                return;
+            }
+
             // If we came from "Pick nearby spot", open file picker after pin placement
             if (this.pendingNearbyPinDrop) {
                 this.pendingNearbyPinDrop = false;
@@ -684,6 +720,114 @@ const PostUI = {
             const postBtn = document.getElementById('postButton');
             postBtn.disabled = false;
             postBtn.textContent = 'Post Photo';
+        }
+    },
+
+    /**
+     * Handle manual pin-drop for a failed upload
+     * @param {string} uploadId - The upload ID to pin-drop
+     */
+    async manualPinDropFor(uploadId) {
+        try {
+            // Fetch the upload item from storage
+            const item = await StorageAdapter.getItem(uploadId);
+            if (!item) {
+                this.showToast('Upload not found', 'error');
+                return;
+            }
+
+            // Clear current state and set up for pin-drop
+            this.currentFile = null;
+            this.currentLat = null;
+            this.currentLng = null;
+            this.currentMetadata = item.exif || {};
+            this._manualPinDropUploadId = uploadId; // Track which upload we're pinning
+
+            // Show the pin-drop map
+            const placeNameEl = document.getElementById('placeNameDisplay');
+            placeNameEl.textContent = 'Tap map to set location for upload';
+            placeNameEl.classList.add('no-gps');
+
+            // Hide photo map if visible
+            document.getElementById('photoMapSection')?.classList.remove('visible');
+
+            // Show map section
+            document.getElementById('mapSection').classList.add('visible');
+
+            // Initialize map if not already done
+            if (!this.map) {
+                this.initializePinDropMap();
+            }
+
+            // Center map on last known location or USA center
+            const { center, zoom } = this.getDefaultMapCenter();
+            this.map.jumpTo({ center, zoom });
+
+        } catch (err) {
+            console.error('Error preparing manual pin-drop:', err);
+            this.showToast('Failed to prepare pin-drop', 'error');
+        }
+    },
+
+    /**
+     * Submit manual pin-drop location for a failed upload
+     * @param {number} lat - Latitude
+     * @param {number} lng - Longitude
+     */
+    async submitManualPinDrop(lat, lng) {
+        const uploadId = this._manualPinDropUploadId;
+        if (!uploadId) {
+            this.showToast('No upload selected for pin-drop', 'error');
+            return;
+        }
+
+        try {
+            const postBtn = document.getElementById('postButton');
+            if (postBtn) {
+                postBtn.disabled = true;
+                postBtn.textContent = 'Setting location...';
+            }
+
+            // Call the pin-drop API
+            const result = await API.pinDropPhoto(this.secretToken, {
+                uploadId,
+                gpsLat: lat,
+                gpsLon: lng,
+            });
+
+            // Update storage to mark as committed
+            const item = await StorageAdapter.getItem(uploadId);
+            if (item) {
+                await StorageAdapter.putItem({
+                    ...item,
+                    status: 'committed',
+                });
+
+                // Emit upload:committed event for progress panel and optimistic pins
+                document.dispatchEvent(
+                    new CustomEvent('upload:committed', {
+                        detail: {
+                            uploadId,
+                            tripToken: this.secretToken,
+                            photo: result,
+                        },
+                    })
+                );
+            }
+
+            this.showToast('Location set!', 'success');
+            this.hidePreview();
+            await this.refreshPhotoList();
+
+        } catch (err) {
+            console.error('Error setting pin-drop location:', err);
+            this.showToast(err.message || 'Failed to set location', 'error');
+        } finally {
+            const postBtn = document.getElementById('postButton');
+            if (postBtn) {
+                postBtn.disabled = false;
+                postBtn.textContent = 'Post Photo';
+            }
         }
     },
 
