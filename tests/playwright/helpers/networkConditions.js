@@ -91,16 +91,13 @@ async function clearNetworkConditions(page) {
 }
 
 /**
- * Helper to wait for all uploads to complete with timeout
- * Polls for completion of telemetry events
+ * Wait for uploads to complete by polling the progress panel DOM.
+ * NOTE: Structural scaffolding — requires a running server to function.
  *
  * @param {Page} page - Playwright page object
- * @param {number} timeoutMs - Timeout in milliseconds
+ * @param {number} expectedCount - Number of uploads expected to reach committed status
+ * @param {number} timeoutMs - Timeout in milliseconds (default 60s)
  * @returns {Promise<void>}
- */
-/**
- * NOTE: This is structural scaffolding. Requires a running server to function.
- * When running against a live server, this polls the progress panel for committed status.
  */
 async function waitForUploadsComplete(page, expectedCount, timeoutMs = 60000) {
     const startTime = Date.now();

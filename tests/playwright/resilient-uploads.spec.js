@@ -307,6 +307,14 @@ test.describe('Resilient Uploads Phase 4 — Throttled Network Scenarios', () =>
       });
     }
 
+    // Capture telemetry events from console (registered before upload trigger)
+    const consoleLogs = [];
+    page.on('console', msg => {
+      if (msg.type() === 'log' && msg.text().includes('"event":"upload.')) {
+        consoleLogs.push(msg.text());
+      }
+    });
+
     // Act: Upload 20 photos under Slow 3G
     const fileInput = page.locator('input[type="file"]');
     await fileInput.setInputFiles(files);
@@ -314,14 +322,6 @@ test.describe('Resilient Uploads Phase 4 — Throttled Network Scenarios', () =>
     // Assert: Progress panel shows all 20 rows (AC5.1)
     const rows = page.locator('[data-upload-id]');
     await expect(rows).toHaveCount(20, { timeout: 10000 });
-
-    // Capture telemetry events from console (must be registered before upload starts)
-    const consoleLogs = [];
-    page.on('console', msg => {
-      if (msg.type() === 'log' && msg.text().includes('"event":"upload.')) {
-        consoleLogs.push(msg.text());
-      }
-    });
 
     // Wait for uploads to complete (within 10 minute CI budget)
     // When running against a live server, use waitForUploadsComplete(page, 20, 600000)
