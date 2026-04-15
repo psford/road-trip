@@ -256,6 +256,34 @@ resource roleKvGithubDeploy 'Microsoft.Authorization/roleAssignments@2022-04-01'
   }
 }
 
+// Cross-RG reference to shared storage account for adding CORS to blob services.
+resource storageAccount 'Microsoft.Storage/storageAccounts@2023-05-01' existing = {
+  scope: resourceGroup(sharedInfraResourceGroup)
+  name: sharedStorageAccountName
+}
+
+// Blob services configuration with CORS rules for browser direct-upload.
+resource blobServices 'Microsoft.Storage/storageAccounts/blobServices@2023-05-01' = {
+  parent: storageAccount
+  name: 'default'
+  properties: {
+    cors: {
+      corsRules: [
+        {
+          allowedOrigins: [
+            'https://roadtripmap.azurewebsites.net'
+            'https://localhost:5001'
+          ]
+          allowedMethods: [ 'GET', 'PUT', 'HEAD', 'OPTIONS' ]
+          allowedHeaders: [ '*' ]
+          exposedHeaders: [ 'x-ms-*' ]
+          maxAgeInSeconds: 3600
+        }
+      ]
+    }
+  }
+}
+
 // App Service MSI → Storage Blob Data Contributor (cross-RG, for per-trip blobs).
 module roleStorageBlobAppService 'modules/storage-rbac.bicep' = {
   name: 'role-storage-blob-app-service'
