@@ -1233,7 +1233,313 @@ Commit this runbook with any deviations recorded.
 
 ---
 
-**Document Version:** 1.2  
+## Phase 4 — Stabilization + flag removal
+
+**Phase:** Phase 4 (Subcomponents A–E, Tasks 1–8)  
+**Scope:** Validate resilient-upload pipeline under real-world conditions with Patrick's active trip, add structured telemetry with correlation IDs, conduct legacy-trip audit, and remove the feature flag after acceptance sign-off.
+
+### Prerequisites
+
+Before starting Phase 4 deployment:
+
+- **Phase 3 deployed and healthy**: Verify via `curl https://app-roadtripmap-prod.azurewebsites.net/api/version` returning 200 with version headers.
+- **PR merged**: The Phase 4 feature branch is merged to `main` with all CI checks passing.
+- **Acceptance artifacts ready**:
+  - `docs/implementation-plans/2026-04-13-resilient-uploads/phase-4-acceptance.md` contains Patrick's sign-off.
+  - Legacy-trip audit (`Task 6`) is complete with zero unresolved entries.
+- **Local tooling (WSL bash)**:
+  - `az` CLI 2.50+
+  - `curl`
+  - `jq` (for JSON parsing)
+  - `git`
+
+---
+
+### 1. Pre-flight
+
+#### [bash/WSL] Confirm Git State
+
+```bash
+cd /home/patrick/projects/road-trip
+git fetch origin
+gh pr list --head develop --base main --state open
+```
+
+**Expected outcome:** Exactly one open PR (the Phase 4 feature branch) or zero if already merged.
+
+#### [bash/WSL] Verify Phase 3 Healthy
+
+```bash
+curl -i https://app-roadtripmap-prod.azurewebsites.net/api/version
+```
+
+**Expected output:**
+- **HTTP Status:** `200 OK`
+- **Headers:** `x-server-version` and `x-client-min-version` present
+- **Response body:** JSON with `server_version` and `client_min_version`
+
+#### [File] Verify Patrick's Sign-Off in Acceptance Document
+
+```bash
+cd /home/patrick/projects/road-trip
+grep -i "Accepted by Patrick on" docs/implementation-plans/2026-04-13-resilient-uploads/phase-4-acceptance.md
+```
+
+**Expected outcome:** A line matching `Accepted by Patrick on YYYY-MM-DD` (no defect list blocking progression).
+
+#### [File] Verify Legacy-Trip Audit Closed
+
+```bash
+grep -i "all flagged rows resolved\|audit.*closed\|zero unresolved" docs/implementation-plans/2026-04-13-resilient-uploads/phase-4-acceptance.md
+```
+
+**Expected outcome:** An entry confirming all legacy-trip failed uploads have been resolved (retried, pin-dropped, or marked orphan-swept).
+
+**Deviation log entry:**  
+[ ] Phase 4 PR merged (or verified ready)  
+[ ] Phase 3 production healthy  
+[ ] Patrick's acceptance sign-off confirmed  
+[ ] Legacy-trip audit closed with zero unresolved entries  
+
+---
+
+### 2. Deploy Code Change (Feature Flag Removal)
+
+#### [GitHub web] Verify Phase 4 Code Merged
+
+1. Navigate to the [road-trip repository on GitHub](https://github.com/psford/road-trip).
+2. Open **Commits** on the `main` branch.
+3. Verify the most recent commit message includes `Phase 4` and `flag removal`.
+4. Confirm CI status: **✅ All checks passed**.
+
+#### [bash/WSL] Build and Test Locally (Optional, for verification)
+
+If desired, verify the flag-removal code locally:
+
+```bash
+cd /home/patrick/projects/road-trip
+
+# Build
+dotnet build RoadTripMap.sln --configuration Release
+
+# Run tests
+dotnet test RoadTripMap.sln --configuration Release --no-build
+```
+
+**Expected output:** All tests pass; no flag-related code errors.
+
+#### [bash/WSL] Smoke Test: Page Load without Feature Flag
+
+Wait 30 seconds for the production deployment to stabilize (if auto-deployed via CI/CD), then verify:
+
+```bash
+curl -I https://app-roadtripmap-prod.azurewebsites.net/post/<valid-trip-token>
+```
+
+**Expected:**
+- HTTP 200 OK
+- No `data-resilient-uploads-ui` attribute in the HTML (flag removed from POST.cshtml)
+- DevTools Elements shows the new resilient-upload UI is the only path (no legacy status bar code)
+
+#### [Browser] Manual Verification
+
+1. Navigate to `https://app-roadtripmap-prod.azurewebsites.net/post/<valid-trip-token>` in a browser.
+2. Open **DevTools** → **Elements**.
+3. Search for `data-resilient-uploads-ui` — **should NOT be found**.
+4. Search for `.upload-status-bar` CSS class — **should NOT be found** (only new `.upload-progress-panel` should be present).
+5. Upload one test photo.
+6. Verify the upload succeeds with the new progress panel UI (no legacy status bar).
+
+**Deviation log entry:**  
+[ ] Phase 4 code merged and CI passed  
+[ ] Page loads without feature flag attribute  
+[ ] New UI is the only code path (legacy dead code removed)  
+[ ] Test photo upload succeeded  
+
+---
+
+### 3. Remove the Feature Flag from App Service Config
+
+#### [bash/WSL] Delete the Feature Flag Setting
+
+```bash
+az webapp config appsettings delete \
+  --resource-group rg-roadtripmap-prod \
+  --name app-roadtripmap-prod \
+  --setting-names FeatureFlags__ResilientUploadsUI
+```
+
+**Expected output:** Deletion succeeds without error.
+
+#### [bash/WSL] Verify Deletion
+
+```bash
+az webapp config appsettings list \
+  --resource-group rg-roadtripmap-prod \
+  --name app-roadtripmap-prod \
+  --query "[?name=='FeatureFlags__ResilientUploadsUI']"
+```
+
+**Expected output:** Empty array `[]` (setting no longer exists).
+
+**Deviation log entry:**  
+[ ] Feature flag deleted from App Service config  
+[ ] Deletion verified (empty query result)  
+
+---
+
+### 4. Observability Check
+
+#### [bash/WSL] Query Structured Logs for Upload Failures
+
+Query the App Service logs or Application Insights for the last 24 hours of upload telemetry:
+
+```bash
+# Option A: If using Application Insights, query via CLI
+az monitor app-insights query \
+  --app kv-roadtripmap-prod \
+  --analytics-query "
+    customEvents
+    | where name == 'upload.failed'
+    | where timestamp > ago(24h)
+    | summarize Count = count() by tostring(customDimensions['reason'])
+  "
+```
+
+Alternatively, tail the App Service logs and look for structured JSON events:
+
+```bash
+az webapp log tail \
+  --resource-group rg-roadtripmap-prod \
+  --name app-roadtripmap-prod \
+  --follow
+```
+
+Look for log entries matching:
+```json
+{"event":"upload.failed","reason":"...","uploadId":"...","ts":"..."}
+```
+
+**Expected:**
+- Zero `upload.failed` events with `reason='silent'` (indicating an unexpected, unhandled failure).
+- Any `upload.failed` entries should have a documented reason (e.g., `"SAS refresh failure"`, `"permanent network error"`).
+- All failure events are paired with corresponding user-visible error messages or telemetry events.
+
+**Deviation log entry:**  
+[ ] Structured logs queried for last 24 hours  
+[ ] Zero "silent" failures detected  
+[ ] All failure reasons are expected and documented  
+
+---
+
+### 5. Rollback Procedure
+
+Feature-flag removal is a heavier rollback than earlier phases. The new resilient-upload path is now the only code path. Rollback requires reverting the code change entirely.
+
+#### Rollback Step 1: Create Revert Commit
+
+```bash
+cd /home/patrick/projects/road-trip
+
+# Create a new branch off main
+git checkout main
+git pull origin main
+git checkout -b rollback/phase-4-flag-removal
+
+# Revert the Phase 4 flag-removal commit (do NOT revert the entire Phase 4 PR)
+# Find the commit hash for "chore: remove ResilientUploadsUI feature flag after Phase 4 acceptance"
+git log --oneline --all | grep -i "remove.*feature flag"
+
+# Revert it (replace <commit-hash> with the hash from above)
+git revert <commit-hash>
+
+# Verify the revert restored the flag usage
+git show HEAD | grep -A5 -B5 "FeatureFlags:ResilientUploadsUI"
+```
+
+**Expected:** The revert commit shows the flag conditionals and settings restored.
+
+#### Rollback Step 2: Push and Create PR
+
+```bash
+git push origin rollback/phase-4-flag-removal
+
+# Create a PR via GitHub web (faster than gh CLI)
+# Or via CLI:
+gh pr create \
+  --base main \
+  --head rollback/phase-4-flag-removal \
+  --title "rollback: Phase 4 flag removal — revert to flag-gated path" \
+  --body "Emergency rollback of Phase 4 flag removal. Restores feature flag conditionals and App Service configuration."
+```
+
+#### Rollback Step 3: Merge and Redeploy
+
+Wait for CI to pass, then merge the PR via GitHub web. The App Service deployment workflow will trigger automatically (if enabled) or manually via:
+
+```bash
+gh workflow run deploy.yml \
+  --ref main \
+  -f confirm_deploy="deploy" \
+  -f reason="Phase 4 rollback: flag removal reverted"
+```
+
+Wait for deployment to complete (5–10 minutes). Then restore the feature flag in App Service config:
+
+```bash
+az webapp config appsettings set \
+  --resource-group rg-roadtripmap-prod \
+  --name app-roadtripmap-prod \
+  --settings FeatureFlags__ResilientUploadsUI=false
+
+# Restart the app
+az webapp restart \
+  --resource-group rg-roadtripmap-prod \
+  --name app-roadtripmap-prod
+```
+
+**Staging can flip the flag back to `true` for further testing**, or leave it `false` to serve the legacy UI path.
+
+**Note:** Accepting Phase 4 and removing the feature flag is a commitment to the new resilient-upload path. Rollback requires code revert and is not a simple configuration flip like earlier phases.
+
+---
+
+### 6. Sign-Off
+
+#### Approval Chain
+
+After completing all sections above, obtain sign-off from Patrick:
+
+| Section | Status | Signed By | Timestamp (UTC) |
+|---------|--------|-----------|-----------------|
+| 1. Pre-flight | ☐ Pass / ☐ Deviation | | |
+| 2. Deploy code change (flag removal) | ☐ Pass / ☐ Deviation | | |
+| 3. Remove flag from App Service config | ☐ Pass / ☐ Deviation | | |
+| 4. Observability check | ☐ Pass / ☐ Deviation | | |
+
+#### Deviation Log
+
+Record any deviations from the runbook below:
+
+| Step | Expected | Actual | Resolution | Sign-off |
+|------|----------|--------|------------|----------|
+| | | | | |
+| | | | | |
+| | | | | |
+
+**Final Status:** ☐ **PHASE 4 DEPLOYMENT SUCCEEDED** / ☐ **PHASE 4 DEPLOYMENT ROLLED BACK**
+
+**Patrick's Final Sign-Off:**
+
+```
+Initials: _____
+UTC Timestamp: _____
+Commit this runbook with deviations and final sign-off recorded.
+```
+
+---
+
+**Document Version:** 1.3  
 **Created:** April 2026 (Phase 1 Implementation)  
 **Author:** Claude Code  
-**Last Reviewed:** (to be filled during Phase 3 deployment)
+**Last Reviewed:** (to be filled during Phase 4 deployment)
