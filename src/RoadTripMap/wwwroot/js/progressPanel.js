@@ -139,9 +139,14 @@ const ProgressPanel = (() => {
 
     function updatePanelCount() {
         const count = _rows.size;
+        const panel = _container.querySelector('.upload-panel');
         const title = _container.querySelector('.upload-panel__title');
         if (title) {
             title.textContent = `Upload Progress (${count})`;
+        }
+        // Show panel when items exist, hide when empty
+        if (panel) {
+            panel.hidden = count === 0;
         }
     }
 
@@ -238,6 +243,9 @@ const ProgressPanel = (() => {
                 </div>
                 <ul class="upload-panel__list upload-panel__body"></ul>
             `;
+
+            // Hidden by default — shown when first upload:created fires
+            panel.hidden = true;
 
             _container.appendChild(panel);
 
