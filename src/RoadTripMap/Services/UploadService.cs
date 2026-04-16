@@ -17,6 +17,7 @@ public class UploadService : IUploadService
     private readonly BlobServiceClient _blobServiceClient;
     private readonly ISasTokenIssuer _sasTokenIssuer;
     private readonly IGeocodingService _geocodingService;
+    private readonly IPhotoService _photoService;
     private readonly ILogger<UploadService> _logger;
     private readonly UploadOptions _options;
 
@@ -25,6 +26,7 @@ public class UploadService : IUploadService
         BlobServiceClient blobServiceClient,
         ISasTokenIssuer sasTokenIssuer,
         IGeocodingService geocodingService,
+        IPhotoService photoService,
         ILogger<UploadService> logger,
         IOptions<UploadOptions> options)
     {
@@ -32,6 +34,7 @@ public class UploadService : IUploadService
         _blobServiceClient = blobServiceClient;
         _sasTokenIssuer = sasTokenIssuer;
         _geocodingService = geocodingService;
+        _photoService = photoService;
         _logger = logger;
         _options = options.Value;
     }
@@ -200,6 +203,22 @@ public class UploadService : IUploadService
             request.BlockIds.Count,
             LogSanitizer.SanitizeToken(tripToken));
 
+        // Generate display (1920px) and thumb (300px) tiers from the original blob
+        // so the photo proxy endpoint can serve them. Without this, thumbnails render blank.
+        try
+        {
+            await _photoService.GenerateDerivedTiersAsync(containerName, photo.UploadId!.Value, ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "Failed to generate derived tiers for photo. photo_id={photoId}, trip_token_prefix={prefix}",
+                photoId,
+                LogSanitizer.SanitizeToken(tripToken));
+            // Continue — photo is committed even if thumbnail generation failed.
+            // The photo proxy will fall back to the original if tiers are missing.
+        }
+
         // AC1.4 & C7: Reverse-geocode to set PlaceName if GPS coordinates present
         if (photo.Latitude != 0 && photo.Longitude != 0 && string.IsNullOrEmpty(photo.PlaceName))
         {
@@ -224,14 +243,16 @@ public class UploadService : IUploadService
         _db.Photos.Update(photo);
         await _db.SaveChangesAsync(ct);
 
-        // Return PhotoResponse with both int Id and Guid UploadId for client correlation (I2)
+        // Return PhotoResponse with proxy URLs matching PhotoReadService pattern
+        // (/api/photos/{tripId}/{photoId}/{size}) so the client can display the photo
+        // immediately after commit without waiting for the photo list refresh.
         return new PhotoResponse
         {
             Id = photo.Id,
             UploadId = photo.UploadId,
-            ThumbnailUrl = $"/api/blobs/{photo.BlobPath}/thumbnail",
-            DisplayUrl = $"/api/blobs/{photo.BlobPath}/display",
-            OriginalUrl = $"/api/blobs/{photo.BlobPath}",
+            ThumbnailUrl = $"/api/photos/{trip.Id}/{photo.Id}/thumb",
+            DisplayUrl = $"/api/photos/{trip.Id}/{photo.Id}/display",
+            OriginalUrl = $"/api/photos/{trip.Id}/{photo.Id}/original",
             Lat = photo.Latitude,
             Lng = photo.Longitude,
             PlaceName = photo.PlaceName ?? string.Empty,
@@ -334,14 +355,14 @@ public class UploadService : IUploadService
             photoId,
             LogSanitizer.SanitizeToken(tripToken));
 
-        // Return updated PhotoResponse
+        // Return updated PhotoResponse with proxy URLs matching PhotoReadService
         return new PhotoResponse
         {
             Id = photo.Id,
             UploadId = photo.UploadId,
-            ThumbnailUrl = $"/api/blobs/{photo.BlobPath}/thumbnail",
-            DisplayUrl = $"/api/blobs/{photo.BlobPath}/display",
-            OriginalUrl = $"/api/blobs/{photo.BlobPath}",
+            ThumbnailUrl = $"/api/photos/{trip.Id}/{photo.Id}/thumb",
+            DisplayUrl = $"/api/photos/{trip.Id}/{photo.Id}/display",
+            OriginalUrl = $"/api/photos/{trip.Id}/{photo.Id}/original",
             Lat = photo.Latitude,
             Lng = photo.Longitude,
             PlaceName = photo.PlaceName ?? string.Empty,

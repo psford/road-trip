@@ -75,7 +75,8 @@ public class UploadEndpointTests : IAsyncLifetime
         mockGeocodingService.Setup(g => g.ReverseGeocodeAsync(It.IsAny<double>(), It.IsAny<double>()))
             .ReturnsAsync((string?)null);
         var uploadOptions = Microsoft.Extensions.Options.Options.Create(new UploadOptions { MaxBlockSizeBytes = 4 * 1024 * 1024 });
-        _uploadService = new UploadService(_context, _blobServiceClient, _sasTokenIssuer, mockGeocodingService.Object, new Microsoft.Extensions.Logging.Abstractions.NullLogger<UploadService>(), uploadOptions);
+        var photoService = new PhotoService(_blobServiceClient, _context);
+        _uploadService = new UploadService(_context, _blobServiceClient, _sasTokenIssuer, mockGeocodingService.Object, photoService, new Microsoft.Extensions.Logging.Abstractions.NullLogger<UploadService>(), uploadOptions);
     }
 
     public async Task DisposeAsync()
@@ -155,6 +156,164 @@ public class UploadEndpointTests : IAsyncLifetime
         var photo = await _context.Photos.FirstOrDefaultAsync(p => p.UploadId == uploadId);
         photo.Should().NotBeNull();
         photo!.Status.Should().Be("committed");
+    }
+
+    /// <summary>
+    /// After commit, the per-trip container must contain display and thumb tiers
+    /// generated from the original. Without this, photoCarousel.js cannot render
+    /// thumbnails (the proxy endpoint looks for {uploadId}_display.jpg and
+    /// {uploadId}_thumb.jpg alongside {uploadId}_original.jpg).
+    /// </summary>
+    [Fact]
+    public async Task CommitAsync_GeneratesDisplayAndThumbTiers_FromOriginalBlob()
+    {
+        if (_uploadService == null || _tripToken == null || _blobServiceClient == null || _context == null)
+            throw new InvalidOperationException("Test not initialized");
+
+        var uploadId = Guid.NewGuid();
+        var requestUpload = new RequestUploadRequest
+        {
+            UploadId = uploadId,
+            Filename = "test.jpg",
+            ContentType = "image/jpeg",
+            SizeBytes = 0,
+            Exif = null
+        };
+
+        // Build a real JPEG via SkiaSharp so tier generation can decode it
+        using var bitmap = new SkiaSharp.SKBitmap(800, 600, SkiaSharp.SKColorType.Rgba8888, SkiaSharp.SKAlphaType.Opaque);
+        using var canvas = new SkiaSharp.SKCanvas(bitmap);
+        canvas.Clear(SkiaSharp.SKColors.CornflowerBlue);
+        using var encoded = bitmap.Encode(SkiaSharp.SKEncodedImageFormat.Jpeg, 85);
+        var jpegBytes = encoded.ToArray();
+
+        var uploadResponse = await _uploadService.RequestUploadAsync(_tripToken, requestUpload, CancellationToken.None);
+
+        var sasUri = new Uri(uploadResponse.SasUrl);
+        var blockBlobClient = new Azure.Storage.Blobs.Specialized.BlockBlobClient(sasUri);
+        var blockId = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes("block-0"));
+        await blockBlobClient.StageBlockAsync(blockId, new System.IO.MemoryStream(jpegBytes));
+
+        var commitRequest = new CommitRequest { BlockIds = new List<string> { blockId } };
+        await _uploadService.CommitAsync(_tripToken, uploadId, commitRequest, CancellationToken.None);
+
+        // Act — verify tiers exist in the per-trip container
+        var containerClient = _blobServiceClient.GetBlobContainerClient($"trip-{_tripToken.ToLowerInvariant()}");
+        var originalBlob = containerClient.GetBlobClient($"{uploadId}_original.jpg");
+        var displayBlob = containerClient.GetBlobClient($"{uploadId}_display.jpg");
+        var thumbBlob = containerClient.GetBlobClient($"{uploadId}_thumb.jpg");
+
+        // Assert — all three tiers must exist
+        (await originalBlob.ExistsAsync()).Value.Should().BeTrue("original blob must exist after commit");
+        (await displayBlob.ExistsAsync()).Value.Should().BeTrue("display tier must be generated during commit");
+        (await thumbBlob.ExistsAsync()).Value.Should().BeTrue("thumb tier must be generated during commit");
+
+        // Thumb must be smaller than display (300px max vs 1920px max)
+        var thumbProps = await thumbBlob.GetPropertiesAsync();
+        var displayProps = await displayBlob.GetPropertiesAsync();
+        thumbProps.Value.ContentLength.Should().BeLessThan(displayProps.Value.ContentLength,
+            "thumb tier should be smaller than display tier");
+    }
+
+    /// <summary>
+    /// The PhotoResponse returned by CommitAsync must use the same URL pattern as
+    /// PhotoReadService: /api/photos/{tripId}/{photoId}/{size}. Using /api/blobs/...
+    /// means the photo shows up broken immediately after upload, even though the
+    /// photo list API returns correct URLs. Client uses the URLs from commit
+    /// response for optimistic UI.
+    /// </summary>
+    [Fact]
+    public async Task CommitAsync_ReturnsPhotoResponse_WithProxyUrlsMatchingPhotoReadService()
+    {
+        if (_uploadService == null || _tripToken == null || _blobServiceClient == null || _context == null)
+            throw new InvalidOperationException("Test not initialized");
+
+        using var bitmap = new SkiaSharp.SKBitmap(400, 300, SkiaSharp.SKColorType.Rgba8888, SkiaSharp.SKAlphaType.Opaque);
+        using var canvas = new SkiaSharp.SKCanvas(bitmap);
+        canvas.Clear(SkiaSharp.SKColors.LimeGreen);
+        using var encoded = bitmap.Encode(SkiaSharp.SKEncodedImageFormat.Jpeg, 85);
+        var jpegBytes = encoded.ToArray();
+
+        var uploadId = Guid.NewGuid();
+        var req = new RequestUploadRequest
+        {
+            UploadId = uploadId,
+            Filename = "test.jpg",
+            ContentType = "image/jpeg",
+            SizeBytes = jpegBytes.Length,
+            Exif = null
+        };
+        var uploadResponse = await _uploadService.RequestUploadAsync(_tripToken, req, CancellationToken.None);
+        var blockBlobClient = new Azure.Storage.Blobs.Specialized.BlockBlobClient(new Uri(uploadResponse.SasUrl));
+        var blockId = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes("block-0"));
+        await blockBlobClient.StageBlockAsync(blockId, new System.IO.MemoryStream(jpegBytes));
+
+        // Act
+        var photoResponse = await _uploadService.CommitAsync(
+            _tripToken,
+            uploadId,
+            new CommitRequest { BlockIds = new List<string> { blockId } },
+            CancellationToken.None);
+
+        // Assert: URLs match the proxy pattern /api/photos/{tripId}/{photoId}/{size}
+        var tripId = _trip!.Id;
+        var photoId = photoResponse.Id;
+        photoResponse.ThumbnailUrl.Should().Be($"/api/photos/{tripId}/{photoId}/thumb");
+        photoResponse.DisplayUrl.Should().Be($"/api/photos/{tripId}/{photoId}/display");
+        photoResponse.OriginalUrl.Should().Be($"/api/photos/{tripId}/{photoId}/original");
+    }
+
+    /// <summary>
+    /// After commit with tier generation, PhotoService.GetPhotoAsync must be able
+    /// to resolve the "display" and "thumb" tiers for a per-trip blobPath.
+    /// The path construction was buggy: blobPath "{uuid}_original.jpg" naively replaced
+    /// .jpg with _display.jpg produces "{uuid}_original_display.jpg" which doesn't exist.
+    /// </summary>
+    [Fact]
+    public async Task GetPhotoAsync_PerTripContainer_ResolvesDisplayAndThumbTiers()
+    {
+        if (_uploadService == null || _tripToken == null || _blobServiceClient == null || _context == null)
+            throw new InvalidOperationException("Test not initialized");
+
+        // Upload a real JPEG so tier generation can decode it
+        using var bitmap = new SkiaSharp.SKBitmap(800, 600, SkiaSharp.SKColorType.Rgba8888, SkiaSharp.SKAlphaType.Opaque);
+        using var canvas = new SkiaSharp.SKCanvas(bitmap);
+        canvas.Clear(SkiaSharp.SKColors.Coral);
+        using var encoded = bitmap.Encode(SkiaSharp.SKEncodedImageFormat.Jpeg, 85);
+        var jpegBytes = encoded.ToArray();
+
+        var uploadId = Guid.NewGuid();
+        var req = new RequestUploadRequest
+        {
+            UploadId = uploadId,
+            Filename = "test.jpg",
+            ContentType = "image/jpeg",
+            SizeBytes = jpegBytes.Length,
+            Exif = null
+        };
+        var uploadResponse = await _uploadService.RequestUploadAsync(_tripToken, req, CancellationToken.None);
+        var blockBlobClient = new Azure.Storage.Blobs.Specialized.BlockBlobClient(new Uri(uploadResponse.SasUrl));
+        var blockId = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes("block-0"));
+        await blockBlobClient.StageBlockAsync(blockId, new System.IO.MemoryStream(jpegBytes));
+        await _uploadService.CommitAsync(_tripToken, uploadId, new CommitRequest { BlockIds = new List<string> { blockId } }, CancellationToken.None);
+
+        var photoService = new PhotoService(_blobServiceClient, _context);
+        var containerName = $"trip-{_tripToken.ToLowerInvariant()}";
+        var blobPath = uploadResponse.BlobPath; // "{uploadId}_original.jpg"
+
+        // Act + Assert — all three tiers must be retrievable
+        using (var originalStream = await photoService.GetPhotoAsync(blobPath, "original", "per-trip", containerName))
+        {
+            originalStream.Should().NotBeNull();
+        }
+        using (var displayStream = await photoService.GetPhotoAsync(blobPath, "display", "per-trip", containerName))
+        {
+            displayStream.Should().NotBeNull();
+        }
+        using (var thumbStream = await photoService.GetPhotoAsync(blobPath, "thumb", "per-trip", containerName))
+        {
+            thumbStream.Should().NotBeNull();
+        }
     }
 
     /// <summary>
@@ -320,7 +479,8 @@ public class UploadEndpointTests : IAsyncLifetime
         mockGeocodingService.Setup(g => g.ReverseGeocodeAsync(It.IsAny<double>(), It.IsAny<double>()))
             .ReturnsAsync((string?)null);
         var shortTtlOptions = Microsoft.Extensions.Options.Options.Create(new UploadOptions { SasTokenTtl = TimeSpan.FromSeconds(1) });
-        var shortTtlService = new UploadService(_context, _blobServiceClient, _sasTokenIssuer, mockGeocodingService.Object, new Microsoft.Extensions.Logging.Abstractions.NullLogger<UploadService>(), shortTtlOptions);
+        var photoService2 = new PhotoService(_blobServiceClient, _context);
+        var shortTtlService = new UploadService(_context, _blobServiceClient, _sasTokenIssuer, mockGeocodingService.Object, photoService2, new Microsoft.Extensions.Logging.Abstractions.NullLogger<UploadService>(), shortTtlOptions);
 
         // Act - Request upload with short TTL
         var uploadResponse = await shortTtlService.RequestUploadAsync(_tripToken, uploadRequest, CancellationToken.None);
