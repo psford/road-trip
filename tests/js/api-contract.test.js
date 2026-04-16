@@ -143,12 +143,18 @@ describe('API wire format matches server DTO contracts', () => {
         StorageAdapter.updateItemStatus.mockResolvedValue();
         StorageAdapter.putItem = vi.fn().mockResolvedValue();
 
-        // Call the internal method that builds the request body
+        // Use the REAL exif shape produced by exifUtil.js + postService.js
+        // (this is what postUI.js stores in item.exif):
+        //   { gps: { latitude, longitude }, timestamp, placeName }
         const item = {
             filename: 'photo.jpg',
             size: 5000000,
             content_type: 'image/jpeg',
-            exif: { gps: { lat: 42.33, lon: -71.11 }, takenAt: '2026-04-01T12:00:00Z' },
+            exif: {
+                gps: { latitude: 42.33, longitude: -71.11 },
+                timestamp: new Date('2026-04-01T12:00:00Z'),
+                placeName: 'Boston, MA',
+            },
         };
 
         try {
@@ -181,5 +187,15 @@ describe('API wire format matches server DTO contracts', () => {
             expect(body.exif).toHaveProperty('gpsLat');
             expect(body.exif).toHaveProperty('gpsLon');
         }
+
+        // CRITICAL: Verify the GPS values actually made it through (not null).
+        // The bug that shipped to prod: client read gps.lat/gps.lon but exifUtil
+        // returns gps.latitude/gps.longitude, so both were null → photos at 0,0.
+        expect(body.exif.gpsLat).toBe(42.33);
+        expect(body.exif.gpsLon).toBe(-71.11);
+
+        // Verify takenAt made it through (not null).
+        // The bug: client read exif.takenAt but postService stores exif.timestamp.
+        expect(body.exif.takenAt).toBeTruthy();
     });
 });
