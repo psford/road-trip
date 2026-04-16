@@ -17,25 +17,41 @@ var connectionString = EndpointRegistry.Resolve("database");
 builder.Services.AddDbContext<RoadTripDbContext>(options =>
     options.UseSqlServer(connectionString));
 
-var storageConnectionString = builder.Configuration.GetConnectionString("AzureStorage");
-if (!string.IsNullOrEmpty(storageConnectionString))
+var useDevelopmentStorage = builder.Configuration.GetValue<bool>("Blob:UseDevelopmentStorage");
+
+if (useDevelopmentStorage)
 {
+    // Dev/Azurite: connection string with account key (Azurite doesn't support MSI)
+    var storageConnectionString = builder.Configuration.GetConnectionString("AzureStorage")
+        ?? EndpointRegistry.Resolve("blobStorage");
     builder.Services.AddAzureClients(clientBuilder =>
     {
         clientBuilder.AddBlobServiceClient(storageConnectionString);
     });
 
-    // For dev-storage (Azurite), extract account key and register StorageSharedKeyCredential
-    if (builder.Configuration.GetValue<bool>("Blob:UseDevelopmentStorage"))
+    var accountName = builder.Configuration.GetValue<string>("Blob:AccountName");
+    var accountKey = builder.Configuration.GetValue<string>("Blob:AccountKey");
+    if (!string.IsNullOrEmpty(accountName) && !string.IsNullOrEmpty(accountKey))
     {
-        var accountName = builder.Configuration.GetValue<string>("Blob:AccountName");
-        var accountKey = builder.Configuration.GetValue<string>("Blob:AccountKey");
-
-        if (!string.IsNullOrEmpty(accountName) && !string.IsNullOrEmpty(accountKey))
-        {
-            builder.Services.AddSingleton(new Azure.Storage.StorageSharedKeyCredential(accountName, accountKey));
-        }
+        builder.Services.AddSingleton(new Azure.Storage.StorageSharedKeyCredential(accountName, accountKey));
     }
+}
+else
+{
+    // Production: DefaultAzureCredential (App Service Managed Identity).
+    // No account keys — MSI has Storage Blob Data Contributor on the storage account.
+    // Required for UserDelegationSasIssuer.GetUserDelegationKeyAsync (OAuth only).
+    var storageAccountName = builder.Configuration["Blob:AccountName"]
+        ?? throw new InvalidOperationException(
+            "Blob:AccountName must be set in production. " +
+            "DefaultAzureCredential needs the account URI, not a connection string with keys.");
+    var blobUri = new Uri($"https://{storageAccountName}.blob.core.windows.net");
+
+    builder.Services.AddAzureClients(clientBuilder =>
+    {
+        clientBuilder.AddBlobServiceClient(blobUri);
+        clientBuilder.UseCredential(new Azure.Identity.DefaultAzureCredential());
+    });
 }
 
 builder.Services.AddSingleton<UploadRateLimiter>();
