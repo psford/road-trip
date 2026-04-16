@@ -18,12 +18,12 @@ builder.Services.AddDbContext<RoadTripDbContext>(options =>
     options.UseSqlServer(connectionString));
 
 var useDevelopmentStorage = builder.Configuration.GetValue<bool>("Blob:UseDevelopmentStorage");
+var storageConnectionString = builder.Configuration.GetConnectionString("AzureStorage");
 
 if (useDevelopmentStorage)
 {
     // Dev/Azurite: connection string with account key (Azurite doesn't support MSI)
-    var storageConnectionString = builder.Configuration.GetConnectionString("AzureStorage")
-        ?? EndpointRegistry.Resolve("blobStorage");
+    storageConnectionString ??= EndpointRegistry.Resolve("blobStorage");
     builder.Services.AddAzureClients(clientBuilder =>
     {
         clientBuilder.AddBlobServiceClient(storageConnectionString);
