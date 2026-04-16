@@ -390,9 +390,9 @@ const UploadQueue = {
                 contentType: item.content_type || 'application/octet-stream',
                 sizeBytes: item.size,
                 exif: item.exif ? {
-                    gpsLat: item.exif.gps?.lat ?? null,
-                    gpsLon: item.exif.gps?.lon ?? null,
-                    takenAt: item.exif.takenAt ?? null,
+                    gpsLat: item.exif.gps?.latitude ?? null,
+                    gpsLon: item.exif.gps?.longitude ?? null,
+                    takenAt: item.exif.timestamp ?? item.exif.takenAt ?? null,
                 } : null,
             });
 
@@ -455,9 +455,9 @@ const UploadQueue = {
             contentType: item.content_type || 'application/octet-stream',
             sizeBytes: item.size,
             exif: item.exif ? {
-                gpsLat: item.exif.gps?.lat ?? item.exif.gpsLat ?? null,
-                gpsLon: item.exif.gps?.lon ?? item.exif.gpsLon ?? null,
-                takenAt: item.exif.takenAt ?? null,
+                gpsLat: item.exif.gps?.latitude ?? item.exif.gpsLat ?? null,
+                gpsLon: item.exif.gps?.longitude ?? item.exif.gpsLon ?? null,
+                takenAt: item.exif.timestamp ?? item.exif.takenAt ?? null,
             } : null,
         });
 
@@ -512,9 +512,9 @@ const UploadQueue = {
                             contentType: item.content_type || 'application/octet-stream',
                             sizeBytes: item.size,
                             exif: item.exif ? {
-                                gpsLat: item.exif.gps?.lat ?? item.exif.gpsLat ?? null,
-                                gpsLon: item.exif.gps?.lon ?? item.exif.gpsLon ?? null,
-                                takenAt: item.exif.takenAt ?? null,
+                                gpsLat: item.exif.gps?.latitude ?? item.exif.gpsLat ?? null,
+                                gpsLon: item.exif.gps?.longitude ?? item.exif.gpsLon ?? null,
+                                takenAt: item.exif.timestamp ?? item.exif.takenAt ?? null,
                             } : null,
                         });
 
