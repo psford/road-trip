@@ -216,6 +216,57 @@ public class UploadEndpointTests : IAsyncLifetime
     }
 
     /// <summary>
+    /// Diagnostic: does SkiaSharp decode the actual failed prod photo (PNG served as .jpg)?
+    /// </summary>
+    /// <summary>
+    /// Regression test for tier generation with PNG content. The prior implementation
+    /// used SKBitmap.Decode which returned NULL on some large PNGs (confirmed with a
+    /// real 18MB prod photo). SKImage.FromEncodedData handles the full range.
+    /// This test exercises the PNG decode path that was broken.
+    /// </summary>
+    [Fact]
+    public async Task GenerateDerivedTiersAsync_PngOriginal_ProducesDisplayAndThumbTiers()
+    {
+        if (_uploadService == null || _tripToken == null || _blobServiceClient == null || _context == null)
+            throw new InvalidOperationException("Test not initialized");
+
+        // Create a PNG (prior code used SKBitmap.Decode which sometimes failed on PNGs)
+        using var bitmap = new SkiaSharp.SKBitmap(1200, 900, SkiaSharp.SKColorType.Rgba8888, SkiaSharp.SKAlphaType.Opaque);
+        using (var canvas = new SkiaSharp.SKCanvas(bitmap))
+        {
+            canvas.Clear(SkiaSharp.SKColors.CornflowerBlue);
+            using var paint = new SkiaSharp.SKPaint { Color = SkiaSharp.SKColors.White };
+            for (int i = 0; i < 50; i++)
+                canvas.DrawCircle(i * 50, i * 30, 20, paint);
+        }
+        using var encoded = bitmap.Encode(SkiaSharp.SKEncodedImageFormat.Png, 100);
+        var pngBytes = encoded.ToArray();
+        pngBytes[0..4].Should().BeEquivalentTo(new byte[] { 0x89, 0x50, 0x4E, 0x47 }, "should be PNG magic");
+
+        var uploadId = Guid.NewGuid();
+        var containerName = $"trip-{_tripToken.ToLowerInvariant()}";
+        var container = _blobServiceClient.GetBlobContainerClient(containerName);
+
+        // Upload as original blob (skip the full request-upload flow)
+        var originalBlob = container.GetBlobClient($"{uploadId}_original.jpg");
+        await originalBlob.UploadAsync(new System.IO.MemoryStream(pngBytes), overwrite: true);
+
+        // Act — tier generation must succeed for PNG content
+        var photoService = new PhotoService(_blobServiceClient, _context);
+        await photoService.GenerateDerivedTiersAsync(containerName, uploadId, CancellationToken.None);
+
+        // Assert — display and thumb tiers exist
+        (await container.GetBlobClient($"{uploadId}_display.jpg").ExistsAsync()).Value.Should().BeTrue("display tier must exist");
+        (await container.GetBlobClient($"{uploadId}_thumb.jpg").ExistsAsync()).Value.Should().BeTrue("thumb tier must exist");
+
+        // Verify tier sizes are reasonable
+        var displayProps = await container.GetBlobClient($"{uploadId}_display.jpg").GetPropertiesAsync();
+        var thumbProps = await container.GetBlobClient($"{uploadId}_thumb.jpg").GetPropertiesAsync();
+        thumbProps.Value.ContentLength.Should().BeLessThan(displayProps.Value.ContentLength);
+        thumbProps.Value.ContentLength.Should().BeGreaterThan(100, "thumb must have actual content");
+    }
+
+    /// <summary>
     /// The PhotoResponse returned by CommitAsync must use the same URL pattern as
     /// PhotoReadService: /api/photos/{tripId}/{photoId}/{size}. Using /api/blobs/...
     /// means the photo shows up broken immediately after upload, even though the

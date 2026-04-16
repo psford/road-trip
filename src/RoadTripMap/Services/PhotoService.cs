@@ -92,31 +92,53 @@ public class PhotoService : IPhotoService
         var container = _blobServiceClient.GetBlobContainerClient(containerName);
         var originalBlob = container.GetBlobClient($"{uploadId}_original.jpg");
 
-        // Download the original blob
+        // Download the original blob as bytes (we need multiple reads of the data)
         using var originalStream = new MemoryStream();
         await originalBlob.DownloadToAsync(originalStream, ct);
-        originalStream.Position = 0;
+        var originalBytes = originalStream.ToArray();
 
-        // Read EXIF orientation before decoding
-        using var codec = SKCodec.Create(originalStream);
-        if (codec == null)
-            throw new InvalidOperationException($"Failed to decode image: {uploadId}_original.jpg");
+        // Read EXIF orientation via codec (works for large PNGs where SKBitmap.Decode fails)
+        SKEncodedOrigin orientation = SKEncodedOrigin.Default;
+        using (var codecStream = new MemoryStream(originalBytes))
+        using (var codec = SKCodec.Create(codecStream))
+        {
+            if (codec != null)
+                orientation = codec.EncodedOrigin;
+        }
 
-        var orientation = codec.EncodedOrigin;
-
-        originalStream.Position = 0;
-        using var bitmap = SKBitmap.Decode(originalStream);
+        // Decode via SKImage.FromEncodedData — handles large PNGs that SKBitmap.Decode can't.
+        // Fall back to SKBitmap.Decode if FromEncodedData fails (rare).
+        using var image = SKImage.FromEncodedData(originalBytes);
+        SKBitmap? bitmap = null;
+        if (image != null)
+        {
+            bitmap = SKBitmap.FromImage(image);
+        }
         if (bitmap == null)
-            throw new InvalidOperationException($"Failed to decode image: {uploadId}_original.jpg");
+        {
+            bitmap = SKBitmap.Decode(originalBytes);
+        }
+        if (bitmap == null)
+        {
+            throw new InvalidOperationException(
+                $"Failed to decode image: {uploadId}_original.jpg ({originalBytes.Length} bytes)");
+        }
 
-        // Apply EXIF rotation so derived tiers are upright
-        var rotated = ApplyExifRotation(bitmap, orientation);
+        try
+        {
+            // Apply EXIF rotation so derived tiers are upright
+            var rotated = ApplyExifRotation(bitmap, orientation);
 
-        // Generate display tier (1920px max, quality 85)
-        await UploadDerivedTierAsync(container, rotated, uploadId, "display", 1920, 85, ct);
+            // Generate display tier (1920px max, quality 85)
+            await UploadDerivedTierAsync(container, rotated, uploadId, "display", 1920, 85, ct);
 
-        // Generate thumb tier (300px max, quality 75)
-        await UploadDerivedTierAsync(container, rotated, uploadId, "thumb", 300, 75, ct);
+            // Generate thumb tier (300px max, quality 75)
+            await UploadDerivedTierAsync(container, rotated, uploadId, "thumb", 300, 75, ct);
+        }
+        finally
+        {
+            bitmap.Dispose();
+        }
     }
 
     private async Task UploadDerivedTierAsync(
