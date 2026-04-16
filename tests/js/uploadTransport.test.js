@@ -56,8 +56,7 @@ describe('UploadTransport', () => {
                     method: 'PUT',
                     body: blob,
                     headers: expect.objectContaining({
-                        'Content-Length': blob.size.toString(),
-                        'x-ms-version': '2024-11-04',
+                        'x-ms-blob-type': 'BlockBlob',
                     }),
                 })
             );

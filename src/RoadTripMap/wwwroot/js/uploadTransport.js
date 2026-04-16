@@ -52,14 +52,13 @@ const UploadTransport = {
         // Build URL with Azure blob storage query parameters
         const url = new URL(sasUrl);
         url.searchParams.set('comp', 'block');
-        url.searchParams.set('blockid', encodeURIComponent(blockId));
+        url.searchParams.set('blockid', blockId);
 
         const response = await fetch(url.toString(), {
             method: 'PUT',
             body: blob,
             headers: {
-                'Content-Length': String(blob.size),
-                'x-ms-version': '2024-11-04',
+                'x-ms-blob-type': 'BlockBlob',
             },
             signal,
         });
