@@ -166,19 +166,24 @@ var contentTypeProvider = new Microsoft.AspNetCore.StaticFiles.FileExtensionCont
 contentTypeProvider.Mappings[".geojson"] = "application/geo+json";
 app.UseStaticFiles(new StaticFileOptions { ContentTypeProvider = contentTypeProvider });
 
-// Middleware to inject feature flags into post.html before returning it
+// Middleware to inject feature flags into post.html before returning it.
+// Only intercepts exact /post/{token} page requests (not /api/post/* routes).
 app.Use(async (context, next) =>
 {
-    if (context.Request.Path.StartsWithSegments("/post", StringComparison.OrdinalIgnoreCase))
+    var path = context.Request.Path.Value ?? "";
+    var isPostPage = path.StartsWith("/post/", StringComparison.OrdinalIgnoreCase)
+        && !path.StartsWith("/api/", StringComparison.OrdinalIgnoreCase);
+
+    if (isPostPage)
     {
         var originalBodyStream = context.Response.Body;
-        using var memoryStream = new MemoryStream();
+        var memoryStream = new MemoryStream();
         context.Response.Body = memoryStream;
 
         await next();
 
         memoryStream.Position = 0;
-        using var reader = new StreamReader(memoryStream);
+        var reader = new StreamReader(memoryStream);
         var content = await reader.ReadToEndAsync();
 
         // Inject feature flags into the meta tag
@@ -188,6 +193,7 @@ app.Use(async (context, next) =>
             $"""<meta id="featureFlags" data-resilient-uploads-ui="{resilientUploadsUI.ToString().ToLower()}">""");
 
         var bytes = System.Text.Encoding.UTF8.GetBytes(content);
+        context.Response.ContentLength = bytes.Length;
         await originalBodyStream.WriteAsync(bytes, 0, bytes.Length);
         context.Response.Body = originalBodyStream;
     }
