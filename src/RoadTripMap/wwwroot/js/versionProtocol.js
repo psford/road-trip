@@ -75,7 +75,7 @@ const VersionProtocol = {
 
         globalThis.fetch = async (...args) => {
             // Call original fetch
-            const response = await this.originalFetch(...args);
+            const response = await this.originalFetch.apply(globalThis, args);
 
             // Only check headers if we have a current version
             if (this.currentClientVersion === null) {
