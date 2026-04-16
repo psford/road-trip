@@ -35,23 +35,29 @@ public class AzuriteFixture : IAsyncLifetime
     // Azurite connection string for local testing
     public string ConnectionString { get; } = "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://127.0.0.1:10000/devstoreaccount1;";
 
+    private bool _startedViaDocker;
+
     public async Task InitializeAsync()
     {
-        // Check if docker is available
-        if (!IsDockerAvailable())
+        // If Azurite is already running (e.g. native install, dev container), just use it.
+        if (await IsAzuriteReachableAsync())
         {
-            throw new SkipTestException("Docker is not available; skipping Azurite integration tests");
+            _startedViaDocker = false;
+            return;
         }
 
-        // Find docker-compose.azurite.yml in the tests directory
-        var dockerComposeFilePath = FindDockerComposeFile();
+        // Otherwise require Docker + docker-compose to start it.
+        if (!IsDockerAvailable())
+        {
+            throw new SkipTestException("Azurite is not running and Docker is not available; skipping Azurite integration tests");
+        }
 
+        var dockerComposeFilePath = FindDockerComposeFile();
         if (!File.Exists(dockerComposeFilePath))
         {
             throw new FileNotFoundException($"docker-compose.azurite.yml not found at {dockerComposeFilePath}");
         }
 
-        // Start container
         var result = await ExecuteDockerComposeAsync(
             ["up", "-d"],
             Path.GetDirectoryName(dockerComposeFilePath) ?? ".");
@@ -61,18 +67,35 @@ public class AzuriteFixture : IAsyncLifetime
             throw new InvalidOperationException("Failed to start Azurite via docker-compose");
         }
 
-        // Wait for Azurite to be healthy
+        _startedViaDocker = true;
         await WaitForAzuriteAsync();
     }
 
     public async Task DisposeAsync()
     {
-        // Stop and remove Azurite via docker-compose
-        var dockerComposeFilePath = FindDockerComposeFile();
+        // Only tear down if we started Azurite ourselves
+        if (!_startedViaDocker) return;
 
+        var dockerComposeFilePath = FindDockerComposeFile();
         await ExecuteDockerComposeAsync(
             ["down", "-v"],
             Path.GetDirectoryName(dockerComposeFilePath) ?? ".");
+    }
+
+    /// <summary>Check if Azurite is already listening on the expected endpoint.</summary>
+    private async Task<bool> IsAzuriteReachableAsync()
+    {
+        try
+        {
+            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(2) };
+            // Azurite returns 400/403 without auth but only if it's actually listening.
+            var response = await http.GetAsync("http://127.0.0.1:10000/");
+            return true; // Any HTTP response means the service is up
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     /// <summary>

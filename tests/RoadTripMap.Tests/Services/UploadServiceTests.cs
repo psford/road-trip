@@ -50,7 +50,7 @@ public class UploadServiceTests
             .Setup(s => s.IssueWriteSasAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<TimeSpan>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(sasUri);
 
-        var service = new UploadService(context, mockBlobServiceClient.Object, mockSasIssuer.Object, mockGeocodingService.Object, mockLogger.Object, options);
+        var service = new UploadService(context, mockBlobServiceClient.Object, mockSasIssuer.Object, mockGeocodingService.Object, Mock.Of<IPhotoService>(), mockLogger.Object, options);
 
         var request = new RequestUploadRequest
         {
@@ -117,7 +117,7 @@ public class UploadServiceTests
             .Setup(s => s.IssueWriteSasAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<TimeSpan>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(sasUri);
 
-        var service = new UploadService(context, mockBlobServiceClient.Object, mockSasIssuer.Object, mockGeocodingService.Object, mockLogger.Object, options);
+        var service = new UploadService(context, mockBlobServiceClient.Object, mockSasIssuer.Object, mockGeocodingService.Object, Mock.Of<IPhotoService>(), mockLogger.Object, options);
 
         var request = new RequestUploadRequest
         {
@@ -189,7 +189,7 @@ public class UploadServiceTests
         var mockLogger = new Mock<ILogger<UploadService>>();
         var options = Options.Create(new UploadOptions { MaxBlockSizeBytes = 4 * 1024 * 1024 });
 
-        var service = new UploadService(context, mockBlobServiceClient.Object, mockSasIssuer.Object, mockGeocodingService.Object, mockLogger.Object, options);
+        var service = new UploadService(context, mockBlobServiceClient.Object, mockSasIssuer.Object, mockGeocodingService.Object, Mock.Of<IPhotoService>(), mockLogger.Object, options);
 
         var request = new CommitRequest { BlockIds = new List<string> { "block1" } };
 
@@ -235,7 +235,7 @@ public class UploadServiceTests
         var mockLogger = new Mock<ILogger<UploadService>>();
         var options = Options.Create(new UploadOptions { MaxBlockSizeBytes = 4 * 1024 * 1024 });
 
-        var service = new UploadService(context, mockBlobServiceClient.Object, mockSasIssuer.Object, mockGeocodingService.Object, mockLogger.Object, options);
+        var service = new UploadService(context, mockBlobServiceClient.Object, mockSasIssuer.Object, mockGeocodingService.Object, Mock.Of<IPhotoService>(), mockLogger.Object, options);
 
         // Act
         await service.AbortAsync(tripToken, photoId, CancellationToken.None);
@@ -267,7 +267,7 @@ public class UploadServiceTests
         var mockLogger = new Mock<ILogger<UploadService>>();
         var options = Options.Create(new UploadOptions { MaxBlockSizeBytes = 4 * 1024 * 1024 });
 
-        var service = new UploadService(context, mockBlobServiceClient.Object, mockSasIssuer.Object, mockGeocodingService.Object, mockLogger.Object, options);
+        var service = new UploadService(context, mockBlobServiceClient.Object, mockSasIssuer.Object, mockGeocodingService.Object, Mock.Of<IPhotoService>(), mockLogger.Object, options);
 
         var photoId = Guid.NewGuid();
 
