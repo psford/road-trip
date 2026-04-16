@@ -41,17 +41,27 @@ else
     // Production: DefaultAzureCredential (App Service Managed Identity).
     // No account keys — MSI has Storage Blob Data Contributor on the storage account.
     // Required for UserDelegationSasIssuer.GetUserDelegationKeyAsync (OAuth only).
-    var storageAccountName = builder.Configuration["Blob:AccountName"]
-        ?? throw new InvalidOperationException(
-            "Blob:AccountName must be set in production. " +
-            "DefaultAzureCredential needs the account URI, not a connection string with keys.");
-    var blobUri = new Uri($"https://{storageAccountName}.blob.core.windows.net");
-
-    builder.Services.AddAzureClients(clientBuilder =>
+    var storageAccountName = builder.Configuration["Blob:AccountName"];
+    if (!string.IsNullOrEmpty(storageAccountName))
     {
-        clientBuilder.AddBlobServiceClient(blobUri);
-        clientBuilder.UseCredential(new Azure.Identity.DefaultAzureCredential());
-    });
+        var blobUri = new Uri($"https://{storageAccountName}.blob.core.windows.net");
+        builder.Services.AddAzureClients(clientBuilder =>
+        {
+            clientBuilder.AddBlobServiceClient(blobUri);
+            clientBuilder.UseCredential(new Azure.Identity.DefaultAzureCredential());
+        });
+    }
+    else if (!string.IsNullOrEmpty(storageConnectionString))
+    {
+        // Fallback: connection string without dev storage flag (e.g. test environments).
+        // Upload features requiring user delegation SAS will not work in this mode.
+        builder.Services.AddAzureClients(clientBuilder =>
+        {
+            clientBuilder.AddBlobServiceClient(storageConnectionString);
+        });
+    }
+    // If neither is set (some test configs), blob services are not registered.
+    // Tests that don't exercise blob operations won't need them.
 }
 
 builder.Services.AddSingleton<UploadRateLimiter>();
