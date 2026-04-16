@@ -385,11 +385,15 @@ const UploadQueue = {
             await StorageAdapter.updateItemStatus(uploadId, 'requesting');
 
             const response = await API.requestUpload(tripToken, {
-                upload_id: uploadId,
+                uploadId: uploadId,
                 filename: item.filename,
-                content_type: item.content_type || 'application/octet-stream',
-                size_bytes: item.size,
-                exif: item.exif,
+                contentType: item.content_type || 'application/octet-stream',
+                sizeBytes: item.size,
+                exif: item.exif ? {
+                    gpsLat: item.exif.gps?.lat ?? null,
+                    gpsLon: item.exif.gps?.lon ?? null,
+                    takenAt: item.exif.takenAt ?? null,
+                } : null,
             });
 
             await StorageAdapter.updateItemStatus(uploadId, 'requesting', {
@@ -446,11 +450,15 @@ const UploadQueue = {
         const item = await StorageAdapter.getItem(uploadId);
 
         const response = await API.requestUpload(tripToken, {
-            upload_id: uploadId,
+            uploadId: uploadId,
             filename: item.filename,
-            content_type: item.content_type || 'application/octet-stream',
-            size_bytes: item.size,
-            exif: item.exif,
+            contentType: item.content_type || 'application/octet-stream',
+            sizeBytes: item.size,
+            exif: item.exif ? {
+                gpsLat: item.exif.gps?.lat ?? item.exif.gpsLat ?? null,
+                gpsLon: item.exif.gps?.lon ?? item.exif.gpsLon ?? null,
+                takenAt: item.exif.takenAt ?? null,
+            } : null,
         });
 
         await StorageAdapter.updateItemStatus(uploadId, 'uploading', {
@@ -499,11 +507,15 @@ const UploadQueue = {
 
                         // Request fresh upload session
                         const response = await API.requestUpload(tripToken, {
-                            upload_id: uploadId,
+                            uploadId: uploadId,
                             filename: item.filename,
-                            content_type: item.content_type || 'application/octet-stream',
-                            size_bytes: item.size,
-                            exif: item.exif,
+                            contentType: item.content_type || 'application/octet-stream',
+                            sizeBytes: item.size,
+                            exif: item.exif ? {
+                                gpsLat: item.exif.gps?.lat ?? item.exif.gpsLat ?? null,
+                                gpsLon: item.exif.gps?.lon ?? item.exif.gpsLon ?? null,
+                                takenAt: item.exif.takenAt ?? null,
+                            } : null,
                         });
 
                         await StorageAdapter.updateItemStatus(uploadId, 'uploading', {
