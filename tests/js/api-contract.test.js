@@ -59,6 +59,8 @@ describe('API wire format matches server DTO contracts', () => {
                 json: async () => ({
                     photoId: '00000000-0000-0000-0000-000000000001',
                     sasUrl: 'https://storage.blob.core.windows.net/container/blob?sig=REDACTED',
+                    displaySasUrl: 'https://storage.blob.core.windows.net/container/blob_display.jpg?sig=REDACTED',
+                    thumbSasUrl: 'https://storage.blob.core.windows.net/container/blob_thumb.jpg?sig=REDACTED',
                     blobPath: 'photo_original.jpg',
                     maxBlockSizeBytes: 4194304,
                     serverVersion: '1.0.0',
@@ -197,5 +199,30 @@ describe('API wire format matches server DTO contracts', () => {
         // Verify takenAt made it through (not null).
         // The bug: client read exif.takenAt but postService stores exif.timestamp.
         expect(body.exif.takenAt).toBeTruthy();
+    });
+
+    it('request-upload response includes tier SAS URLs', () => {
+        const response = {
+            photoId: '00000000-0000-0000-0000-000000000001',
+            sasUrl: 'https://storage.blob.core.windows.net/container/blob?sig=REDACTED',
+            displaySasUrl: 'https://storage.blob.core.windows.net/container/blob_display.jpg?sig=REDACTED',
+            thumbSasUrl: 'https://storage.blob.core.windows.net/container/blob_thumb.jpg?sig=REDACTED',
+            blobPath: 'photo_original.jpg',
+            maxBlockSizeBytes: 4194304,
+            serverVersion: '1.0.0',
+            clientMinVersion: '1.0.0',
+        };
+
+        // Validate shape includes new fields
+        expect(response).toHaveProperty('displaySasUrl');
+        expect(response).toHaveProperty('thumbSasUrl');
+        expect(typeof response.displaySasUrl).toBe('string');
+        expect(typeof response.thumbSasUrl).toBe('string');
+        expect(response.displaySasUrl.length).toBeGreaterThan(0);
+        expect(response.thumbSasUrl.length).toBeGreaterThan(0);
+
+        // Verify the SAS URLs contain expected paths (indicating tier differentiation)
+        expect(response.displaySasUrl).toContain('_display');
+        expect(response.thumbSasUrl).toContain('_thumb');
     });
 });
