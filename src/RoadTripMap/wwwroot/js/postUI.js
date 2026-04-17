@@ -76,10 +76,8 @@ const PostUI = {
         // Resume uploads from previous session
         this.resumeUploads();
 
-        // Mount new resilient uploads UI behind feature flag
-        if (FeatureFlags.isEnabled('resilient-uploads-ui')) {
-            this.mountResilientUploadsUI();
-        }
+        // Mount resilient uploads UI (now the only path)
+        this.mountResilientUploadsUI();
 
         // Listen for upload events
         this.setupUploadEventListeners();

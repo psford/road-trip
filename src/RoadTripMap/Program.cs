@@ -212,12 +212,6 @@ app.Use(async (context, next) =>
         var reader = new StreamReader(memoryStream);
         var content = await reader.ReadToEndAsync();
 
-        // Inject feature flags into the meta tag
-        var resilientUploadsUI = app.Configuration.GetValue<bool>("FeatureFlags:ResilientUploadsUI");
-        content = content.Replace(
-            """<meta id="featureFlags" data-resilient-uploads-ui="">""",
-            $"""<meta id="featureFlags" data-resilient-uploads-ui="{resilientUploadsUI.ToString().ToLower()}">""");
-
         // Inject client-processing-enabled meta tag
         var clientProcessingEnabled = app.Configuration.GetValue<bool>("Upload:ClientSideProcessingEnabled", false);
         content = content.Replace(
