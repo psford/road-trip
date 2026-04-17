@@ -1539,6 +1539,22 @@ Commit this runbook with deviations and final sign-off recorded.
 
 ---
 
+### Deferred acceptance note (added 2026-04-16)
+
+**Phase 4 sign-off is deferred pending the client-side processing fix.**
+
+The acceptance session and legacy-trip audit (design Phases 1–2) cannot proceed until the oversize image compression plan (`docs/implementation-plans/2026-04-16-oversize-image-compression/`) is fully deployed and verified. Rationale: the current server-side tier generation bottleneck causes 6/20 photo uploads to fail in a 20-photo batch under load, which would invalidate any acceptance session run against the unpatched server.
+
+**Phase 4 sign-off conditions:**
+
+1. The oversize compression plan's Phases 1–4 are deployed to production with `Upload:ClientSideProcessingEnabled = true`.
+2. A 20-photo batch smoke test on prod completes with zero failed uploads and total time under 3 minutes (matching the Playwright scenario in `docs/implementation-plans/2026-04-16-oversize-image-compression/phase_03.md`, Task 3, Subcomponent D).
+3. Server logs confirm `GenerateDerivedTiersAsync` is **not** called during the smoke test (client tiers used).
+
+Only after these three conditions are met should the Phase 4 acceptance session and legacy-trip audit proceed.
+
+---
+
 **Document Version:** 1.3  
 **Created:** April 2026 (Phase 1 Implementation)  
 **Author:** Claude Code  
