@@ -1,0 +1,23 @@
+[
+  {
+    "Id": 1,
+    "ThumbnailUrl": "/api/photos/1/1/thumb",
+    "DisplayUrl": "/api/photos/1/1/display",
+    "OriginalUrl": "/api/photos/1/1/original",
+    "Lat": 40.7128,
+    "Lng": -74.006,
+    "PlaceName": "New York",
+    "Caption": "Empire State Building",
+    "TakenAt": "2026-01-15T10:30:00Z"
+  },
+  {
+    "Id": 2,
+    "ThumbnailUrl": "/api/photos/1/2/thumb",
+    "DisplayUrl": "/api/photos/1/2/display",
+    "OriginalUrl": "/api/photos/1/2/original",
+    "Lat": 34.0522,
+    "Lng": -118.2437,
+    "PlaceName": "Los Angeles",
+    "TakenAt": "2026-01-15T14:45:00Z"
+  }
+]

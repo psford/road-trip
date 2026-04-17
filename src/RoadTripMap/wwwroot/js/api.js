@@ -188,4 +188,98 @@ const API = {
         }
         return response.json();
     },
+
+    /**
+     * Request a new upload session and receive SAS URL for block uploads
+     * @param {string} secretToken - Trip secret token
+     * @param {Object} body - Request body { upload_id, filename, content_type, size_bytes, exif }
+     * @returns {Promise<{photoId, sas_url, blob_path}>}
+     */
+    async requestUpload(secretToken, body) {
+        const response = await fetch(`${this.baseUrl}/trips/${secretToken}/photos/request-upload`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        });
+        if (!response.ok) {
+            const error = await response.json().catch(() => ({}));
+            const errorObj = new Error(error.message || error.error || 'Failed to request upload');
+            errorObj.code = error.code;
+            throw errorObj;
+        }
+        return response.json();
+    },
+
+    /**
+     * Commit uploaded blocks to finalize a photo
+     * @param {string} secretToken - Trip secret token
+     * @param {string} photoId - Photo ID (GUID)
+     * @param {Array<string>} blockIds - Array of block IDs in upload order
+     * @returns {Promise<PhotoResponse>}
+     */
+    async commit(secretToken, photoId, blockIds) {
+        const response = await fetch(`${this.baseUrl}/trips/${secretToken}/photos/${photoId}/commit`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ blockIds })
+        });
+        if (!response.ok) {
+            const error = await response.json().catch(() => ({}));
+            const errorObj = new Error(error.message || error.error || 'Failed to commit upload');
+            errorObj.code = error.code;
+            throw errorObj;
+        }
+        return response.json();
+    },
+
+    /**
+     * Abort an in-flight upload
+     * @param {string} secretToken - Trip secret token
+     * @param {string} photoId - Photo ID (GUID)
+     * @returns {Promise<void>}
+     */
+    async abort(secretToken, photoId) {
+        const response = await fetch(`${this.baseUrl}/trips/${secretToken}/photos/${photoId}/abort`, {
+            method: 'POST'
+        });
+        if (!response.ok) {
+            const error = await response.json().catch(() => ({}));
+            throw new Error(error.error || 'Failed to abort upload');
+        }
+    },
+
+    /**
+     * Get current server version and minimum required client version
+     * @returns {Promise<{server_version, client_min_version}>}
+     */
+    async getVersion() {
+        const response = await fetch(`${this.baseUrl}/version`);
+        if (!response.ok) {
+            const error = await response.json().catch(() => ({}));
+            throw new Error(error.error || 'Failed to get version');
+        }
+        return response.json();
+    },
+
+    /**
+     * Manually update a photo's GPS coordinates via pin-drop
+     * @param {string} secretToken - Trip secret token
+     * @param {Object} body - Request body { photoId, gpsLat, gpsLon }
+     * @returns {Promise<PhotoResponse>}
+     */
+    async pinDropPhoto(secretToken, body) {
+        const { photoId, gpsLat, gpsLon } = body;
+        const response = await fetch(`${this.baseUrl}/trips/${secretToken}/photos/${photoId}/pin-drop`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ gpsLat, gpsLon })
+        });
+        if (!response.ok) {
+            const error = await response.json().catch(() => ({}));
+            const errorObj = new Error(error.message || error.error || 'Failed to pin-drop photo');
+            errorObj.code = error.code;
+            throw errorObj;
+        }
+        return response.json();
+    },
 };

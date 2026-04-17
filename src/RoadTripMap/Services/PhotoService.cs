@@ -1,4 +1,5 @@
 using Azure.Storage.Blobs;
+using RoadTripMap.Data;
 using SkiaSharp;
 
 namespace RoadTripMap.Services;
@@ -6,11 +7,13 @@ namespace RoadTripMap.Services;
 public class PhotoService : IPhotoService
 {
     private readonly BlobServiceClient _blobServiceClient;
+    private readonly RoadTripDbContext _db;
     private const string ContainerName = "road-trip-photos";
 
-    public PhotoService(BlobServiceClient blobServiceClient)
+    public PhotoService(BlobServiceClient blobServiceClient, RoadTripDbContext db)
     {
         _blobServiceClient = blobServiceClient;
+        _db = db;
     }
 
     public async Task<PhotoUploadResult> ProcessAndUploadAsync(Stream imageStream, int tripId, int photoId, string originalFileName)
@@ -48,18 +51,112 @@ public class PhotoService : IPhotoService
 
     public async Task<Stream> GetPhotoAsync(string blobPath, string size)
     {
+        // Legacy path: use default container (road-trip-photos)
+        return await GetPhotoAsync(blobPath, size, "legacy", ContainerName);
+    }
+
+    public async Task<Stream> GetPhotoAsync(string blobPath, string size, string storageTier, string? containerName)
+    {
         var validSizes = new[] { "original", "display", "thumb" };
         if (!validSizes.Contains(size))
             throw new ArgumentException($"Invalid size: {size}. Must be one of: original, display, thumb");
 
-        var containerClient = _blobServiceClient.GetBlobContainerClient(ContainerName);
-        var suffix = size == "original" ? "" : $"_{size}";
-        // blobPath is "{tripId}/{photoId}.jpg" — insert size suffix before extension
-        var sizedPath = blobPath.Replace(".jpg", $"{suffix}.jpg");
-        var blobClient = containerClient.GetBlobClient(sizedPath);
+        if (string.IsNullOrEmpty(containerName))
+            containerName = ContainerName;
+
+        var container = _blobServiceClient.GetBlobContainerClient(containerName);
+
+        // For per-trip: blobPath is "{uploadId}_original.jpg" — strip "_original" then
+        // append tier suffix (so "{uploadId}" is the stem, tiers are "{uploadId}_display.jpg" etc).
+        // For legacy: blobPath is "{tripId}/{photoId}.jpg" — no _original segment.
+        // Both schemes end in .jpg and use "_display" / "_thumb" suffixes.
+        var stem = blobPath.EndsWith("_original.jpg", StringComparison.Ordinal)
+            ? blobPath.Substring(0, blobPath.Length - "_original.jpg".Length)
+            : blobPath.Substring(0, blobPath.Length - ".jpg".Length);
+        var sizedPath = size == "original"
+            ? $"{stem}_original.jpg"
+            : $"{stem}_{size}.jpg";
+        // Legacy compat: if original path had no "_original" segment, don't add one
+        if (!blobPath.EndsWith("_original.jpg", StringComparison.Ordinal) && size == "original")
+        {
+            sizedPath = blobPath;
+        }
+        var blobClient = container.GetBlobClient(sizedPath);
 
         var download = await blobClient.DownloadAsync();
         return download.Value.Content;
+    }
+
+    public async Task GenerateDerivedTiersAsync(string containerName, Guid uploadId, CancellationToken ct)
+    {
+        var container = _blobServiceClient.GetBlobContainerClient(containerName);
+        var originalBlob = container.GetBlobClient($"{uploadId}_original.jpg");
+
+        // Download the original blob as bytes (we need multiple reads of the data)
+        using var originalStream = new MemoryStream();
+        await originalBlob.DownloadToAsync(originalStream, ct);
+        var originalBytes = originalStream.ToArray();
+
+        // Read EXIF orientation via codec (works for large PNGs where SKBitmap.Decode fails)
+        SKEncodedOrigin orientation = SKEncodedOrigin.Default;
+        using (var codecStream = new MemoryStream(originalBytes))
+        using (var codec = SKCodec.Create(codecStream))
+        {
+            if (codec != null)
+                orientation = codec.EncodedOrigin;
+        }
+
+        // Decode via SKImage.FromEncodedData — handles large PNGs that SKBitmap.Decode can't.
+        // Fall back to SKBitmap.Decode if FromEncodedData fails (rare).
+        using var image = SKImage.FromEncodedData(originalBytes);
+        SKBitmap? bitmap = null;
+        if (image != null)
+        {
+            bitmap = SKBitmap.FromImage(image);
+        }
+        if (bitmap == null)
+        {
+            bitmap = SKBitmap.Decode(originalBytes);
+        }
+        if (bitmap == null)
+        {
+            throw new InvalidOperationException(
+                $"Failed to decode image: {uploadId}_original.jpg ({originalBytes.Length} bytes)");
+        }
+
+        try
+        {
+            // Apply EXIF rotation so derived tiers are upright
+            var rotated = ApplyExifRotation(bitmap, orientation);
+
+            // Generate display tier (1920px max, quality 85)
+            await UploadDerivedTierAsync(container, rotated, uploadId, "display", 1920, 85, ct);
+
+            // Generate thumb tier (300px max, quality 75)
+            await UploadDerivedTierAsync(container, rotated, uploadId, "thumb", 300, 75, ct);
+        }
+        finally
+        {
+            bitmap.Dispose();
+        }
+    }
+
+    private async Task UploadDerivedTierAsync(
+        BlobContainerClient container,
+        SKBitmap bitmap,
+        Guid uploadId,
+        string tier,
+        int maxWidth,
+        int quality,
+        CancellationToken ct)
+    {
+        var resized = ResizeImage(bitmap, maxWidth);
+        using var encoded = resized.Encode(SKEncodedImageFormat.Jpeg, quality);
+        using var stream = encoded.AsStream();
+
+        var blobPath = $"{uploadId}_{tier}.jpg";
+        var blobClient = container.GetBlobClient(blobPath);
+        await blobClient.UploadAsync(stream, overwrite: true, cancellationToken: ct);
     }
 
     public async Task DeletePhotoAsync(string blobPath)

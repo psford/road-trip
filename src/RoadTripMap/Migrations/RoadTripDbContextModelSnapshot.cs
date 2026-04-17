@@ -153,6 +153,9 @@ namespace RoadTripMap.Migrations
                         .HasColumnType("datetime2")
                         .HasDefaultValueSql("GETUTCDATE()");
 
+                    b.Property<DateTime?>("LastActivityAt")
+                        .HasColumnType("datetime2");
+
                     b.Property<double>("Latitude")
                         .HasColumnType("float");
 
@@ -163,15 +166,42 @@ namespace RoadTripMap.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("nvarchar(500)");
 
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasDefaultValue("committed");
+
+                    b.Property<string>("StorageTier")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)")
+                        .HasDefaultValue("legacy");
+
                     b.Property<DateTime?>("TakenAt")
                         .HasColumnType("datetime2");
 
                     b.Property<int>("TripId")
                         .HasColumnType("int");
 
+                    b.Property<int>("UploadAttemptCount")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(0);
+
+                    b.Property<Guid?>("UploadId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.HasKey("Id");
 
                     b.HasIndex("TripId");
+
+                    b.HasIndex("UploadId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_Photos_UploadId")
+                        .HasFilter("[UploadId] IS NOT NULL");
 
                     b.ToTable("Photos", "roadtrip");
                 });

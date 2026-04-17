@@ -1,76 +1,132 @@
 # Technical Specification: Road Trip Photo Map
 
-**Version:** 2.8
-**Last Updated:** 2026-03-22 (Repo split: standalone Road Trip repository)
-**Status:** Phase 8 - Azure Deployment (Code review issues resolved)
+**Version:** 3.0
+**Last Updated:** 2026-04-14
+**Status:** Phase 1 (Resilient Uploads backend) deployed. iOS Phases 2–7 (Capacitor, TestFlight) pending.
 
 ---
 
 ## 1. Architecture Overview
 
-**Stack:** ASP.NET Core 8.0 Minimal API + EF Core 8.0.23 + Azure SQL + Azure Blob Storage + Leaflet.js
+**Stack:** ASP.NET Core 8.0 Minimal API + EF Core 8.0.23 + Azure SQL + Azure Blob Storage + MapLibre GL JS v5.21.0
 
-**Deployment:** Azure App Service (Linux B1) → Dedicated Azure SQL instance (Basic tier, 5 DTU) + Azure Blob Storage (shared)
+**Deployment:** Azure App Service (Linux B1) → Dedicated Azure SQL instance (`roadtripmap-db`, Basic tier, 5 DTU) + Azure Blob Storage (`stockanalyzerblob` shared account, per-trip containers)
 
 **Frontend:** Vanilla HTML/JS/CSS served as static files from `wwwroot/`
 
-**Database:** Road Trip operates on its own dedicated Azure SQL server instance (not shared with Stock Analyzer). All data uses the `roadtrip` schema. All schema changes use EF Core migrations only.
+**Database:** Road Trip operates on its own dedicated Azure SQL server instance (`sql-roadtripmap-prod`). It is **not** shared with Stock Analyzer. All tables use the `roadtrip` schema. All schema changes use EF Core migrations only.
+
+**Map rendering:** MapLibre GL JS v5.21.0 loaded from CDN (`unpkg.com`). Vector tiles served by MapTiler (`maps/streets-v2`). No Leaflet dependency remains (migrated 2026-03-24).
 
 ---
 
 ## 2. Project Structure
 
 ```
-
-├── RoadTripMap.sln                 # Solution file
+├── RoadTripMap.sln
 ├── src/
-│   └── RoadTripMap/
-│       ├── RoadTripMap.csproj      # Main API project
-│       ├── Program.cs               # Minimal API configuration
-│       ├── appsettings.json         # Production config (empty connection string)
-│       ├── appsettings.Development.json  # Local SQL Express config
-│       ├── Entities/                # Domain models
-│       │   ├── TripEntity.cs
-│       │   ├── PhotoEntity.cs
-│       │   └── GeoCacheEntity.cs
-│       ├── Data/                    # EF Core context and factories
-│       │   ├── RoadTripDbContext.cs
-│       │   └── DesignTimeDbContextFactory.cs
-│       ├── Helpers/                 # Utility functions
-│       │   └── SlugHelper.cs        # URL slug generation and uniqueness
-│       ├── Models/                  # DTO models
-│       │   ├── CreateTripRequest.cs
-│       │   └── CreateTripResponse.cs
-│       ├── Services/                # Domain services (Phase 3+)
-│       │   ├── IAuthStrategy.cs
-│       │   ├── SecretTokenAuthStrategy.cs
-│       │   ├── IPhotoService.cs
-│       │   ├── PhotoService.cs
-│       │   ├── IGeocodingService.cs (Phase 4)
-│       │   ├── NominatimGeocodingService.cs (Phase 4)
-│       │   └── UploadRateLimiter.cs (Phase 7) — IP-based rate limiter (20/hr)
-│       ├── Migrations/              # EF Core migrations (generated)
-│       └── wwwroot/                 # Static files (HTML, JS, CSS)
-│           ├── index.html           # Landing page
-│           ├── create.html          # Trip creation form
-│           ├── css/
-│           │   └── styles.css       # Mobile-first responsive styles
-│           ├── js/
-│           │   ├── api.js           # API client
-│           │   └── exifUtil.js      # EXIF extraction wrapper (Phase 4)
-│           └── lib/
-│               └── exifr/           # EXIF parsing library (Phase 4)
-│                   └── lite.umd.js
+│   ├── RoadTripMap/                    # Main API project
+│   │   ├── Program.cs                  # Minimal API wiring, all endpoints
+│   │   ├── EndpointRegistry.cs         # Centralized connection string / key resolution
+│   │   ├── Entities/
+│   │   │   ├── TripEntity.cs
+│   │   │   ├── PhotoEntity.cs          # Includes upload-status columns (Phase 1)
+│   │   │   ├── PoiEntity.cs
+│   │   │   ├── ParkBoundaryEntity.cs
+│   │   │   ├── GeoCacheEntity.cs
+│   │   │   └── BlobOptions.cs
+│   │   ├── Data/
+│   │   │   ├── RoadTripDbContext.cs
+│   │   │   └── DesignTimeDbContextFactory.cs
+│   │   ├── Models/                     # DTOs
+│   │   │   ├── CreateTripRequest.cs / CreateTripResponse.cs
+│   │   │   ├── TripResponse.cs
+│   │   │   ├── PhotoResponse.cs
+│   │   │   ├── PoiResponse.cs
+│   │   │   ├── ParkBoundaryResponse.cs
+│   │   │   ├── UpdateLocationRequest.cs
+│   │   │   └── UploadDtos.cs           # RequestUploadRequest/Response, CommitRequest, ExifDto
+│   │   ├── Services/
+│   │   │   ├── IAuthStrategy.cs / SecretTokenAuthStrategy.cs
+│   │   │   ├── IPhotoService.cs / PhotoService.cs
+│   │   │   ├── IPhotoReadService.cs / PhotoReadService.cs  # Dual-read (legacy + per-trip)
+│   │   │   ├── IUploadService.cs / UploadService.cs
+│   │   │   ├── IBlobContainerProvisioner.cs / BlobContainerProvisioner.cs
+│   │   │   ├── ISasTokenIssuer.cs
+│   │   │   ├── UserDelegationSasIssuer.cs  # Prod (managed identity)
+│   │   │   ├── AccountKeySasIssuer.cs      # Dev (Azurite / account key)
+│   │   │   ├── IGeocodingService.cs / NominatimGeocodingService.cs
+│   │   │   ├── INominatimRateLimiter.cs / NominatimRateLimiter.cs
+│   │   │   ├── UploadRateLimiter.cs
+│   │   │   ├── UploadOptions.cs
+│   │   │   └── InvalidContainerNameException.cs
+│   │   ├── BackgroundJobs/
+│   │   │   ├── OrphanSweeperHostedService.cs   # PeriodicTimer, deletes stale pending rows
+│   │   │   ├── OrphanSweeper.cs / IOrphanSweeper.cs
+│   │   │   └── ContainerBackfillHostedService.cs  # One-time startup backfill
+│   │   ├── Endpoints/
+│   │   │   └── UploadEndpoints.cs      # request-upload / commit / abort routes
+│   │   ├── Versioning/
+│   │   │   └── ServerVersion.cs        # x-server-version / x-client-min-version
+│   │   ├── Security/
+│   │   │   └── LogSanitizer.cs         # Sanitizes tokens, blob paths, SAS URLs for logs
+│   │   ├── Helpers/
+│   │   │   └── SlugHelper.cs
+│   │   ├── Migrations/                 # EF Core migration files (do not edit manually)
+│   │   └── wwwroot/
+│   │       ├── index.html / create.html / post.html / trips.html
+│   │       ├── css/styles.css
+│   │       ├── js/
+│   │       │   ├── api.js              # API client
+│   │       │   ├── exifUtil.js         # Client-side EXIF extraction wrapper
+│   │       │   ├── mapService.js       # Pure data layer (trip load, route coords)
+│   │       │   ├── mapUI.js            # MapLibre GL JS rendering layer
+│   │       │   ├── mapCache.js         # IndexedDB cache for boundary/POI data
+│   │       │   ├── parkStyle.js        # Park layer style constants
+│   │       │   ├── poiLayer.js         # POI GeoJSON layer for MapLibre
+│   │       │   ├── stateParkLayer.js   # State park boundary layer for MapLibre
+│   │       │   ├── postService.js      # Photo posting business logic
+│   │       │   ├── postUI.js           # Photo posting DOM layer
+│   │       │   ├── photoCarousel.js    # Photo carousel UI
+│   │       │   ├── tripStorage.js      # Local trip state persistence
+│   │       │   └── uploadQueue.js      # IndexedDB-backed resilient upload queue
+│   │       └── lib/exifr/              # Local EXIF parsing library
+│   └── RoadTripMap.PoiSeeder/          # CLI seeder tool
+│       ├── Program.cs                  # Entry point (--overpass-only / --nps-only / --pad-us)
+│       ├── Deduplicator.cs
+│       ├── PoiUpsertHelper.cs
+│       ├── BoundaryUpsertHelper.cs
+│       ├── Importers/
+│       │   ├── OverpassImporter.cs
+│       │   ├── NpsImporter.cs
+│       │   ├── PadUsImporter.cs
+│       │   └── PadUsBoundaryImporter.cs
+│       └── Geometry/
+│           └── GeoJsonProcessor.cs     # GeoJSON simplification
 ├── tests/
-│   └── RoadTripMap.Tests/           # xUnit test project
+│   └── RoadTripMap.Tests/              # xUnit test project
+│       ├── Endpoints/                  # HTTP integration tests
+│       ├── Services/                   # Service unit tests
+│       ├── BackgroundJobs/             # OrphanSweeper tests
+│       ├── Seeder/                     # Seeder unit tests
+│       ├── Middleware/                 # Security header + version middleware tests
+│       └── Infrastructure/            # AzuriteFixture
+├── infrastructure/
+│   └── azure/
+│       ├── main.bicep                  # Source of truth for all prod Azure resources
+│       ├── parameters.json             # Deploy-time parameters (no pipeline placeholders)
+│       └── modules/
+│           └── storage-rbac.bicep      # Cross-RG Storage Blob Data Contributor helper
 └── docs/
-    ├── FUNCTIONAL_SPEC.md           # User requirements
-    └── TECHNICAL_SPEC.md            # This file
+    ├── FUNCTIONAL_SPEC.md
+    ├── TECHNICAL_SPEC.md               # This file
+    ├── design-plans/                   # Feature design documents
+    └── implementation-plans/           # Phase-by-phase task breakdowns
 ```
 
 ---
 
-## 3. Entity Model (Phase 1 - Infrastructure)
+## 3. Entity Model
 
 ### 3.1 TripEntity
 
@@ -90,7 +146,6 @@ Represents a named road trip with metadata and photo collection.
 **Database Mapping:**
 - Table: `roadtrip.Trips`
 - Indices: `(Slug)` UNIQUE, `(SecretToken)` UNIQUE, `(ViewToken)` UNIQUE
-- Constraints: `SecretToken` required (max 36), `ViewToken` required (max 36)
 
 ---
 
@@ -98,40 +153,77 @@ Represents a named road trip with metadata and photo collection.
 
 Represents a photo uploaded to a trip with geolocation and blob reference.
 
-**Properties:**
+**Properties (core):**
 - `Id` (int, PK): Surrogate key
 - `TripId` (int, FK): Foreign key to Trip
 - `BlobPath` (string, required, max 500): Path to original blob in Azure Storage
 - `Latitude` (double): GPS latitude (decimal degrees)
 - `Longitude` (double): GPS longitude (decimal degrees)
-- `PlaceName` (string, nullable, max 500): Reverse-geocoded location name (e.g., "Grand Canyon, AZ")
+- `PlaceName` (string, nullable, max 500): Reverse-geocoded location name
 - `Caption` (string, nullable, max 1000): User-provided photo caption
-- `TakenAt` (DateTime): When the photo was taken (from EXIF or user input)
+- `TakenAt` (DateTime?): When the photo was taken (nullable; from EXIF or user input)
 - `CreatedAt` (DateTime): Defaults to `GETUTCDATE()` on insert
-- `Trip` (TripEntity): Navigation to parent trip
+
+**Properties (upload orchestration — Phase 1):**
+- `Status` (string): Upload state machine: `"pending"` → `"committed"`. Default `"committed"` for legacy rows.
+- `StorageTier` (string): `"legacy"` (shared `road-trip-photos` container) or `"per-trip"` (per-trip container). Default `"legacy"`.
+- `UploadId` (Guid?): Client-generated idempotency key. Used as blob name prefix in per-trip containers.
+- `LastActivityAt` (DateTime?): Updated when upload progress occurs; used by `OrphanSweeper`.
+- `UploadAttemptCount` (int): Incremented per `request-upload` call; default 0.
 
 **Database Mapping:**
 - Table: `roadtrip.Photos`
 - Foreign Key: `TripId` → `Trips.Id` with `DELETE CASCADE`
-- No indices on coordinates yet (added in Phase 2 for spatial queries)
 
 ---
 
-### 3.3 GeoCacheEntity
+### 3.3 PoiEntity
 
-Internal cache table for reverse geocoding results to avoid redundant Nominatim API calls.
+Represents a Point of Interest (POI) from Overpass (OSM) or NPS sources.
 
 **Properties:**
-- `Id` (int, PK): Surrogate key
-- `LatRounded` (double): Latitude rounded to 4 decimal places (~11m precision)
-- `LngRounded` (double): Longitude rounded to 4 decimal places (~11m precision)
-- `PlaceName` (string, required, max 500): Cached place name result
-- `CachedAt` (DateTime): Defaults to `GETUTCDATE()` on insert
+- `Id` (int, PK)
+- `Name` (string, required)
+- `Category` (string, required): One of `national_park`, `state_park`, `natural_feature`, `historic_site`, `tourism`
+- `Latitude` / `Longitude` (double)
+- `Source` (string, required): `"osm"` or `"nps"`
+- `SourceId` (string, nullable): External ID for deduplication
+
+**Database Mapping:** Table `roadtrip.PointsOfInterest`
+
+---
+
+### 3.4 ParkBoundaryEntity
+
+Represents a state park polygon imported from PAD-US.
+
+**Properties:**
+- `Id` (int, PK)
+- `Name`, `State`, `Category` (string, required)
+- `GisAcres` (int)
+- `CentroidLat` / `CentroidLng` (double): Pre-computed polygon centroid
+- `MinLat` / `MaxLat` / `MinLng` / `MaxLng` (double): Bounding box for viewport filtering
+- `GeoJsonFull`, `GeoJsonModerate`, `GeoJsonSimplified` (string, required): Three pre-computed detail levels
+- `Source` (string, required): `"pad-us"`
+- `SourceId` (string, nullable)
+
+**Database Mapping:** Table `roadtrip.ParkBoundaries`
+
+---
+
+### 3.5 GeoCacheEntity
+
+Internal reverse geocoding cache.
+
+**Properties:**
+- `Id` (int, PK)
+- `LatRounded` / `LngRounded` (double): Rounded to 2 decimal places (~1.1 km grid)
+- `PlaceName` (string, required, max 500)
+- `CachedAt` (DateTime)
 
 **Database Mapping:**
 - Table: `roadtrip.GeoCache`
-- Index: `(LatRounded, LngRounded)` UNIQUE (composite key)
-- Purpose: Avoid flooding Nominatim with duplicate requests for the same location
+- Index: `(LatRounded, LngRounded)` UNIQUE
 
 ---
 
@@ -139,1078 +231,563 @@ Internal cache table for reverse geocoding results to avoid redundant Nominatim 
 
 ### 4.1 Schema
 
-All Road Trip tables use the `roadtrip` schema to isolate from Stock Analyzer's `dbo`, `data`, and `staging` schemas.
+All tables use the `roadtrip` schema (isolated within the dedicated `roadtripmap-db` database). No shared-DB isolation is required.
 
-```sql
--- Tables created by InitialCreate migration:
-CREATE TABLE roadtrip.Trips (
-    Id INT PRIMARY KEY IDENTITY,
-    Slug NVARCHAR(200) NOT NULL UNIQUE,
-    Name NVARCHAR(500) NOT NULL,
-    Description NVARCHAR(2000) NULL,
-    SecretToken NVARCHAR(36) NOT NULL UNIQUE,
-    ViewToken NVARCHAR(36) NOT NULL UNIQUE,
-    CreatedAt DATETIME DEFAULT GETUTCDATE(),
-    IsActive BIT DEFAULT 1
-);
+### 4.2 EF Core Migrations
 
-CREATE TABLE roadtrip.Photos (
-    Id INT PRIMARY KEY IDENTITY,
-    TripId INT NOT NULL,
-    BlobPath NVARCHAR(500) NOT NULL,
-    Latitude FLOAT NOT NULL,
-    Longitude FLOAT NOT NULL,
-    PlaceName NVARCHAR(500) NULL,
-    Caption NVARCHAR(1000) NULL,
-    TakenAt DATETIME NOT NULL,
-    CreatedAt DATETIME DEFAULT GETUTCDATE(),
-    FOREIGN KEY (TripId) REFERENCES Trips(Id) ON DELETE CASCADE
-);
+Migration files in `src/RoadTripMap/Migrations/`. Key migrations:
 
-CREATE TABLE roadtrip.GeoCache (
-    Id INT PRIMARY KEY IDENTITY,
-    LatRounded FLOAT NOT NULL,
-    LngRounded FLOAT NOT NULL,
-    PlaceName NVARCHAR(500) NOT NULL,
-    CachedAt DATETIME DEFAULT GETUTCDATE(),
-    UNIQUE (LatRounded, LngRounded)
-);
-```
+| Migration | What it adds |
+|-----------|-------------|
+| `20260320032254_InitialCreate` | `Trips`, `Photos`, `GeoCache` |
+| `20260321220822_AddViewToken` | `ViewToken` on `Trips` |
+| `20260324034238_MakeTakenAtNullable` | Nullable `TakenAt` on `Photos` |
+| `20260403224304_AddPointsOfInterest` | `PointsOfInterest` table |
+| `20260406012136_AddParkBoundaries` | `ParkBoundaries` table |
+| `20260414030652_AddUploadStatusColumns` | `Status`, `StorageTier`, `UploadId`, `LastActivityAt`, `UploadAttemptCount` on `Photos` |
 
-### 4.2 Connection String
+### 4.3 Connection Strings
 
 **Development (SQL Express):**
 ```
 Server=.\SQLEXPRESS;Database=RoadTripMap;Trusted_Connection=True;TrustServerCertificate=True
 ```
 
-**Production (Azure SQL):**
-Set via App Service configuration variable `DefaultConnection` (not committed in code).
-
-### 4.3 EF Core Context
-
-**RoadTripDbContext** configures:
-- Default schema: `roadtrip`
-- Three DbSets: `Trips`, `Photos`, `GeoCache`
-- Fluent API configuration in `OnModelCreating`
-
-**DesignTimeDbContextFactory** provides connection string to `dotnet ef` CLI for migrations. It supports both Windows development (local named pipes) and WSL2 development (TCP over network):
-
-1. **Windows Development (Default):**
-   - Checks environment variable: `RT_DESIGN_CONNECTION`
-   - Falls back to: `Server=.\SQLEXPRESS;Database=RoadTripMap;Trusted_Connection=True;TrustServerCertificate=True`
-
-2. **WSL2 Development (TCP):**
-   - Set `RT_DESIGN_CONNECTION` before running migrations:
-     ```bash
-     export RT_DESIGN_CONNECTION="Server=127.0.0.1,1433;Database=RoadTripMap;User Id=wsl_claude_admin;Password=<password>;TrustServerCertificate=True;"
-     dotnet ef migrations list
-     ```
-   - Enables migrations from WSL2 to Windows SQL Express over TCP/IP
-
----
-
-## 5. Helpers and Models
-
-### 5.1 SlugHelper
-
-Located in `Helpers/SlugHelper.cs`, provides URL slug generation with uniqueness checking.
-
-**Methods:**
-- `GenerateSlug(string name)` — Converts human-readable names to URL-friendly slugs
-  - Lowercases input
-  - Replaces non-alphanumeric characters with hyphens
-  - Collapses multiple consecutive hyphens
-  - Trims leading/trailing hyphens
-  - Truncates to max 80 characters
-  - Uses source-generated regex for performance
-
-- `GenerateUniqueSlugAsync(string name, Func<string, Task<bool>> slugExists)` — Ensures slug uniqueness
-  - Calls `GenerateSlug` to get base slug
-  - Falls back to `"trip"` if base slug is empty
-  - Checks uniqueness via callback function
-  - Appends `-2`, `-3`, etc. if conflicts detected
-
-**Testing:** Full test coverage in `Tests/Helpers/SlugHelperTests.cs` (15 tests):
-- Basic slug generation (lowercase, special chars, hyphens)
-- Truncation of long names
-- Uniqueness handling with counters
-- Edge cases (empty strings, special chars only, whitespace)
-
-### 5.2 DTOs
-
-**CreateTripRequest** (Models/CreateTripRequest.cs)
-- `Name` (string, required): Trip name
-- `Description` (string, nullable): Optional trip description
-
-**CreateTripResponse** (Models/CreateTripResponse.cs)
-- `Slug` (string): URL-friendly identifier
-- `SecretToken` (string): UUID v4 for secret link authorization
-- `ViewUrl` (string): Public viewing URL (e.g., `/trips/my-slug`)
-- `PostUrl` (string): Secret posting URL (e.g., `/post/token-uuid`)
-
-**TripResponse** (Models/TripResponse.cs) — Phase 6, Task 1
-- `Name` (string, required): Trip name
-- `Description` (string, nullable): Trip description
-- `PhotoCount` (int, required): Number of photos uploaded to trip
-- `CreatedAt` (DateTime, required): When trip was created
-
----
-
-## 6. NuGet Packages
-
-### 6.1 Core Dependencies
-
-| Package | Version | Purpose |
-|---------|---------|---------|
-| `Microsoft.EntityFrameworkCore.SqlServer` | 8.0.23 | SQL Server provider for EF Core |
-| `Microsoft.EntityFrameworkCore.Design` | 8.0.23 | EF Core tools (migrations) |
-
-### 6.2 Testing Dependencies (Phase 2)
-
-| Package | Version | Purpose |
-|---------|---------|---------|
-| `xunit` | Latest | Unit test framework |
-| `Moq` | 4.20.72 | Mocking library |
-| `FluentAssertions` | 6.12.2 | Assertion fluency |
-| `Microsoft.EntityFrameworkCore.InMemory` | 8.0.23 | In-memory DB for testing |
-
-### 6.3 Phase 3 Dependencies (Photo Upload & Auth)
-
-| Package | Version | Purpose |
-|---------|---------|---------|
-| `SkiaSharp` | 3.119.2 | Image resizing and EXIF stripping |
-| `SkiaSharp.NativeAssets.Linux.NoDependencies` | 3.119.2 | Linux native assets for SkiaSharp |
-| `Azure.Storage.Blobs` | 12.27.0 | Azure Blob Storage SDK |
-| `Microsoft.Extensions.Azure` | 1.13.1 | Azure DI extensions |
-
-### 6.4 Phase 4 Dependencies (EXIF Extraction & Reverse Geocoding)
-
-| Package | Version | Purpose |
-|---------|---------|---------|
-| `exifr` | Latest (via CDN) | Client-side EXIF extraction (JavaScript) |
-
-Exifr is downloaded locally to `wwwroot/lib/exifr/lite.umd.js` (45KB) and wrapped by `exifUtil.js`.
-
----
-
-## 7. Minimal API Bootstrap
-
-**Program.cs** configures (Phase 3 additions):
-1. Registers `RoadTripDbContext` with connection string from config
-2. Registers `BlobServiceClient` via `Microsoft.Extensions.Azure` with `AzureStorage` connection string
-3. Registers `IAuthStrategy` → `SecretTokenAuthStrategy` (Phase 3, Task 2)
-4. Registers `IPhotoService` → `PhotoService` (Phase 3, Task 3)
-5. Maps health check endpoint: `GET /api/health`
-6. Maps trip creation endpoint: `POST /api/trips` (Phase 2, Task 2)
-7. Serves static files from `wwwroot/`
-8. Listens on port 5100 (avoid collision with Stock Analyzer on 5000)
-
-**appsettings.Development.json** (Phase 3 addition):
-```json
-{
-  "ConnectionStrings": {
-    "DefaultConnection": "Server=.\\SQLEXPRESS;Database=RoadTripMap;Trusted_Connection=True;TrustServerCertificate=True",
-    "AzureStorage": "UseDevelopmentStorage=true"
-  }
-}
+**WSL2 development (TCP):**
+```bash
+export RT_DESIGN_CONNECTION="Server=127.0.0.1,1433;Database=RoadTripMap;User Id=wsl_claude_admin;Password=<password>;TrustServerCertificate=True;"
+dotnet ef migrations list
 ```
-- `UseDevelopmentStorage=true` connects to Azurite (local Azure Storage emulator)
-- Install Azurite: `npm install -g azurite` or use VS Code extension
-- Start with: `azurite --silent --location ./azurite-data`
 
-### 7.1 POST /api/trips — Create Trip
+**Production (Azure SQL):** Injected at deploy time via App Service config (`ConnectionStrings:DefaultConnection`). Resolved by `EndpointRegistry.Resolve("database")` → reads from `endpoints.json` → Key Vault in prod.
 
-**Request:**
+---
+
+## 5. Endpoint Registry
+
+`src/RoadTripMap/EndpointRegistry.cs` centralizes resolution of all connection strings and API keys. It reads `endpoints.json` at the repo root, selects the block matching the current environment (`Development` / `Production`), and resolves each entry by `source` type:
+
+- `literal` — returns the value directly (dev only)
+- `env` — reads from an environment variable
+- `keyvault` — fetches the secret from Azure Key Vault using `DefaultAzureCredential`
+
+Dot-notation supports compound endpoints (e.g., `EndpointRegistry.Resolve("npsApi.apiKey")`).
+
+**Tests:** `EndpointRegistryTests.cs` (unit), `EndpointRegistryRealContractTests.cs` (integration with real config shape).
+
+---
+
+## 6. API Endpoints
+
+### 6.1 Core Trip Endpoints
+
+#### POST /api/trips — Create Trip
+
+**Request:** `{ "name": "...", "description": "..." }` (name required)
+
+**Response (200):** `{ "slug", "secretToken", "viewUrl", "postUrl" }`
+
+**Behavior:** Generates URL slug via `SlugHelper`, creates `TripEntity`, eagerly provisions per-trip blob container via `IBlobContainerProvisioner.EnsureContainerAsync(secretToken)`.
+
+#### GET /api/trips/view/{viewToken} — Get Trip Info (public)
+
+Returns `TripResponse` (`name`, `description`, `photoCount`, `createdAt`). No auth required.
+
+#### GET /api/trips/view/{viewToken}/photos — Get Trip Photos (public)
+
+Returns array of `PhotoResponse` ordered by `TakenAt` ascending. No auth required.
+
+#### DELETE /api/trips/{secretToken} — Delete Trip (cascade)
+
+Requires valid `secretToken`. Deletes all per-trip blob containers, all legacy blobs for this trip, all `PhotoEntity` rows, and the `TripEntity`. Returns 204.
+
+---
+
+### 6.2 Legacy Photo Upload (direct multipart)
+
+#### POST /api/trips/{secretToken}/photos — Upload Photo
+
+**Request:** multipart/form-data — `file` (image), `lat`, `lng`, `caption?`, `takenAt?`
+
+**Validation:** 401 on bad token, 400 on non-image or >15 MB, 404 on missing trip.
+
+**Response (200):** `PhotoResponse` with `/api/photos/` proxy URLs.
+
+**Behavior:** Calls `IPhotoService.ProcessAndUploadAsync()` → stores three tiers (original 95%, display 1920px 85%, thumb 300px 75%), strips EXIF via SkiaSharp re-encode. Creates `PhotoEntity` with `Status="committed"`, `StorageTier="legacy"`.
+
+#### DELETE /api/trips/{secretToken}/photos/{id} — Delete Photo
+
+Returns 204. Deletes all three blob tiers and DB row.
+
+#### GET /api/photos/{tripId}/{photoId}/{size} — Serve Photo
+
+`size`: `original` | `display` | `thumb`. Proxied — no direct blob URLs exposed (AC6.4). Supports both legacy (`road-trip-photos` container) and per-trip containers via `StorageTier` column.
+
+---
+
+### 6.3 Resilient Upload Pipeline (Phase 1)
+
+All three endpoints are registered in `src/RoadTripMap/Endpoints/UploadEndpoints.cs`.
+
+#### POST /api/trips/{secretToken}/photos/request-upload
+
+Initiates a direct-to-blob upload. Client-generated `uploadId` makes the call idempotent.
+
+**Request (`RequestUploadRequest`):**
 ```json
 {
-  "name": "Cross Country 2026",
-  "description": "Optional trip description"
+  "uploadId": "uuid-v4",
+  "filename": "IMG_1234.jpg",
+  "contentType": "image/jpeg",
+  "sizeBytes": 5242880,
+  "exif": { "gpsLat": 36.1, "gpsLon": -112.1, "takenAt": "2026-04-14T10:00:00Z" }
 }
 ```
 
-**Validation:**
-- `name` is required and must not be empty or whitespace (400 Bad Request if invalid)
-
-**Response (200 OK):**
+**Response (200, `RequestUploadResponse`):**
 ```json
 {
-  "slug": "cross-country-2026",
-  "secretToken": "550e8400-e29b-41d4-a716-446655440000",
-  "viewUrl": "/trips/cross-country-2026",
-  "postUrl": "/post/550e8400-e29b-41d4-a716-446655440000"
-}
-```  <!-- pragma: allowlist secret -->
-
-**Behavior:**
-- Generates URL-friendly slug via `SlugHelper.GenerateUniqueSlugAsync`
-- Generates secret token as Guid.NewGuid().ToString()
-- Checks slug uniqueness in database
-- Creates `TripEntity` and persists to DB
-- Returns all four response fields
-- No authentication required
-
-**Testing:** See `TripEndpointTests.cs` (7 tests covering validation, uniqueness, response format, no-auth requirement)
-
-### 7.2 GET /create — Trip Creation Form
-
-Maps to `wwwroot/create.html`. Serves HTML form for creating new trips.
-
-**Features:**
-- Mobile-first responsive design
-- Trip name input (required)
-- Description textarea (optional)
-- Client-side form submission to POST /api/trips
-- Error display and handling
-- Results section with copy-to-clipboard for URLs
-- "Create Another Trip" button for reusability
-
-### 7.3 Static Files
-
-**index.html** — Landing page
-- Introduction to Road Trip Map
-- Link to create trip form
-- How-it-works instructions
-
-**create.html** — Trip creation page
-- Form with trip name (required) and description (optional)
-- Form submission triggers POST /api/trips
-- Displays view URL, post URL, and slug
-- Copy-to-clipboard buttons for each URL
-- No reload needed; form resets for additional trips
-
-**css/styles.css** — Mobile-first responsive CSS
-- System font stack for native feel
-- Mobile breakpoints (768px tablet, 1024px desktop)
-- Color palette with primary, text, border, and message colors
-- Form styling (inputs, buttons, error/success messages)
-- Copy-button styling and hover states
-
-**js/api.js** — API client
-- Single `API.createTrip(name, description)` method
-- Handles JSON serialization/deserialization
-- Error handling and throwing
-
-### 7.4 POST /api/trips/{secretToken}/photos — Upload Photo (Phase 3, Task 5)
-
-**Request:** multipart/form-data
-- `file` (IFormFile, required): Image file
-- `lat` (double, required): Latitude
-- `lng` (double, required): Longitude
-- `caption` (string, optional): User caption
-- `takenAt` (DateTime, optional): When photo was taken (defaults to UtcNow)
-
-**Validation:**
-- `secretToken` matches trip's token via `IAuthStrategy.ValidatePostAccess()` → 401 if invalid
-- File content type starts with `image/` → 400 if not
-- File size ≤ 15MB (15,728,640 bytes) → 400 if exceeded
-- Trip exists → 404 if not
-
-**Response (200 OK):**
-```json
-{
-  "id": 42,
-  "thumbnailUrl": "/api/photos/1/42/thumb",
-  "displayUrl": "/api/photos/1/42/display",
-  "originalUrl": "/api/photos/1/42/original",
-  "lat": 40.7128,
-  "lng": -74.0060,
-  "placeName": "",
-  "caption": "NYC Skyline",
-  "takenAt": "2026-03-20T12:34:56Z"
+  "photoId": "uuid-v4",
+  "sasUrl": "https://stockanalyzerblob.blob.core.windows.net/trip-<token>/<uploadId>_original.jpg?sv=...&sig=[redacted]",
+  "blobPath": "<uploadId>_original.jpg",
+  "maxBlockSizeBytes": 4194304,
+  "serverVersion": "1.0.0",
+  "clientMinVersion": "1.0.0"
 }
 ```
 
 **Behavior:**
-- Creates `PhotoEntity` with `BlobPath = ""`
-- Saves to DB to get auto-increment Id
-- Calls `IPhotoService.ProcessAndUploadAsync()` (creates three tiers, returns `BlobPath`)
-- Updates photo's `BlobPath` and persists
-- Returns `PhotoResponse` with `/api/photos/` URLs (not direct blob URLs, per AC6.4)
+- Validates `secretToken` → 401/404 on failure.
+- If `uploadId` already exists for this trip, returns existing `photoId` and fresh SAS (idempotent).
+- Creates `PhotoEntity` with `Status="pending"`, `StorageTier="per-trip"`, `UploadId=uploadId`.
+- Issues write-only SAS via `ISasTokenIssuer.IssueWriteSasAsync()` (2-hour TTL).
+- GPS/timestamp from `exif` stored directly on the entity.
 
-### 7.5 DELETE /api/trips/{secretToken}/photos/{id} — Delete Photo (Phase 3, Task 5)
+#### POST /api/trips/{secretToken}/photos/{photoId:guid}/commit
 
-**Route parameters:**
-- `secretToken`: Trip's secret token
-- `id` (int): Photo ID
+Client calls after all blocks uploaded to Azure. Commits the block list on the blob and transitions `Status` to `"committed"`.
 
-**Validation:**
-- `secretToken` matches trip token → 401 if invalid
-- Trip exists → 404 if not
-- Photo exists and belongs to trip → 404 if not
+**Request (`CommitRequest`):** `{ "blockIds": ["base64id1", "base64id2", ...] }`
+
+**Response (200):** `PhotoResponse`
+
+**Behavior:** Calls Azure `CommitBlockListAsync` with provided IDs; updates `Status`, triggers reverse geocoding.
+
+#### POST /api/trips/{secretToken}/photos/{photoId:guid}/abort
+
+Transitions `Status` to `"failed"`. Client calls on permanent failure. Blob deletion deferred to orphan sweeper.
 
 **Response (204 No Content)**
 
-**Behavior:**
-- Validates auth via `IAuthStrategy.ValidatePostAccess()`
-- Calls `IPhotoService.DeletePhotoAsync()` (deletes all three blob tiers)
-- Removes `PhotoEntity` from DB
-- Persists changes
+---
 
-### 7.6 GET /api/photos/{tripId}/{photoId}/{size} — Serve Photo (Phase 3, Task 6)
+### 6.4 Versioning
 
-**Route parameters:**
-- `tripId` (int): Trip ID
-- `photoId` (int): Photo ID
-- `size` (string): One of `original`, `display`, `thumb`
+#### GET /api/version
 
-**Validation:**
-- `size` is one of valid sizes → 400 if invalid
-- Photo exists with matching `tripId` and `photoId` → 404 if not
+Returns `{ "server_version": "...", "client_min_version": "..." }`.
 
-**Response (200 OK):** JPEG image stream (Content-Type: image/jpeg)
+**Version middleware:** Every API response carries:
+- `x-server-version: <ServerVersion.Current>` (assembly `InformationalVersion`)
+- `x-client-min-version: <ServerVersion.ClientMin>` (from `ClientProtocol:MinVersion` config)
 
-**Behavior:**
-- No auth required — photos are public
-- Looks up photo in DB to verify membership
-- Calls `IPhotoService.GetPhotoAsync()` to fetch from blob storage
-- Returns stream as image/jpeg (proxies through API, never exposes direct blob URLs per AC6.4)
+---
 
-**Acceptance Criteria Verification:**
-- **AC2.5 (Original downloadable):** Original size served via `/api/photos/{tripId}/{photoId}/original`
-- **AC6.4 (No direct blob URLs):** All photo URLs follow `/api/photos/` pattern; endpoint validates existence before returning
+### 6.5 POI Endpoint
 
-### 7.7 GET /api/geocode?lat={lat}&lng={lng} — Reverse Geocode (Phase 4, Task 3)
+#### GET /api/poi
 
-**Query parameters:**
-- `lat` (double, required): Latitude
-- `lng` (double, required): Longitude
+**Query params:** `minLat`, `maxLat`, `minLng`, `maxLng` (required), `zoom` (required)
 
-**Validation:**
-- Both parameters must be valid floating-point numbers → 400 Bad Request if parsing fails
+**Zoom gating:**
+- `zoom < 7` → returns empty array (POIs not meaningful at country-level zoom)
+- `zoom >= 7` → returns `state_park`, `natural_feature`, `historic_site`, `tourism`
+- `national_park` is always included regardless of zoom (not yet in server-side filter but POI seeder marks them; see design plan)
 
-**Response (200 OK):**
+**Backfill:** If no OSM data exists in the viewport and `zoom >= 8`, triggers a real-time Overpass query and upserts results before responding.
+
+**Grid sampling:** Spatial grid (7 cols × 6 rows) limits response density; target count 40 (30 at zoom ≥ 14).
+
+**Response:** Array of `PoiResponse` objects:
 ```json
-{
-  "placeName": "Grand Canyon Village, Arizona, USA"
-}
+[{ "id": 1, "name": "Grand Canyon NP", "category": "national_park", "lat": 36.1, "lng": -112.1 }]
 ```
 
-**Behavior:**
-- Calls `IGeocodingService.ReverseGeocodeAsync(lat, lng)`
-- Returns place name (may be null if Nominatim fails, but endpoint still returns 200)
-- Used by photo upload page (Phase 5) to show location preview before confirming upload
+See design plan: `docs/design-plans/2026-04-03-map-poi.md`
 
-### 7.8 GET /api/trips/view/{viewToken} — Get Trip Info (Phase 6, Task 1)
+---
 
-**Route parameters:**
-- `viewToken` (string): Trip view token UUID (required)
+### 6.6 Park Boundaries Endpoint
 
-**Validation:**
-- `viewToken` must be a valid GUID format → 400 if invalid
-- Trip with matching ViewToken exists and `IsActive == true` → 404 if not found
+#### GET /api/park-boundaries
 
-**Response (200 OK):**
-```json
-{
-  "name": "California Coast",
-  "description": "Scenic drive down PCH",
-  "photoCount": 42,
-  "createdAt": "2026-03-20T12:00:00Z"
-}
-```
+**Query params:** `minLat`, `maxLat`, `minLng`, `maxLng`, `zoom` (required), `detail` (optional: `full` | `moderate` | `simplified`, default `moderate`)
 
-**Behavior:**
-- No authentication required (public endpoint, AC5.1)
-- Returns trip metadata for map view header
-- `PhotoCount` counted from database (not cached)
-- Covers AC3.1, AC3.6, AC5.1
+**Zoom gating:** `zoom < 8` → returns empty `FeatureCollection`.
 
-**Testing:** 9 unit tests verify:
-- Valid slug returns trip data with accurate photo count
-- Invalid slug returns 404
-- Inactive trips return 404
-- No auth required
-- Photo count is accurate for empty, single, and multi-photo trips
+**Detail tiers:** Three pre-computed GeoJSON columns per entity. `moderate` is the default for normal map use; `simplified` for zoomed-out overview; `full` for detail view.
 
-### 7.9 GET /api/trips/view/{viewToken}/photos — Get Trip Photos (Phase 6, Task 1)
+**Ordering:** Top 50 parks by `GisAcres` descending in viewport.
 
-**Route parameters:**
-- `viewToken` (string): Trip view token UUID (required)
+**Response:** GeoJSON `FeatureCollection` (`ParkBoundaryResponse`) with `Feature` objects containing `ParkBoundaryProperties` (id, name, state, category, centroidLat, centroidLng, gisAcres) and the polygon geometry.
 
-**Validation:**
-- `viewToken` must be a valid GUID format → 400 if invalid
-- Trip with matching ViewToken exists and `IsActive == true` → 404 if not found
+See design plan: `docs/design-plans/2026-04-05-state-park-boundaries.md`
 
-**Response (200 OK):** Array of PhotoResponse objects ordered by `TakenAt` ascending (chronological):
-```json
-[
-  {
-    "id": 1,
-    "thumbnailUrl": "/api/photos/1/1/thumb",
-    "displayUrl": "/api/photos/1/1/display",
-    "originalUrl": "/api/photos/1/1/original",
-    "lat": 40.7128,
-    "lng": -74.0060,
-    "placeName": "New York, NY, USA",
-    "caption": "Times Square",
-    "takenAt": "2026-01-01T09:00:00Z"
-  }
-]
-```
+---
 
-**Behavior:**
-- No authentication required (public endpoint, AC5.1)
-- Returns empty array `[]` for trips with zero photos (AC3.6)
-- Photos ordered by `TakenAt` ascending for route line rendering (AC3.3)
-- All photo URLs follow `/api/photos/` pattern (proxied, no direct blob URLs)
-- Covers AC3.1, AC3.6, AC5.1
+### 6.7 Other Endpoints
 
-**Testing:** 9 unit tests verify:
-- Valid slug returns photos in chronological order (TakenAt ascending)
-- Zero photos returns empty array (not 404)
-- Invalid slug returns 404
-- Inactive trips return 404
-- No auth required
-- Photo count, coordinates, and metadata accuracy
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/health` | Returns `{ "status": "healthy" }` |
+| GET | `/api/geocode?lat=&lng=` | Reverse geocode via Nominatim, returns `{ "placeName": "..." }` |
+| GET | `/api/post/{secretToken}` | Returns trip info for the post page |
+| GET | `/api/post/{secretToken}/photos` | Returns photos for post page management |
+| GET | `/create` | Serves `create.html` |
+| GET | `/post/{secretToken}` | Serves `post.html` |
+| GET | `/trips/{viewToken}` | Serves `trips.html` |
 
-**Design Note:** Chronological ordering enables native apps to render route lines without client-side sorting.
+---
 
-### 7.10 GET /trips/{viewToken} — View-Only Trip Map (Phase 6, Task 2)
+## 7. Frontend JavaScript Modules
 
-**Route parameters:**
-- `viewToken` (string): Trip view token UUID (required)
+### 7.1 mapService.js — Data Layer
 
-**Validation:**
-- No validation required — serves static HTML page
+Pure data/state module with zero DOM references. Designed for portability to native apps.
 
-**Response (200 OK):** trips.html static file with Content-Type: text/html
-
-**Features:**
-- Full-viewport Leaflet map with OpenStreetMap tiles
-- Trip name in fixed header at top
-- Photo pins at GPS coordinates with clickable popups
-- Popup contains display-quality image, place name, caption, timestamp, and download link
-- Route toggle button (fixed position bottom-right) shows/hides polyline connecting pins chronologically
-- Empty message overlay for trips with zero photos
-- Auto-fits bounds to show all pins with padding (max zoom 15)
-- Single photo: centered at zoom 13, no route button
-- Mobile-first responsive design
-
-**Leaflet CDN:**
-- CSS: `unpkg.com/leaflet@1.9.4/dist/leaflet.css` (SRI: `sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=`)
-- JS: `unpkg.com/leaflet@1.9.4/dist/leaflet.js` (SRI: `sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=`)
-- Tiles from OpenStreetMap via `tile.openstreetmap.org`
-
-**Covers:** AC3.1 (pins at GPS), AC3.2 (popup content), AC3.3 (route toggle), AC3.4 (auto-fit), AC3.5 (download link), AC3.6 (empty message), AC3.7 (single pin centered)
-
-### 7.11 mapService.js — Data Layer (Phase 6, Task 2)
-
-**Location:** `wwwroot/js/mapService.js`
-
-**Design:** Pure data/state module with zero DOM references, designed for native app reuse (iOS/Android could call identical methods).
-
-**API:**
 ```javascript
 const MapService = {
-    async loadTrip(slug) {
-        // Loads trip metadata and photos via API calls
-        // Returns {trip, photos}
-    },
-    getRouteCoordinates(photos) {
-        // Transforms photos array into [lat, lng] coordinate pairs for Leaflet polyline
-        // Returns Array<[lat, lng]>
-    }
+    async loadTrip(viewToken) { /* Returns { trip, photos } */ },
+    getRouteCoordinates(photos) { /* Returns Array<[lng, lat]> for MapLibre LngLatLike */ }
 };
 ```
 
-**Implementation:**
-- `loadTrip()` parallelizes API.getTripInfo() and API.getTripPhotos() via Promise.all()
-- `getRouteCoordinates()` maps each photo to [lat, lng] for L.polyline() consumption
-- No Leaflet references; coordinates returned as plain arrays for portability
+### 7.2 mapUI.js — MapLibre GL JS Rendering Layer
 
-### 7.12 mapUI.js — Leaflet UI Layer (Phase 6, Task 2)
+Web-specific rendering. On `map.on('load')` it calls `applyParkStyling()`, `PoiLayer.init()`, and `StateParkLayer.init()`.
 
-**Location:** `wwwroot/js/mapUI.js`
+**MapLibre setup:**
+- Style: `https://api.maptiler.com/maps/streets-v2/style.json?key=<MAPTILER_KEY>`
+- Default center: `[-98.58, 39.83]` (USA center), zoom 4
+- Markers for each photo; click opens popup with display image, place name, caption, timestamp, download link
+- Route polyline toggle (add/remove from map)
+- Auto-fit bounds with padding; single photo → zoom 13
 
-**Design:** Web-specific Leaflet rendering layer. Native apps would replace with MapKit/Google Maps but can reuse MapService.
-
-**API:**
-```javascript
-const MapUI = {
-    async init(slug) {
-        // Main entry point — loads trip via MapService and renders map
-    },
-    renderMap(photos) {
-        // Initializes Leaflet, adds tiles, creates markers, auto-fits bounds
-    },
-    createPopupHtml(photo) {
-        // Generates HTML for marker popup (image, place, caption, timestamp, download)
-    },
-    setupRouteToggle(photos) {
-        // Creates polyline and wires up route toggle button
-    },
-    toggleRoute() {
-        // Shows/hides polyline; updates button text
-    },
-    showError(message) {
-        // Displays error message in overlay
-    }
-};
+**Map CDN (trips.html and post.html):**
+```html
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.21.0/dist/maplibre-gl.css"
+      integrity="sha256-dhoRMPCWDqNp2RfshD99GvXKHc8ncBrvHZ1Zghs7qyU=" crossorigin="anonymous">
+<script src="https://unpkg.com/maplibre-gl@5.21.0/dist/maplibre-gl.js"
+        integrity="sha256-qbkAeuPV31m78vg62R7iyGWC6hUsCZAM1MhPYwevvJs=" crossorigin="anonymous"></script>
 ```
 
-**Implementation Details:**
-- `init()` extracts slug from `window.location.pathname`, calls MapService.loadTrip(), updates DOM, calls renderMap()
-- `renderMap()` initializes L.map(), adds OpenStreetMap tiles, handles three cases:
-  - Zero photos: centers on USA (39.8°N, 98.6°W), zoom 4, shows empty message
-  - One photo: creates marker, centers on it, zoom 13, no route button
-  - Multiple photos: creates all markers, fitBounds() with padding, calls setupRouteToggle()
-- `createPopupHtml()` returns string with image, place name, caption, formatted date, and download link
-- `setupRouteToggle()` creates L.polyline() from MapService.getRouteCoordinates(), shows button, wires click handler
-- `toggleRoute()` adds/removes polyline from map, toggles button text between "Show Route" / "Hide Route"
-- All errors logged to console and displayed via showError()
+### 7.3 poiLayer.js — POI Layer
 
-**Leaflet Setup:**
-- Map container: `<div id="map" class="map-container"></div>` (100vh height, 100% width)
-- Marker popups: max 280px width, images with border-radius, clickable links for downloads
-- Polyline: blue (#3388ff), weight 3px, opacity 0.8
-- Attribution: standard OpenStreetMap credit in map corner
+Manages a dynamic GeoJSON source (`poi-source`) and two MapLibre layers (`poi-markers` circle layer, `poi-labels` symbol layer). Attaches a debounced `moveend` handler to refresh POIs for the current viewport. Color-coded by category (national_park=dark green, state_park=light green, natural_feature=brown, historic_site=purple, tourism=gold).
 
-### 7.13 Map View Styling (Phase 6, Task 3)
+Supports an `onPoiSelect(lat, lng, name)` callback for the pin-drop flow on the post page.
 
-**Location:** `wwwroot/css/styles.css` (section "Map View Styles")
+### 7.4 stateParkLayer.js — State Park Boundary Layer
 
-**Full-Viewport Design:**
-- `.map-container`: 100% width, 100vh height (fills entire viewport)
-- `body.map-page`: padding 0, overflow hidden (for full-bleed map)
+Manages per-map state (stored in a `Map<maplibregl.Map, state>` to support multiple simultaneous map instances). Loads park boundaries from `/api/park-boundaries`, renders them as fill + outline + centroid dot + label layers (`sp-` prefixed IDs). Handles three detail tiers, adaptive prefetching, and click-to-select. Uses `MapCache` for client-side IndexedDB caching.
 
-**Floating Controls (Fixed Position):**
-- `.map-header`: Fixed top, full width, semi-transparent white bg, blur effect, trip name in 1.2rem bold
-- `.map-control`: Fixed bottom-right, white bg with blue border, hover fills with blue, active scales 0.98
-- `.map-empty`: Fixed center, semi-transparent overlay with "No photos yet" message
+### 7.5 mapCache.js — IndexedDB Client Cache
 
-**Responsive Breakpoints:**
-- **Mobile (< 480px):** Map header 1rem font, control bottom-20px right-8px, smaller padding
-- **Tablet (≥ 768px):** Map header 1.3rem font, control bottom-40px right-20px
-- **Desktop (≥ 1024px):** Map header 1.5rem font
+Persistent cache for boundary and POI data keyed by `{type}_{id}_{detailLevel}`. No TTL; entries persist until cleared. Falls back gracefully when IndexedDB is unavailable (e.g., private browsing).
 
-**Leaflet Popup Customization:**
-- `.leaflet-popup-content-wrapper`: white bg, small border-radius, subtle shadow
-- Images, headings, text, links all styled for readability in popup context
-- Max 280px width enforced by HTML inline styles
+### 7.6 uploadQueue.js — Resilient Upload Queue
 
-**Design Principles:**
-- Mobile-first responsive design (scales up, never down)
-- Full-viewport map with overlaid controls (header at top, button at bottom-right)
-- Semi-transparent backgrounds with blur effects for readability over map
-- Native-like feel with system font stack and smooth transitions
+IndexedDB-backed queue for Phase 1 resilient uploads. Manages upload state machine (`pending → requesting → uploading → committing → committed | failed`). Handles exponential backoff with jitter, per-file concurrency (3 blocks), global concurrency (3 photos, 9 in-flight). On SAS expiry (403), re-calls `request-upload` with same `uploadId` and resumes.
+
+Phase 1 backend is complete. The client-side queue (Phase 1 web UI) and iOS Capacitor integration (Phases 2–7) are deferred.
+
+### 7.7 Other JS Modules
+
+| Module | Purpose |
+|--------|---------|
+| `postService.js` | EXIF extraction, photo upload, delete, list — zero DOM refs |
+| `postUI.js` | DOM layer for post page (file picker, preview, pin-drop map, toasts) |
+| `photoCarousel.js` | Full-screen photo carousel in map popups |
+| `tripStorage.js` | LocalStorage persistence for draft trip state |
+| `exifUtil.js` | Wraps `exifr` library for client-side GPS + timestamp extraction |
+| `api.js` | API client (all fetch calls) |
+| `parkStyle.js` | Style constants shared by map layers |
 
 ---
 
-## 8. Migration Strategy
+## 8. Services
 
-### 8.1 Creating Migrations
+### 8.1 IAuthStrategy & SecretTokenAuthStrategy
 
-```bash
-cd src/RoadTripMap
-dotnet ef migrations add <MigrationName>
-```
+Pluggable DI interface. `SecretTokenAuthStrategy` extracts `secretToken` from route values and compares against `trip.SecretToken`. Returns `AuthResult(IsAuthorized, DeniedReason?)`.
 
-Migrations are stored in `Migrations/` folder and tracked in Git.
+### 8.2 IPhotoService & PhotoService
 
-### 8.2 Applying Migrations
+SkiaSharp-based image pipeline: decode → EXIF-rotate → re-encode three tiers (original JPEG 95%, display 1920px 85%, thumbnail 300px 75%). Re-encoding strips all EXIF metadata (AC6.3).
 
-**Local (SQL Express):**
-```bash
-dotnet ef database update
-```
+### 8.3 IPhotoReadService & PhotoReadService
 
-**Production (Azure SQL):**
-Applied automatically on app startup via `DbContext.Database.Migrate()` call in `Program.cs` (will be added in Phase 5).
+Dual-read abstraction for the photo list endpoint. Queries `Photos` filtered by `Status="committed"`, ordered by `TakenAt`. For `StorageTier="per-trip"` photos the blob lives in `trip-{secretToken}/<uploadId>_*.jpg`; for `StorageTier="legacy"` it lives in `road-trip-photos/{tripId}/{photoId}.jpg`. Callers do not need to know which tier.
 
----
+### 8.4 ISasTokenIssuer
 
-## 9. Services (Phase 3)
+Abstraction for issuing short-lived write-only SAS URIs for blob upload.
 
-### 9.1 IAuthStrategy & SecretTokenAuthStrategy
+- **`UserDelegationSasIssuer`** (prod): Uses `DefaultAzureCredential` managed identity — no account key in config.
+- **`AccountKeySasIssuer`** (dev/Azurite): Uses connection string account key.
 
-Pluggable authentication interface for validating POST access via secret token.
+Both implement `IssueWriteSasAsync(containerName, blobPath, ttl, ct)`.
 
-**IAuthStrategy** (Services/IAuthStrategy.cs):
-```csharp
-public interface IAuthStrategy
-{
-    Task<AuthResult> ValidatePostAccess(HttpContext context, TripEntity trip);
-}
+### 8.5 IBlobContainerProvisioner & BlobContainerProvisioner
 
-public record AuthResult(bool IsAuthorized, string? DeniedReason = null);
-```
+Creates `trip-{secretToken}` containers with `PublicAccessType.None` on demand. Called at trip creation and by the backfill service. Validates container name constraints before calling Azure.
 
-**SecretTokenAuthStrategy** (Services/SecretTokenAuthStrategy.cs):
-- Extracts `secretToken` from route values via `HttpContext.GetRouteValue("secretToken")`
-- Compares against `trip.SecretToken`
-- Returns `AuthResult(true)` on match; `AuthResult(false, "Invalid or missing secret token")` on mismatch
+### 8.6 IGeocodingService & NominatimGeocodingService
 
-**DI Registration** (Program.cs):
-```csharp
-builder.Services.AddScoped<IAuthStrategy, SecretTokenAuthStrategy>();
-```
+Reverse geocodes via Nominatim (OSM). Caches results in `roadtrip.GeoCache` (rounded to 2 decimal places). Rate-limited to 1 req/sec via `INominatimRateLimiter` singleton. Returns `null` on failure (does not block photo upload).
 
-**Testing:** 6 unit tests verify:
-- Matching token → authorized
-- Mismatched token → unauthorized with reason
-- Missing token → unauthorized
-- Empty token → unauthorized
-- Interface implementation
-- AuthResult type correctness
+### 8.7 UploadRateLimiter
 
-**Design (AC6.1, AC5.2, AC2.6):**
-- Auth strategy is DI-injected and swappable without endpoint code changes
-- Secret token is the only credential (no passwords, accounts, headers)
-- Invalid tokens return 401 Unauthorized
-
-### 9.2 IPhotoService & PhotoService (Phase 3, Tasks 3-4)
-
-Image processing pipeline using SkiaSharp with three-tier Azure Blob Storage uploads.
-
-**IPhotoService** (Services/IPhotoService.cs):
-```csharp
-public interface IPhotoService
-{
-    Task<PhotoUploadResult> ProcessAndUploadAsync(Stream imageStream, int tripId, int photoId, string originalFileName);
-    Task<Stream> GetPhotoAsync(int tripId, int photoId, string size);
-    Task DeletePhotoAsync(int tripId, int photoId, string blobPath);
-}
-
-public record PhotoUploadResult(string BlobPath);
-```
-
-**PhotoService** (Services/PhotoService.cs):
-- **ProcessAndUploadAsync:**
-  1. Decode image via `SKBitmap.Decode(stream)` (reads pixel data)
-  2. Check `SKBitmap.Origin` for EXIF rotation and apply if needed
-  3. Upload three tiers: original, display, thumbnail
-  4. **Original:** Re-encode as JPEG quality 95, no resize → blob path `{tripId}/{photoId}.jpg`
-  5. **Display:** Resize to max 1920px width (aspect ratio preserved), JPEG quality 85 → `{tripId}/{photoId}_display.jpg`
-  6. **Thumbnail:** Resize to max 300px width, JPEG quality 75 → `{tripId}/{photoId}_thumb.jpg`
-  7. All re-encoding via `SKBitmap.Encode()` creates fresh pixel data, stripping EXIF by design (AC6.3)
-
-- **GetPhotoAsync:**
-  - Validates size is one of: `original`, `display`, `thumb`
-  - Maps size to blob path suffix (empty, `_display`, `_thumb`)
-  - Downloads and returns stream
-
-- **DeletePhotoAsync:**
-  - Deletes all three tiers by blob path
-
-**Aspect-Ratio-Preserving Resize:**
-```csharp
-private static SKImageInfo CalculateResizedDimensions(int origWidth, int origHeight, int maxWidth)
-{
-    if (origWidth <= maxWidth) return new SKImageInfo(origWidth, origHeight);
-    var ratio = (float)maxWidth / origWidth;
-    return new SKImageInfo(maxWidth, (int)(origHeight * ratio));
-}
-```
-
-**Testing:** 14 unit tests verify:
-- Interface implementation
-- Image decode/encode round-trip
-- Aspect ratio preservation
-- EXIF stripping via re-encoding
-- Valid size acceptance
-- Invalid size rejection
-
-### 9.3 IGeocodingService & NominatimGeocodingService (Phase 4, Task 2)
-
-Client-side GPS extraction and server-side place name resolution via OpenStreetMap Nominatim API.
-
-**IGeocodingService** (Services/IGeocodingService.cs):
-```csharp
-public interface IGeocodingService
-{
-    Task<string?> ReverseGeocodeAsync(double latitude, double longitude);
-}
-```
-
-**NominatimGeocodingService** (Services/NominatimGeocodingService.cs):
-- **Constructor:** Injects `HttpClient` (registered via `AddHttpClient<NominatimGeocodingService>()`) and `RoadTripDbContext`
-- Sets `User-Agent: RoadTripMap/1.0` on HttpClient default request headers
-- Static `SemaphoreSlim(1, 1)` enforces Nominatim rate limit (1 request/sec max)
-
-**ReverseGeocodeAsync implementation:**
-1. Round lat/lng to 2 decimal places (~1.1km grid at equator) for cache key
-2. Query `GeoCache` table: `db.GeoCache.FirstOrDefaultAsync(g => g.LatRounded == latRounded && g.LngRounded == lngRounded)`
-3. If found → return `cachedEntry.PlaceName`
-4. If not found → acquire `SemaphoreSlim`, wait 1100ms (Nominatim 1 req/sec policy)
-5. Call `GET https://nominatim.openstreetmap.org/reverse?lat={lat}&lon={lng}&format=json`
-6. Parse JSON response, extract `display_name`
-7. Simplify: split by comma, take first 2-3 meaningful components (skip house numbers, postcodes)
-8. Insert `GeoCacheEntity` with rounded coords and simplified place name
-9. Return place name
-10. On HTTP failure: return `null` (don't block photo upload if Nominatim is down)
-
-**Testing:** 8 unit tests verify:
-- Correct place names returned for known coordinates (mock Nominatim JSON)
-- Cache hits prevent HTTP requests
-- Cache misses trigger HTTP calls and create `GeoCacheEntity`
-- Rate limiting via SemaphoreSlim prevents concurrent calls
-- Nominatim failures return null without throwing
-- Interface compliance
-- Coordinate rounding for consistent cache keys
+IP-based rate limiter: 20 uploads per IP per hour. In-memory sliding window.
 
 ---
 
-## 10. Security Considerations (Phase 3)
+## 9. Background Jobs
+
+### 9.1 OrphanSweeperHostedService
+
+Runs on `PeriodicTimer` (interval configured via `OrphanSweeper:IntervalHours`, default 1 hour). On each tick delegates to `IOrphanSweeper.SweepAsync()`.
+
+**`OrphanSweeper.SweepAsync()`:** Deletes `PhotoEntity` rows where `Status = "pending"` AND `LastActivityAt < (utcNow - StaleThresholdHours)`. Default threshold: 48 hours (configured via `OrphanSweeper:StaleThresholdHours`). Does NOT touch `"committed"` rows regardless of age.
+
+### 9.2 ContainerBackfillHostedService
+
+Runs once on startup when `Backfill:RunOnStartup = true`. Iterates all `TripEntity` rows and calls `IBlobContainerProvisioner.EnsureContainerAsync(trip.SecretToken)` for each. Idempotent. Used for the initial rollout to provision containers for pre-existing trips.
+
+---
+
+## 10. Security
 
 ### 10.1 Authorization
 
-**Phase 3 Implementation:**
-- **IAuthStrategy:** Pluggable interface via DI (AC6.1)
-- **SecretTokenAuthStrategy:** Validates `{secretToken}` route parameter against `Trip.SecretToken` (AC5.2, AC2.6)
-- **Future swapping:** PIN codes, OAuth, or other strategies without endpoint changes
+`IAuthStrategy` / `SecretTokenAuthStrategy` — secret token in route parameter is the sole credential. No passwords or accounts.
 
-### 10.2 HTTPS & TLS
+### 10.2 EXIF Stripping
 
-ASP.NET Core project created with `--no-https` because Azure App Service terminates TLS. Ensure `X-Forwarded-Proto` header is trusted in production.
+SkiaSharp re-encode creates fresh pixel data — no EXIF metadata in stored blobs (AC6.3).
 
-### 10.3 EXIF Stripping (Phase 3, Task 3)
+### 10.3 Blob Storage
 
-**Implementation via SkiaSharp:**
-- Decode JPEG with `SKBitmap.Decode(stream)` (reads pixels)
-- Re-encode with `SKBitmap.Encode()` as fresh JPEG (no metadata)
-- Creates three tiers: original, display, thumbnail
-- All tiers have EXIF stripped (AC6.3)
+- Legacy container: `road-trip-photos` — `PublicAccessType.None`
+- Per-trip containers: `trip-{secretToken}` — `PublicAccessType.None`
+- All photo access proxied via `/api/photos/` endpoint. SAS URLs are short-lived (2 hours, write-only) and are never stored in the DB.
 
-### 10.4 Blob Storage Security (Phase 3, Task 6)
+### 10.4 Log Sanitization
 
-**Private Blob Storage:**
-- Azure Blob container `road-trip-photos` created with `PublicAccessType.None`
-- Photos are NOT accessible via direct blob URLs (AC6.4)
-- All photo access through `GET /api/photos/{tripId}/{photoId}/{size}` endpoint (API proxy)
+`src/RoadTripMap/Security/LogSanitizer.cs` provides:
+- `SanitizeToken(token)` → `"abcd...{32}"`
+- `SanitizeContainerName(name)` → `"trip-abcd...{32}"`
+- `SanitizeBlobPath(path)` → sanitizes GUID prefix, preserves legacy paths
+- `SanitizeUrl(url)` → strips query string (`?[sig-redacted]`)
 
-### 9.4 Client-Side EXIF Extraction (Phase 4, Task 1)
+**Rule:** Any logger call touching secret tokens, blob paths, SAS URLs, or GPS coordinates must go through `LogSanitizer`. Enforced by captured-log assertions in `UploadEndpointHttpTests.cs`.
 
-**exifr Library:**
-- Downloaded from CDN to `wwwroot/lib/exifr/lite.umd.js` (45KB, UMD bundle)
-- Supports in-browser JPEG metadata extraction without server dependency
+### 10.5 HTTPS
 
-**exifUtil.js Wrapper** (`wwwroot/js/exifUtil.js`):
-```javascript
-const ExifUtil = {
-    async extractGps(file) {
-        const gps = await exifr.gps(file);
-        if (!gps) return null;
-        return { latitude: gps.latitude, longitude: gps.longitude };
-    },
-    async extractTimestamp(file) {
-        const data = await exifr.parse(file, ['DateTimeOriginal']);
-        return data?.DateTimeOriginal || null;
-    },
-    async extractAll(file) {
-        const gps = await this.extractGps(file);
-        const timestamp = await this.extractTimestamp(file);
-        return { gps, timestamp };
-    }
-};
-```
-
-**Usage (Phase 5, post page):**
-- `ExifUtil.extractGps(File)` → `{latitude, longitude}` or `null`
-- `ExifUtil.extractTimestamp(File)` → `Date` object or `null`
-- `ExifUtil.extractAll(File)` → `{gps: {...}, timestamp: Date}`
-
-**AC2.2 Verification:** GPS coordinates extracted client-side are sent with photo upload and stored in `PhotoEntity.Latitude` and `PhotoEntity.Longitude`.
-
-### 9.5 PostService: Photo Posting Workflow (Phase 5, Task 1)
-
-Pure data/state module with zero DOM references. All business logic designed for reuse in native iOS/Android apps.
-
-**postService.js** (wwwroot/js/postService.js):
-```javascript
-const PostService = {
-    async extractPhotoMetadata(file) {
-        // Extracts GPS + timestamp from EXIF, geocodes to place name
-        // Returns {gps: {latitude, longitude} | null, timestamp: Date | null, placeName: string | null}
-    },
-    async uploadPhoto(secretToken, file, lat, lng, caption, takenAt) {
-        // FormData upload with optional caption and timestamp
-        // Returns PhotoResponse
-    },
-    async deletePhoto(secretToken, photoId) {
-        // Deletes photo from trip
-    },
-    async listPhotos(secretToken) {
-        // Returns array of PhotoResponse objects
-    }
-};
-```
-
-**API Client Extensions** (wwwroot/js/api.js):
-- `API.geocode(lat, lng)` — GET /api/geocode, returns `{placeName}`
-- `API.uploadPhoto(secretToken, formData)` — POST /api/trips/{secretToken}/photos
-- `API.deletePhoto(secretToken, photoId)` — DELETE /api/trips/{secretToken}/photos/{photoId}
-- `API.listTripPhotos(secretToken)` — GET /api/trips/{secretToken}/photos (new, Task 3)
-
-**Design Principle:**
-- **PostService:** Business logic only (data extraction, API calls, state transformation)
-- **postUI.js (Phase 5, Task 2):** DOM rendering only (HTML generation, event binding)
-- No circular dependencies; PostService can be used by postUI.js, native apps, or other frontend contexts
-
-**AC2.2 Coverage:**
-- `extractPhotoMetadata()` calls `ExifUtil.extractAll()` to get GPS from EXIF
-- `uploadPhoto()` sends lat/lng with photo to backend
-- Backend stores in PhotoEntity.Latitude, PhotoEntity.Longitude
-
-**AC2.3 Coverage:**
-- `extractPhotoMetadata()` auto-geocodes via `API.geocode()` after EXIF extraction
-- Returns `placeName` for UI preview before confirming upload
-
-**AC2.4 Coverage:**
-- `uploadPhoto()` accepts optional `caption` parameter
-- If caption is falsy, FormData does not append it (backend allows null)
-
-### 9.6 PostUI: Photo Posting User Interface (Phase 5, Task 2)
-
-Mobile-first DOM rendering layer with all business logic delegated to PostService.
-
-**post.html** (wwwroot/post.html):
-- **Header:** Trip name and description (loaded from page context)
-- **Add Photo Button:** Large, prominent button that triggers hidden file input with `capture="environment"` for mobile camera
-- **File Input:** `<input type="file" accept="image/*" capture="environment">` — opens camera on mobile, file picker on desktop
-- **Preview Section (hidden until photo selected):**
-  - Photo thumbnail via `URL.createObjectURL()`
-  - Place name display (auto-resolved or "Tap map to set location")
-  - Pin-drop fallback map (only shown for photos without GPS EXIF)
-  - Optional caption input (optional field)
-  - Post and Cancel buttons
-- **Posted Photos List:** Thumbnails sorted most-recent-first with caption and place name
-- **Toast Container:** Fixed position for success/error notifications (3-second auto-dismiss)
-- **Leaflet CDN:** `unpkg.com/leaflet@1.9.4/dist/leaflet.{css,js}` with SRI hashes for pin-drop map
-
-**postUI.js** (wwwroot/js/postUI.js):
-- `init(secretToken)` — Wires up event listeners, loads photo list
-- `onFileSelected(file)` — Called when file input changes
-  - If EXIF GPS present: show full preview directly
-  - If no GPS: show pin-drop map for manual location selection
-- `showPreview(file, metadata)` — Renders preview section with thumbnail, place name, caption input
-- `showPinDropMap(file, metadata)` — Renders map-based location picker
-  - Initializes Leaflet map centered on USA
-  - Click handler: places marker, geocodes location, updates place name
-  - Marker persists until next photo selected
-- `onPostConfirm()` — Calls PostService.uploadPhoto(), shows toast, refreshes list
-- `loadPhotoList()` — Fetches photos via PostService.listPhotos()
-- `createPhotoElement(photo)` — Renders photo card with thumbnail, place, caption, delete button
-- `showToast(message, type)` — Displays floating notification with auto-dismiss animation
-
-**CSS Styles** (wwwroot/css/styles.css):
-- `.add-photo-button` — Full-width prominent button
-- `.photo-thumbnail` — 100% width, max 400px height, aspect-fit
-- `.place-name-display` — Light gray background, "no-gps" variant in error red
-- `#pinDropMap` — 300px height, 1px border, responsive
-- `.caption-input` — Full-width textarea-like input with focus state
-- `.photo-grid` — CSS Grid, `minmax(150px, 1fr)` columns, auto-fill
-- `.photo-item-*` — Card styling with hover delete button
-- `.toast` — Fixed position, slide-in animation, 3-second auto-dismiss
-- Responsive: tablets adjust grid to `minmax(180px, 1fr)`, desktop adjusts toast width
-
-**Map Initialization (Leaflet):**
-- Called on first pin-drop photo selection
-- Sets map bounds to USA center (39.8°N, 98.6°W) at zoom 4
-- OpenStreetMap tiles from `tile.openstreetmap.org` (attribution included)
-- Click handler creates marker and geocodes via `API.geocode()`
-- Marker removed when new photo selected (not persisted between photos)
-
-**AC2.2 Verification:**
-- GPS coordinates from EXIF shown in preview before confirming upload
-- Sent to backend via PostService.uploadPhoto()
-
-**AC2.3 Verification:**
-- Place name auto-resolved from coordinates and displayed in preview section before confirming
-
-**AC2.4 Verification:**
-- Caption input is optional (form submits without value)
-- Photos post successfully with caption or without
-
-**AC2.9 Verification (Pin-Drop Fallback):**
-- Screenshots or edited photos (no GPS EXIF) trigger `showPinDropMap()`
-- Small Leaflet map displayed with instruction "Tap map to set your photo location"
-- User tap creates marker and geocodes location
-- Place name resolved and displayed
-- Post succeeds with manual coordinates
+Azure App Service terminates TLS. Application created with `--no-https`. `X-Forwarded-Proto` should be trusted in production.
 
 ---
 
-## 8. Deployment
+## 11. POI Seeder (`RoadTripMap.PoiSeeder`)
 
-### 8.1 Build & Publish
+CLI tool to seed the `PointsOfInterest` and `ParkBoundaries` tables from external sources.
 
-```bash
-dotnet publish -c Release -o ./publish
-```
+**Entry point:** `src/RoadTripMap.PoiSeeder/Program.cs`
 
-Outputs to `publish/` folder for Docker or direct deployment.
+**Flags:**
+- `--overpass-only` — Fetch POIs from Overpass (OSM) only
+- `--nps-only` — Fetch national park POIs from NPS API only
+- `--pad-us` — Import PAD-US state park polygons (boundaries table)
 
-### 8.2 App Service Configuration
-
-Must set via Azure Portal or Bicep:
-- `ConnectionStrings:DefaultConnection` = Azure SQL connection string
-
-### 8.3 Dedicated Infrastructure (Phase 4 - Repo Split)
-
-Road Trip operates on **dedicated Azure infrastructure** (not shared with Stock Analyzer):
-- **SQL Server:** `sql-roadtripmap-prod` (standalone instance)
-- **SQL Database:** `roadtripmap-db` (Basic tier, 5 DTU)
-- **App Service Plan:** `asp-roadtripmap-prod` (Linux B1)
-- **App Service:** `app-roadtripmap-prod` (port 5100, always-on)
-- **Blob Storage:** Shared via connection string parameter (ACR: `acrstockanalyzerer34ug`)
-
-Migrations run independently against the Road Trip database only. The `roadtrip` schema is used within the Road Trip database (no isolation needed, as the database itself is dedicated).
+**Key classes:**
+- `OverpassImporter` — Queries Overpass for amenity/leisure/historic POIs in a bbox
+- `NpsImporter` — Calls NPS API for national park locations
+- `PadUsImporter` — Bulk imports PAD-US state park point data
+- `PadUsBoundaryImporter` — Imports and simplifies PAD-US polygon geometries
+- `GeoJsonProcessor` — Simplifies GeoJSON polygons for three detail tiers
+- `Deduplicator` — Prevents duplicate inserts by `(Source, SourceId)`
+- `PoiUpsertHelper` — Upsert logic for `PointsOfInterest`
+- `BoundaryUpsertHelper` — Upsert logic for `ParkBoundaries`
 
 ---
 
-## 11. Testing Strategy (Phase 2)
+## 12. Infrastructure
 
-### 11.1 Test Project Setup
+### 12.1 Azure Topology (Production)
 
-**RoadTripMap.Tests** (xUnit) with:
-- In-memory EF Core context for unit tests
-- Moq for service mocking
-- FluentAssertions for readable assertions
+| Resource | Name | Resource Group |
+|----------|------|---------------|
+| App Service Plan | `asp-roadtripmap-prod` | `rg-roadtripmap-prod` |
+| App Service | `app-roadtripmap-prod` | `rg-roadtripmap-prod` |
+| SQL Server | `sql-roadtripmap-prod` | `rg-roadtripmap-prod` |
+| SQL Database | `roadtripmap-db` | `rg-roadtripmap-prod` |
+| Key Vault | (road-trip KV) | `rg-roadtripmap-prod` |
+| Blob Storage | `stockanalyzerblob` | `rg-stockanalyzer-prod` (cross-RG) |
+| Container Registry | `acrstockanalyzerer34ug` | `rg-stockanalyzer-prod` (cross-RG) |
 
-### 11.2 Test Scope (Phase 2)
+**Cross-RG dependency:** Road Trip writes blobs to `stockanalyzerblob` in `rg-stockanalyzer-prod`. The App Service MSI holds **Storage Blob Data Contributor** on that account, assigned via `infrastructure/azure/modules/storage-rbac.bicep` with a deterministic role-assignment GUID.
 
-- SlugHelper utility functions (15 tests covering generation, uniqueness, truncation, edge cases)
-- Trip creation DTOs (structure, required fields)
-- API endpoints (integration tests) — coming in Task 2
-- Homepage static files — coming in Task 3
+### 12.2 Bicep Source of Truth
 
-Future phases will test:
-- Photo upload pipeline
-- Authorization logic
-- Photo processing and EXIF stripping
+`infrastructure/azure/main.bicep` is the authoritative description of all prod resources in `rg-roadtripmap-prod`. It is authored so that `az deployment group what-if` against the current prod state shows zero drift.
 
----
+Key design points:
+- `@secure()` params for SQL admin password and ACR registry password — never stored in the file.
+- Key Vault secrets referenced with `existing` keyword — Bicep never overwrites secret values.
+- `parameters.json` contains no pipeline placeholders; all dynamic values are passed at deploy time.
+- `containerImageTag` parameter (`default: 'prod-33'`) reflects the current live tag; the GitHub Actions workflow updates the tag via `az webapp config container set` after each deploy.
+- Service principal object IDs (`githubDeployRtObjectId`, `githubDeployObjectId`) are pinned explicitly as parameters for deterministic RBAC assignments.
 
-## 12. Deployment Infrastructure (Phase 8)
+`infrastructure/azure/modules/storage-rbac.bicep` is a thin helper that creates a `Microsoft.Authorization/roleAssignments` resource scoped to a storage account in a different resource group.
 
-### 12.1 Startup Migration
+### 12.3 Docker
 
-**Program.cs**:
-Located in `src/RoadTripMap/Program.cs`, the startup migration block runs immediately after `var app = builder.Build();`:
-- Creates a service scope to resolve `RoadTripDbContext`
-- Calls `db.Database.Migrate()` to apply pending EF Core migrations
-- Logs success message; propagates exceptions on failure
-- Prevents application startup if migration fails
-- Subsequent deployments without new migrations are idempotent (EF Core tracks applied migrations in `__EFMigrationsHistory` table)
+Multi-stage build: SDK 8.0 → runtime 8.0. Port 5100, `ASPNETCORE_URLS=http://+:5100`. SkiaSharp Linux native assets included. `.dockerignore` excludes test projects, docs, build artifacts.
 
-**Behavior:**
-- On first deployment, creates `roadtrip` schema and all tables (Trips, Photos, GeoCache)
-- On subsequent deployments, checks `__EFMigrationsHistory` and applies only new migrations
-- If migration fails, application shuts down (prevents silent failures with incomplete schema)
+### 12.4 GitHub Actions CI/CD
 
-### 12.2 Docker Configuration
-
-**Dockerfile** (`Dockerfile`):
-- Multi-stage build: SDK 8.0 for compilation → runtime 8.0 for execution
-- Restores, builds, and publishes in Release configuration
-- Runtime image exposes port 5100
-- Sets `ASPNETCORE_URLS=http://+:5100`
-- Entrypoint: `dotnet RoadTripMap.dll`
-
-**Build & Run Locally:**
-```bash
-docker build -t roadtripmap:local .
-docker run -p 5100:5100 roadtripmap:local
-```
-
-**.dockerignore** — Excludes test projects, markdown docs, build artifacts to keep image lean.
-
-### 12.2 Azure Infrastructure (Bicep)
-
-**main.bicep** (`infrastructure/azure/main.bicep`):
-- **SQL Server:** `sql-roadtripmap-prod` (standalone, admin login via `@secure()` parameter)
-- **SQL Database:** `roadtripmap-db` (Basic tier, 5 DTU, max size 2 GB)
-- **Firewall Rule:** Allows Azure services (`0.0.0.0` → `0.0.0.0`)
-- **App Service Plan:** `asp-roadtripmap-prod` (Linux, B1 Basic, `reserved: true`)
-- **App Service:** `app-roadtripmap-prod` (references own ASP)
-  - Docker image: `acrstockanalyzerer34ug.azurecr.io/roadtripmap:latest`
-  - Connection string: Constructed from SQL outputs (not parameter-injected)
-  - Blob Storage: Injected as parameter (shared account)
-- **Outputs:** `sqlServerFqdn`, `sqlDatabaseName`, `webAppUrl`
-- **Configures App Service settings:**
-  - `ASPNETCORE_ENVIRONMENT` = `Production`
-  - `WEBSITES_PORT` = `5100`
-  - Connection strings injected at deployment time
-  - Linux container image from ACR
-  - `alwaysOn: true` for production reliability
-
-**parameters.json** (`infrastructure/azure/parameters.json`):
-- Placeholder template for deployment parameters
-- Actual values supplied at deploy time via command line or parameter file
-- Includes: appServicePlanResourceId, sqlConnectionString, storageConnectionString, environment
-
-### 12.3 GitHub Actions CI/CD Workflow
-
-**.github/workflows/roadtrip-deploy.yml**:
-- **Build & Test Stage:**
-  - Checkout, setup .NET 8
-  - Restore, build, test on `ubuntu-latest`
-  - Requires tests passing before deploying
-
-- **Deploy Stage:**
-  - Requires explicit `confirm == "deploy"` input from workflow dispatch
-  - Environment protection: `environment: production` (requires approval in GitHub)
-  - Login to Azure via OIDC
-  - Build Docker image, tag with commit SHA + latest
-  - Push to ACR: `acrstockanalyzerer34ug.azurecr.io`
-  - Update App Service container image
-  - Wait 30s for startup, then health check (5 attempts, 15s apart)
-  - Rollback on failed health check (non-zero exit)
+**`.github/workflows/roadtrip-deploy.yml`:**
+- Build & Test: restore → build → test on `ubuntu-latest` (tests must pass)
+- Deploy: requires `confirm=deploy` dispatch input + `environment: production` approval
+- Logs in to Azure via OIDC, builds Docker image (tagged with commit SHA + `latest`), pushes to `acrstockanalyzerer34ug`, updates App Service container, waits 30s, health-checks 5× at 15s intervals, rolls back on failure
 
 **Invocation:**
 ```bash
 gh workflow run roadtrip-deploy.yml -f confirm=deploy
 ```
 
-### 12.4 Production Startup & Migration
+### 12.5 Startup Migration
 
-**Program.cs** updates for Phase 8, Task 4:
+On every startup, `Program.cs` runs:
 ```csharp
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<RoadTripDbContext>();
-    var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
-    try
-    {
-        db.Database.Migrate();
-        logger.LogInformation("Database migration completed successfully");
-    }
-    catch (Exception ex)
-    {
-        logger.LogError(ex, "Database migration failed");
-        throw;
-    }
+    db.Database.Migrate();
 }
 ```
-
-**Behavior:**
-- Runs BEFORE `app.MapStaticFiles()` so migrations complete before handling requests
-- Applies all pending migrations in order (idempotent; re-running same migration is no-op)
-- Creates `roadtrip` schema and tables on first deployment
-- Subsequent deployments without new migrations skip EF Core versioning checks
-- Logs results; propagates exceptions to prevent startup if migration fails
-- Covers AC3 (trips), AC4 (photos), AC5 (geocache)
+Runs before static file serving. Idempotent (EF Core tracks applied migrations in `__EFMigrationsHistory`). Propagates exceptions to prevent startup on migration failure.
 
 ---
 
-## 13. Version History
+## 13. Local Development
+
+### 13.1 Prerequisites
+
+- .NET 8 SDK
+- SQL Server Express (Windows) or TCP SQL auth from WSL2
+- Azurite (`npm install -g azurite`) for local blob storage
+
+### 13.2 appsettings.Development.json
+
+```json
+{
+  "ConnectionStrings": {
+    "DefaultConnection": "Server=.\\SQLEXPRESS;Database=RoadTripMap;Trusted_Connection=True;TrustServerCertificate=True",
+    "AzureStorage": "UseDevelopmentStorage=true"
+  },
+  "ClientProtocol": {
+    "MinVersion": "1.0.0"
+  },
+  "OrphanSweeper": {
+    "IntervalHours": 1,
+    "StaleThresholdHours": 48
+  },
+  "Backfill": {
+    "RunOnStartup": false
+  }
+}
+```
+
+Start Azurite before running the app:
+```bash
+azurite --silent --location ./azurite-data
+```
+
+---
+
+## 14. Testing Strategy
+
+### 14.1 Test Project
+
+`tests/RoadTripMap.Tests` (xUnit). Uses:
+- `Microsoft.EntityFrameworkCore.InMemory` for unit tests
+- `AzuriteFixture` for blob integration tests
+- `Moq` for service mocking
+- `FluentAssertions` for assertions
+- `Microsoft.AspNetCore.Mvc.Testing` for HTTP integration tests
+
+### 14.2 Coverage Areas
+
+| Area | Test file(s) |
+|------|-------------|
+| Slug generation | `Helpers/SlugHelperTests.cs` |
+| Trip / photo / view endpoints | `Endpoints/TripEndpointTests.cs`, `TripViewEndpointTests.cs`, `PhotoEndpointTests.cs` |
+| Upload endpoints (HTTP) | `Endpoints/UploadEndpointHttpTests.cs` — includes log-sanitization assertions |
+| Upload endpoints (unit) | `Endpoints/UploadEndpointTests.cs` |
+| POI endpoint | `Endpoints/PoiEndpointTests.cs` |
+| Park boundary endpoint | `Endpoints/ParkBoundaryEndpointTests.cs` |
+| Orphan sweeper | `BackgroundJobs/OrphanSweeperTests.cs` |
+| PhotoReadService (dual-read) | `Services/PhotoReadServiceTests.cs` |
+| BlobContainerProvisioner | `Services/BlobContainerProvisionerTests.cs` |
+| GeocodingService | `Services/GeocodingServiceTests.cs` |
+| EndpointRegistry | `EndpointRegistryTests.cs`, `EndpointRegistryRealContractTests.cs` |
+| Server version middleware | `Middleware/ServerVersionMiddlewareTests.cs` |
+| Security headers | `Middleware/SecurityHeaderTests.cs` |
+| POI seeder components | `Seeder/DeduplicatorTests.cs`, `OverpassImporterTests.cs`, `NpsImporterTests.cs`, `PadUsBoundaryImporterTests.cs`, `GeoJsonProcessorTests.cs` |
+
+---
+
+## 15. Current State (2026-04-14)
+
+**Deployed and operational:**
+- Full trip/photo CRUD with MapLibre GL JS map view
+- POI layer (Overpass + NPS) with zoom-gated category tiers
+- State park boundary polygons (PAD-US import, 3 detail tiers, IndexedDB client cache)
+- Resilient uploads Phase 1 (backend only): `request-upload` / `commit` / `abort` endpoints, per-trip containers, dual-read, orphan sweeper, container backfill, version headers, log sanitization
+- Dedicated Azure SQL (`roadtripmap-db`, `sql-roadtripmap-prod`), not shared with Stock Analyzer
+- Bicep (`infrastructure/azure/main.bicep`) reconciled to prod state — source of truth for all Azure resources
+- Endpoint registry (`EndpointRegistry.Resolve()`) for all connection strings and API keys
+
+**Pending (iOS Phases 2–7):**
+- Capacitor iOS app with hybrid bundle bootstrap
+- Native PHPicker + ImageIO EXIF extraction
+- `URLSession` background upload queue with native SQLite persistence
+- iOS-specific CSS (`ios.css`) and platform adapter seams
+- TestFlight distribution
+
+**Key design plans:**
+- `docs/design-plans/2026-03-24-maplibre-migration.md`
+- `docs/design-plans/2026-04-03-map-poi.md`
+- `docs/design-plans/2026-04-05-state-park-boundaries.md`
+- `docs/design-plans/2026-04-13-resilient-uploads.md`
+
+---
+
+## 16. Version History
 
 | Version | Date | Changes |
 |---------|------|---------|
-| 2.7 | 2026-03-21 | **WSL2 runtime connection string support:** `Program.cs` checks `WSL_SQL_CONNECTION` environment variable before falling back to `appsettings` `ConnectionStrings:DefaultConnection`. Enables running from WSL2 with TCP/SQL auth without modifying appsettings. |
-| 2.4 | 2026-03-20 | Code Review Fixes (All Issues): Critical #1 - Route ambiguity: token-based GET photos moved to /api/post/{secretToken}/photos (distinct from slug-based). Critical #2 - Original tier no longer resized/lossy: quality 100 at original dimensions, display/thumb tiers still sized (1920px, 300px). Critical #3 - Photo upload error handling: wrapped ProcessAndUploadAsync in try/catch, deletes orphaned DB record if blob upload fails. Important #1 - Real HttpContext: auth endpoints now pass actual context instead of synthetic DefaultHttpContext. Important #2 - EXIF rotation: ApplyExifRotation documented (re-encoding strips EXIF, portrait handling via quality 100 preservation). Important #3 - Rate limiting refactor: extracted INominatimRateLimiter as singleton, eliminates static/scoped tension. Important #5 - Event parameter: copyToClipboard now receives event explicitly. Minor #1 - Build warnings: Fixed CS1998 (removed async from non-awaiting tests), CS8618 (made fields nullable), xUnit1031 (async task test, Task.WaitAll → Task.WhenAll). Minor #2 - Template: deleted UnitTest1.cs. Minor #3 - XSS: escapeHtml() sanitizes caption/placeName in mapUI.js popups. All 106 tests passing, build 0 warnings/errors. |
-| 2.3 | 2026-03-20 | Phase 8, Tasks 1-4: Docker (multi-stage .NET 8 build, port 5100, SkiaSharp Linux assets included), Bicep template (App Service on shared plan, SQL + Blob connection strings, Linux container config), GitHub Actions workflow (build+test → deploy on "deploy" confirm, ACR push, health check), startup migration (auto-migrate on app boot). No Docker/Bicep/workflow verification run per task instructions. All prior tests (81) passing. Ready for deploy approval. |
-| 2.2 | 2026-03-20 | Phase 6, Task 3: Added responsive map view styling. Full-viewport map container (100vh), floating semi-transparent header with trip name (top), floating route toggle button (bottom-right), empty message overlay (center). Leaflet popup customization for images, headings, links. Mobile-first responsive design: mobile (< 480px) compact header/button, tablet (≥ 768px) larger, desktop (≥ 1024px) larger header. All controls accessible and readable at all viewport sizes. Build succeeds. All 81 tests passing. Covers AC3.1-AC3.7 (map view acceptance criteria). |
-| 2.1 | 2026-03-20 | Phase 6, Task 2: Created map view frontend. MapService.js pure data layer (loadTrip, getRouteCoordinates) with zero DOM/Leaflet refs for native portability. MapUI.js Leaflet-specific rendering with marker popups, route toggle, auto-fit bounds. trips.html full-viewport map page with Leaflet CDN (SRI hashes). GET /trips/{slug} route serves trips.html. Features: photo pins at GPS coords, clickable popups with display image/place/caption/timestamp, route polyline toggle connecting pins chronologically, auto-fit bounds with padding, single-pin centering (zoom 13), empty message for zero photos. Covers AC3.1-AC3.7. Build succeeds. All 81 tests passing. |
-| 2.0 | 2026-03-20 | Phase 6, Task 1: Added public trip info and photos endpoints. Created TripResponse DTO. Implemented GET /api/trips/{slug} (public trip metadata with photo count). Implemented GET /api/trips/{slug}/photos (public photo array ordered by TakenAt ascending for route line). Both endpoints require no authentication (AC5.1). Empty photo array returned for trips with no photos (AC3.6). 9 unit tests verify behavior. All 81 tests passing. Covers AC3.1, AC3.6, AC5.1. |
-| 1.9 | 2026-03-20 | Phase 5, Task 2: Created post.html (mobile-first photo posting page) and postUI.js (DOM rendering layer). Features: file input with camera capture, EXIF preview, place name display, pin-drop fallback map for photos without GPS, optional caption input, photo list with delete buttons, toast notifications. Leaflet CDN for map component. Updated styles.css with post page component styles (photo grid, toast animations, responsive). Added GET /post/{secretToken} route in Program.cs. Covers AC2.2 (GPS display), AC2.3 (place name preview), AC2.4 (optional caption), AC2.9 (pin-drop fallback). Build succeeds. |
-| 1.8 | 2026-03-20 | Phase 5, Task 1: Created postService.js pure data/state module with zero DOM references. Implements extractPhotoMetadata() (EXIF + auto-geocoding), uploadPhoto() (FormData with optional caption/timestamp), deletePhoto(), and listPhotos(). Extended api.js with geocode(), uploadPhoto(), deletePhoto(), listTripPhotos() methods. All methods designed for native app reuse. Covers AC2.2 (GPS extraction), AC2.3 (place name resolution), AC2.4 (optional caption). |
-| 1.7 | 2026-03-20 | Phase 5, Task 3: Added GET /api/trips/{secretToken}/photos endpoint for post page photo list. Returns array of PhotoResponse objects ordered by CreatedAt descending. Returns 404 if trip not found. 5 unit tests verify valid token returns photos, empty trip returns empty array, invalid token returns not found, and photos ordered correctly. Tests pass 72/72. |
-| 1.6 | 2026-03-20 | Phase 4, Task 3: Added GET /api/geocode endpoint for reverse geocoding preview. Updated POST /api/trips/{secretToken}/photos to call IGeocodingService after upload. Photos with lat=0, lng=0 get PlaceName="Location not set" (AC2.9). Photos with valid coords get place name from Nominatim or "Unknown location" on failure. Registered geocoding service in Program.cs. 5 unit tests verify endpoint behavior and photo place name assignment. |
-| 1.5 | 2026-03-20 | Phase 4, Task 1: exifr library (45KB UMD) downloaded to wwwroot/lib/exifr/lite.umd.js. Created exifUtil.js wrapper with extractGps, extractTimestamp, extractAll methods for client-side EXIF extraction. Supports AC2.2 GPS coordinate extraction from uploaded photos. |
-| 1.4 | 2026-03-20 | Phase 3, Tasks 1-2: NuGet packages for image processing (SkiaSharp 3.119.2) and Azure Blob Storage (Azure.Storage.Blobs 12.27.0). IAuthStrategy interface and SecretTokenAuthStrategy implementation with DI registration. 6 unit tests verify secret token validation, error handling, and interface compliance. Pluggable auth design supports future strategy swapping without code changes. |
-| 1.3 | 2026-03-20 | Phase 2, Task 3: Landing page (index.html), trip creation form (create.html), mobile-first CSS (styles.css), and API client (api.js). All static files served from wwwroot with responsive design and copy-to-clipboard functionality. |
-| 1.2 | 2026-03-20 | Phase 2, Task 2: POST /api/trips endpoint with validation, slug generation, token creation, and full test coverage (7 tests). |
-| 1.1 | 2026-03-20 | Phase 2, Task 1: SlugHelper utility class and trip creation DTOs (CreateTripRequest, CreateTripResponse) with comprehensive test coverage (15 tests). |
-| 1.0 | 2026-03-19 | Phase 1 infrastructure: project scaffold, entity model, EF Core context, initial migration. |
+| 3.0 | 2026-04-14 | Major rewrite: MapLibre GL JS migration, POI feature, state park boundaries, resilient uploads Phase 1 (request-upload/commit/abort, per-trip containers, dual-read, orphan sweeper, version headers, log sanitization), Bicep reconcile (PR #38), endpoint registry. Purged Leaflet references. |
+| 2.8 | 2026-03-22 | Repo split: standalone Road Trip repository. Dedicated Azure SQL (`sql-roadtripmap-prod` / `roadtripmap-db`). |
+| 2.4 | 2026-03-20 | Code review fixes: route ambiguity, original tier quality, photo upload error handling, HttpContext auth, EXIF rotation, rate limiting refactor. All 106 tests passing. |
+| 2.3 | 2026-03-20 | Phase 8: Docker, Bicep template, GitHub Actions CI/CD, startup migration. |
+| 2.2 | 2026-03-20 | Phase 6, Task 3: Responsive map view styling (migrated from Leaflet to full-viewport map). |
+| 2.1 | 2026-03-20 | Phase 6, Task 2: Map view frontend (MapService + MapUI; Leaflet at the time, later migrated). |
+| 2.0 | 2026-03-20 | Phase 6, Task 1: Public trip info and photos endpoints. |
+| 1.9 | 2026-03-20 | Phase 5, Task 2: post.html + postUI.js, pin-drop map, toast notifications. |
+| 1.8 | 2026-03-20 | Phase 5, Task 1: postService.js pure data module, api.js extensions. |
+| 1.6 | 2026-03-20 | Phase 4, Task 3: Reverse geocoding endpoint, Nominatim integration. |
+| 1.5 | 2026-03-20 | Phase 4, Task 1: exifr library + exifUtil.js wrapper. |
+| 1.4 | 2026-03-20 | Phase 3: SkiaSharp + Azure Blob Storage, IAuthStrategy/SecretTokenAuthStrategy. |
+| 1.1–1.3 | 2026-03-20 | Phase 2: SlugHelper, POST /api/trips, landing page, static files. |

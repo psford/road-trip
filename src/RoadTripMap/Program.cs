@@ -2,11 +2,14 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Azure;
 using RoadTripMap;
+using RoadTripMap.BackgroundJobs;
 using RoadTripMap.Data;
+using RoadTripMap.Endpoints;
 using RoadTripMap.Entities;
 using RoadTripMap.Helpers;
 using RoadTripMap.Models;
 using RoadTripMap.Services;
+using RoadTripMap.Versioning;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -14,19 +17,80 @@ var connectionString = EndpointRegistry.Resolve("database");
 builder.Services.AddDbContext<RoadTripDbContext>(options =>
     options.UseSqlServer(connectionString));
 
+var useDevelopmentStorage = builder.Configuration.GetValue<bool>("Blob:UseDevelopmentStorage");
 var storageConnectionString = builder.Configuration.GetConnectionString("AzureStorage");
-if (!string.IsNullOrEmpty(storageConnectionString))
+
+if (useDevelopmentStorage)
 {
+    // Dev/Azurite: connection string with account key (Azurite doesn't support MSI)
+    storageConnectionString ??= EndpointRegistry.Resolve("blobStorage");
     builder.Services.AddAzureClients(clientBuilder =>
     {
         clientBuilder.AddBlobServiceClient(storageConnectionString);
     });
+
+    var accountName = builder.Configuration.GetValue<string>("Blob:AccountName");
+    var accountKey = builder.Configuration.GetValue<string>("Blob:AccountKey");
+    if (!string.IsNullOrEmpty(accountName) && !string.IsNullOrEmpty(accountKey))
+    {
+        builder.Services.AddSingleton(new Azure.Storage.StorageSharedKeyCredential(accountName, accountKey));
+    }
+}
+else
+{
+    // Production: DefaultAzureCredential (App Service Managed Identity).
+    // No account keys — MSI has Storage Blob Data Contributor on the storage account.
+    // Required for UserDelegationSasIssuer.GetUserDelegationKeyAsync (OAuth only).
+    var storageAccountName = builder.Configuration["Blob:AccountName"];
+    if (!string.IsNullOrEmpty(storageAccountName))
+    {
+        var blobUri = new Uri($"https://{storageAccountName}.blob.core.windows.net");
+        builder.Services.AddAzureClients(clientBuilder =>
+        {
+            clientBuilder.AddBlobServiceClient(blobUri);
+            clientBuilder.UseCredential(new Azure.Identity.DefaultAzureCredential());
+        });
+    }
+    else if (!string.IsNullOrEmpty(storageConnectionString))
+    {
+        // Fallback: connection string without dev storage flag (e.g. test environments).
+        // Upload features requiring user delegation SAS will not work in this mode.
+        builder.Services.AddAzureClients(clientBuilder =>
+        {
+            clientBuilder.AddBlobServiceClient(storageConnectionString);
+        });
+    }
+    // If neither is set (some test configs), blob services are not registered.
+    // Tests that don't exercise blob operations won't need them.
 }
 
 builder.Services.AddSingleton<UploadRateLimiter>();
 builder.Services.AddSingleton<INominatimRateLimiter, NominatimRateLimiter>();
 builder.Services.AddScoped<IAuthStrategy, SecretTokenAuthStrategy>();
 builder.Services.AddScoped<IPhotoService, PhotoService>();
+builder.Services.AddScoped<IPhotoReadService, PhotoReadService>();
+
+// Upload service and SAS token issuance
+builder.Services.AddScoped<IUploadService, UploadService>();
+if (builder.Configuration.GetValue<bool>("Blob:UseDevelopmentStorage"))
+    builder.Services.AddScoped<ISasTokenIssuer, AccountKeySasIssuer>();
+else
+    builder.Services.AddScoped<ISasTokenIssuer, UserDelegationSasIssuer>();
+builder.Services.Configure<UploadOptions>(builder.Configuration.GetSection("Upload"));
+
+// Blob container provisioner for per-trip containers
+builder.Services.AddScoped<IBlobContainerProvisioner, BlobContainerProvisioner>();
+
+// Backfill hosted service for provisioning containers on startup
+if (builder.Configuration.GetValue<bool>("Backfill:RunOnStartup"))
+{
+    builder.Services.AddHostedService<ContainerBackfillHostedService>();
+}
+
+// Orphan sweeper background job - deletes stale pending photos
+builder.Services.AddScoped<IOrphanSweeper, OrphanSweeper>();
+builder.Services.AddHostedService<OrphanSweeperHostedService>();
+
 builder.Services.AddHttpClient<NominatimGeocodingService>();
 builder.Services.AddHttpClient("Overpass", c => {
     c.DefaultRequestHeaders.Add("User-Agent", "RoadTripMap/1.0");
@@ -35,6 +99,9 @@ builder.Services.AddHttpClient("Overpass", c => {
 builder.Services.AddScoped<IGeocodingService, NominatimGeocodingService>();
 
 var app = builder.Build();
+
+// Initialize server version from configuration and assembly metadata
+ServerVersion.Initialize(app.Configuration);
 
 EndpointRegistry.ValidateAll();
 
@@ -65,6 +132,33 @@ using (var scope = app.Services.CreateScope())
 
 // CORS not needed for Phase 1 — frontend served same-origin.
 // If native apps need cross-origin API access later, add CORS policy here.
+
+// Correlation ID middleware — generates x-correlation-id header on each request
+app.Use(async (context, next) =>
+{
+    var correlationId = context.Request.Headers["x-correlation-id"].FirstOrDefault() ?? Guid.NewGuid().ToString();
+    context.Items["CorrelationId"] = correlationId;
+
+    context.Response.OnStarting(() =>
+    {
+        context.Response.Headers["x-correlation-id"] = correlationId;
+        return Task.CompletedTask;
+    });
+
+    await next();
+});
+
+// Version headers middleware — must be before exception handler so headers survive error path
+app.Use(async (context, next) =>
+{
+    context.Response.OnStarting(() =>
+    {
+        context.Response.Headers["x-server-version"] = ServerVersion.Current;
+        context.Response.Headers["x-client-min-version"] = ServerVersion.ClientMin;
+        return Task.CompletedTask;
+    });
+    await next();
+});
 
 // Global exception handler middleware (returns 500 with generic error message, no stack trace)
 app.Use(async (context, next) =>
@@ -98,8 +192,53 @@ var contentTypeProvider = new Microsoft.AspNetCore.StaticFiles.FileExtensionCont
 contentTypeProvider.Mappings[".geojson"] = "application/geo+json";
 app.UseStaticFiles(new StaticFileOptions { ContentTypeProvider = contentTypeProvider });
 
+// Middleware to inject feature flags into post.html before returning it.
+// Only intercepts exact /post/{token} page requests (not /api/post/* routes).
+app.Use(async (context, next) =>
+{
+    var path = context.Request.Path.Value ?? "";
+    var isPostPage = path.StartsWith("/post/", StringComparison.OrdinalIgnoreCase)
+        && !path.StartsWith("/api/", StringComparison.OrdinalIgnoreCase);
+
+    if (isPostPage)
+    {
+        var originalBodyStream = context.Response.Body;
+        var memoryStream = new MemoryStream();
+        context.Response.Body = memoryStream;
+
+        await next();
+
+        memoryStream.Position = 0;
+        var reader = new StreamReader(memoryStream);
+        var content = await reader.ReadToEndAsync();
+
+        // Inject feature flags into the meta tag
+        var resilientUploadsUI = app.Configuration.GetValue<bool>("FeatureFlags:ResilientUploadsUI");
+        content = content.Replace(
+            """<meta id="featureFlags" data-resilient-uploads-ui="">""",
+            $"""<meta id="featureFlags" data-resilient-uploads-ui="{resilientUploadsUI.ToString().ToLower()}">""");
+
+        // Inject client-processing-enabled meta tag
+        var clientProcessingEnabled = app.Configuration.GetValue<bool>("Upload:ClientSideProcessingEnabled", false);
+        content = content.Replace(
+            "</head>",
+            $"""<meta name="client-processing-enabled" content="{clientProcessingEnabled.ToString().ToLower()}"></head>""");
+
+        var bytes = System.Text.Encoding.UTF8.GetBytes(content);
+        context.Response.ContentLength = bytes.Length;
+        await originalBodyStream.WriteAsync(bytes, 0, bytes.Length);
+        context.Response.Body = originalBodyStream;
+    }
+    else
+    {
+        await next();
+    }
+});
 
 app.MapGet("/api/health", () => Results.Ok(new { status = "healthy" }));
+
+app.MapGet("/api/version", () =>
+    Results.Ok(new { server_version = ServerVersion.Current, client_min_version = ServerVersion.ClientMin }));
 
 app.MapGet("/api/geocode", async (double? lat, double? lng, IGeocodingService geocodingService) =>
 {
@@ -186,7 +325,7 @@ app.MapGet("/api/trips/view/{viewToken}/photos", async (string viewToken, RoadTr
     return Results.Ok(photos);
 });
 
-app.MapPost("/api/trips", async (CreateTripRequest request, RoadTripDbContext db) =>
+app.MapPost("/api/trips", async (CreateTripRequest request, RoadTripDbContext db, IBlobContainerProvisioner provisioner, ILogger<Program> logger, HttpContext context) =>
 {
     // Validate trip name
     if (string.IsNullOrWhiteSpace(request.Name))
@@ -219,6 +358,19 @@ app.MapPost("/api/trips", async (CreateTripRequest request, RoadTripDbContext db
     db.Trips.Add(trip);
     await db.SaveChangesAsync();
 
+    // Provision per-trip blob container (after trip is saved; do NOT roll back trip row on provisioner failure)
+    try
+    {
+        await provisioner.EnsureContainerAsync(secretToken, context.RequestAborted);
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "Failed to provision blob container for trip {trip_token_prefix}",
+            RoadTripMap.Security.LogSanitizer.SanitizeToken(secretToken));
+        // Return 500 but do not roll back the trip row
+        return Results.StatusCode(500);
+    }
+
     // Return response with URLs
     var response = new CreateTripResponse
     {
@@ -230,6 +382,60 @@ app.MapPost("/api/trips", async (CreateTripRequest request, RoadTripDbContext db
     };
 
     return Results.Ok(response);
+});
+
+// DELETE /api/trips/{secretToken} — Delete trip
+app.MapDelete("/api/trips/{secretToken}", async (string secretToken, RoadTripDbContext db, IBlobContainerProvisioner provisioner, IPhotoService photoService, IAuthStrategy authStrategy, ILogger<Program> logger, HttpContext context) =>
+{
+    // Look up trip by secret token
+    var trip = await db.Trips.FirstOrDefaultAsync(t => t.SecretToken == secretToken);
+    if (trip == null)
+        return Results.NotFound(new { error = "Trip not found" });
+
+    // Validate auth
+    var authResult = await authStrategy.ValidatePostAccess(context, trip);
+    if (!authResult.IsAuthorized)
+        return Results.Unauthorized();
+
+    // Delete legacy blobs (existing code path)
+    var legacyPhotos = await db.Photos.Where(p => p.TripId == trip.Id && p.StorageTier == "legacy").ToListAsync();
+    foreach (var photo in legacyPhotos)
+    {
+        if (!string.IsNullOrEmpty(photo.BlobPath))
+        {
+            try
+            {
+                await photoService.DeletePhotoAsync(photo.BlobPath);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Failed to delete legacy blob for photo {photo_id}", photo.Id);
+            }
+        }
+    }
+
+    // Delete per-trip container
+    try
+    {
+        await provisioner.DeleteContainerAsync(secretToken, context.RequestAborted);
+    }
+    catch (Exception ex)
+    {
+        logger.LogWarning(ex, "Failed to delete blob container for trip {trip_token_prefix}",
+            RoadTripMap.Security.LogSanitizer.SanitizeToken(secretToken));
+    }
+
+    // Delete trip and all associated photos
+    db.Trips.Remove(trip);
+    var allPhotos = await db.Photos.Where(p => p.TripId == trip.Id).ToListAsync();
+    foreach (var photo in allPhotos)
+    {
+        db.Photos.Remove(photo);
+    }
+
+    await db.SaveChangesAsync();
+
+    return Results.NoContent();
 });
 
 // POST /api/trips/{secretToken}/photos — Upload photo
@@ -278,7 +484,9 @@ app.MapPost("/api/trips/{secretToken}/photos", async (string secretToken, IFormF
         Caption = caption,
         TakenAt = takenAt,
         PlaceName = null, // Will be set by geocoding
-        BlobPath = "" // Placeholder, will be set after upload
+        BlobPath = "", // Placeholder, will be set after upload
+        Status = "committed",
+        StorageTier = "legacy"
     };
 
     db.Photos.Add(photo);
@@ -353,34 +561,17 @@ app.MapGet("/api/post/{secretToken}", async (string secretToken, RoadTripDbConte
 });
 
 // GET /api/post/{secretToken}/photos — Get photos for a trip (distinct from slug-based endpoint)
-app.MapGet("/api/post/{secretToken}/photos", async (string secretToken, RoadTripDbContext db) =>
+app.MapGet("/api/post/{secretToken}/photos", async (string secretToken, IPhotoReadService photoReadService, HttpContext context) =>
 {
-    // Look up trip by secret token
-    var trip = await db.Trips.FirstOrDefaultAsync(t => t.SecretToken == secretToken);
-    if (trip == null)
+    try
+    {
+        var photos = await photoReadService.GetPhotosForTripAsync(secretToken, context.RequestAborted);
+        return Results.Ok(photos);
+    }
+    catch (KeyNotFoundException)
+    {
         return Results.NotFound(new { error = "Trip not found" });
-
-    // Query photos, ordered by takenAt ascending (chronological)
-    // Nulls sort last: OrderBy(p => p.TakenAt == null) returns false (0) for non-null, true (1) for null
-    var photos = await db.Photos
-        .Where(p => p.TripId == trip.Id)
-        .OrderBy(p => p.TakenAt == null)
-        .ThenBy(p => p.TakenAt)
-        .Select(p => new PhotoResponse
-        {
-            Id = p.Id,
-            ThumbnailUrl = $"/api/photos/{trip.Id}/{p.Id}/thumb",
-            DisplayUrl = $"/api/photos/{trip.Id}/{p.Id}/display",
-            OriginalUrl = $"/api/photos/{trip.Id}/{p.Id}/original",
-            Lat = p.Latitude,
-            Lng = p.Longitude,
-            PlaceName = p.PlaceName ?? "",
-            Caption = p.Caption,
-            TakenAt = p.TakenAt
-        })
-        .ToListAsync();
-
-    return Results.Ok(photos);
+    }
 });
 
 // DELETE /api/trips/{secretToken}/photos/{id} — Delete photo
@@ -461,13 +652,16 @@ app.MapGet("/api/photos/{tripId:int}/{photoId:int}/{size}", async (int tripId, i
     if (!validSizes.Contains(size))
         return Results.BadRequest(new { error = "Invalid size. Must be one of: original, display, thumb" });
 
-    // Look up photo in database
-    var photo = await db.Photos.FirstOrDefaultAsync(p => p.TripId == tripId && p.Id == photoId);
+    // Look up photo in database, including Trip details for per-trip storage tier resolution
+    var photo = await db.Photos
+        .Include(p => p.Trip)
+        .FirstOrDefaultAsync(p => p.TripId == tripId && p.Id == photoId);
     if (photo == null)
         return Results.NotFound(new { error = "Photo not found" });
 
-    // Get photo stream from blob storage using stored path
-    var stream = await photoService.GetPhotoAsync(photo.BlobPath, size);
+    // Get photo stream from blob storage, using storage tier to determine container
+    var containerName = photo.StorageTier == "per-trip" ? $"trip-{photo.Trip!.SecretToken.ToLowerInvariant()}" : null;
+    var stream = await photoService.GetPhotoAsync(photo.BlobPath, size, photo.StorageTier, containerName);
 
     // Photos are immutable — cache aggressively (1 year)
     context.Response.Headers.CacheControl = "public, max-age=31536000, immutable";
@@ -754,6 +948,9 @@ async Task<int> FetchOverpassForViewport(
 
     return totalInserted;
 }
+
+// Map resilient upload endpoints (request-upload, commit, abort)
+app.MapUploadEndpoints();
 
 app.Run();
 

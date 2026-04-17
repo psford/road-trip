@@ -29,3 +29,5 @@ node_modules/
 
 ## Worktrees
 .worktrees/
+build_output.log
+test-output.log

@@ -1423,3 +1423,261 @@ body.map-page .maplibregl-ctrl-top-left {
   align-items: center;
   justify-content: center;
 }
+
+/* Progress Panel */
+.upload-panel {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  margin-bottom: var(--space-md);
+  overflow: hidden;
+}
+
+.upload-panel__header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-sm);
+  background-color: var(--color-bg);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.upload-panel__toggle {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  font-size: 1rem;
+  color: var(--color-text);
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.upload-panel__toggle:hover {
+  color: var(--color-primary);
+}
+
+.upload-panel__title {
+  margin: 0;
+  font-size: 1rem;
+  color: var(--color-text);
+  font-weight: 600;
+}
+
+.upload-panel__body {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.upload-panel__row {
+  display: grid;
+  grid-template-columns: 24px 1fr auto auto;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-sm);
+  border-bottom: 1px solid var(--color-border);
+  font-size: 0.95rem;
+}
+
+.upload-panel__row:last-child {
+  border-bottom: none;
+}
+
+.upload-panel__row[data-status="failed"] {
+  background-color: var(--color-error-bg);
+}
+
+.upload-panel__icon {
+  font-weight: bold;
+  text-align: center;
+  width: 24px;
+}
+
+.upload-panel__row[data-status="pending"] .upload-panel__icon {
+  color: var(--color-text-light);
+}
+
+.upload-panel__row[data-status="uploading"] .upload-panel__icon {
+  color: var(--color-primary);
+}
+
+.upload-panel__row[data-status="committed"] .upload-panel__icon {
+  color: var(--color-success);
+}
+
+.upload-panel__row[data-status="failed"] .upload-panel__icon {
+  color: var(--color-error);
+}
+
+.upload-panel__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.upload-panel__filename {
+  font-weight: 500;
+  color: var(--color-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.upload-panel__size {
+  font-size: 0.85rem;
+  color: var(--color-text-light);
+}
+
+.upload-panel__progress {
+  grid-column: 2;
+  height: 4px;
+  background-color: var(--color-border);
+  border-radius: 2px;
+  overflow: hidden;
+  display: none;
+}
+
+.upload-panel__row[data-status="uploading"] .upload-panel__progress {
+  display: block;
+}
+
+.upload-panel__progress-fill {
+  height: 100%;
+  background-color: var(--color-primary);
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+
+.upload-panel__status {
+  grid-column: 3;
+  font-size: 0.85rem;
+  color: var(--color-text-light);
+}
+
+.upload-panel__actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  grid-column: 4;
+}
+
+.upload-panel__retry,
+.upload-panel__pin-drop,
+.upload-panel__discard {
+  background: none;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 4px 8px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  color: var(--color-text);
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.upload-panel__retry:hover,
+.upload-panel__pin-drop:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.upload-panel__discard:hover {
+  border-color: var(--color-error);
+  color: var(--color-error);
+}
+
+.upload-panel__failed-reason {
+  grid-column: 2 / -1;
+  font-size: 0.85rem;
+  color: var(--color-error);
+  margin-top: 4px;
+}
+
+/* Resume Banner — Non-terminal upload notification */
+.resume-banner {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  background-color: var(--color-warning-bg, rgba(255, 193, 7, 0.1));
+  border-bottom: 2px solid var(--color-warning, #ffc107);
+  padding: var(--space-sm);
+  animation: slideDown 0.3s ease-out;
+}
+
+@keyframes slideDown {
+  from {
+    transform: translateY(-100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.resume-banner__content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  max-width: 1200px;
+  margin: 0 auto;
+  flex-wrap: wrap;
+}
+
+.resume-banner__message {
+  font-weight: 500;
+  color: var(--color-text);
+  flex: 1;
+  min-width: 200px;
+}
+
+.resume-banner__buttons {
+  display: flex;
+  gap: var(--space-xs, 8px);
+  flex-wrap: wrap;
+}
+
+.resume-banner__resume,
+.resume-banner__retry-failed,
+.resume-banner__discard-all {
+  background-color: var(--color-primary);
+  color: white;
+  border: none;
+  border-radius: var(--radius);
+  padding: 6px 12px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.resume-banner__resume:hover,
+.resume-banner__retry-failed:hover {
+  background-color: var(--color-primary-dark, #1976d2);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.resume-banner__discard-all {
+  background-color: var(--color-error);
+}
+
+.resume-banner__discard-all:hover {
+  background-color: var(--color-error-dark, #d32f2f);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.resume-banner__resume:active,
+.resume-banner__retry-failed:active,
+.resume-banner__discard-all:active {
+  transform: scale(0.98);
+}
