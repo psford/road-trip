@@ -85,6 +85,15 @@ const ProgressPanel = (() => {
 
         // Update icon and status text based on status
         switch (status) {
+            case 'processing':
+                icon.textContent = '⏳';
+                statusSpan.textContent = 'Processing\u2026';
+                retryBtn.hidden = true;
+                pinDropBtn.hidden = true;
+                discardBtn.hidden = true;
+                failedReason.hidden = true;
+                break;
+
             case 'pending':
                 icon.textContent = '◻';
                 statusSpan.textContent = 'Queued';
@@ -114,7 +123,13 @@ const ProgressPanel = (() => {
 
             case 'failed':
                 icon.textContent = '✕';
-                statusSpan.textContent = data.reason === 'retryExhausted' ? 'Failed' : 'Failed (retrying...)';
+
+                // Check if we have a custom statusText (e.g., for processing failures)
+                if (data.statusText) {
+                    statusSpan.textContent = data.statusText;
+                } else {
+                    statusSpan.textContent = data.reason === 'retryExhausted' ? 'Failed' : 'Failed (retrying...)';
+                }
 
                 const hasGps = data.exif && data.exif.gps;
 
@@ -122,8 +137,13 @@ const ProgressPanel = (() => {
                     retryBtn.hidden = true;
                     failedReason.textContent = 'gave up after 6 attempts';
                     failedReason.hidden = false;
-                } else {
+                } else if (!data.statusText) {
+                    // Only show "retrying" for upload-phase failures
                     retryBtn.hidden = false;
+                    failedReason.hidden = true;
+                } else {
+                    // Processing-phase failure: no retry button
+                    retryBtn.hidden = true;
                     failedReason.hidden = true;
                 }
 
@@ -174,6 +194,13 @@ const ProgressPanel = (() => {
     }
 
     // Event handlers
+    function handlePreparing(e) {
+        const { uploadId, fileName } = e.detail;
+        const row = getOrCreateRow(uploadId);
+        row.querySelector('.upload-panel__filename').textContent = fileName;
+        updateRow(uploadId, 'processing');
+    }
+
     function handleCreated(e) {
         const { uploadId, filename, size, exif } = e.detail;
         const row = getOrCreateRow(uploadId);
@@ -199,13 +226,17 @@ const ProgressPanel = (() => {
     }
 
     function handleFailed(e) {
-        const { uploadId, reason, exif } = e.detail;
+        const { uploadId, reason, exif, phase, error } = e.detail;
         if (reason === 'aborted') {
             // Handle abort separately
             handleAborted(e);
             return;
         }
-        updateRow(uploadId, 'failed', { reason, exif });
+        const failureData = { reason, exif };
+        if (phase === 'processing') {
+            failureData.statusText = `Processing failed: ${error}`;
+        }
+        updateRow(uploadId, 'failed', failureData);
     }
 
     function handleAborted(e) {
@@ -257,6 +288,7 @@ const ProgressPanel = (() => {
             restoreCollapsedState();
 
             // Register event listeners
+            document.addEventListener('upload:preparing', handlePreparing);
             document.addEventListener('upload:created', handleCreated);
             document.addEventListener('upload:progress', handleProgress);
             document.addEventListener('upload:committed', handleCommitted);
@@ -273,6 +305,7 @@ const ProgressPanel = (() => {
             }
 
             // Unregister event listeners
+            document.removeEventListener('upload:preparing', handlePreparing);
             document.removeEventListener('upload:created', handleCreated);
             document.removeEventListener('upload:progress', handleProgress);
             document.removeEventListener('upload:committed', handleCommitted);

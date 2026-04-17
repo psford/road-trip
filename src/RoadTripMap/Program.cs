@@ -218,6 +218,12 @@ app.Use(async (context, next) =>
             """<meta id="featureFlags" data-resilient-uploads-ui="">""",
             $"""<meta id="featureFlags" data-resilient-uploads-ui="{resilientUploadsUI.ToString().ToLower()}">""");
 
+        // Inject client-processing-enabled meta tag
+        var clientProcessingEnabled = app.Configuration.GetValue<bool>("Upload:ClientSideProcessingEnabled", false);
+        content = content.Replace(
+            "</head>",
+            $"""<meta name="client-processing-enabled" content="{clientProcessingEnabled.ToString().ToLower()}"></head>""");
+
         var bytes = System.Text.Encoding.UTF8.GetBytes(content);
         context.Response.ContentLength = bytes.Length;
         await originalBodyStream.WriteAsync(bytes, 0, bytes.Length);

@@ -5,14 +5,44 @@
 import 'fake-indexeddb/auto';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
+import { vi } from 'vitest';
 
 const wwwroot = resolve(process.cwd(), 'src/RoadTripMap/wwwroot/js');
+
+// Store for mocked CDN imports (will be populated by tests)
+globalThis._testCdnMocks = {};
 
 function loadGlobal(filename) {
     const code = readFileSync(resolve(wwwroot, filename), 'utf-8');
     // Execute in global scope so declarations become global
     // Convert const X = {...} to globalThis.X = {...}
     let modifiedCode = code.replace(/^const (\w+) = /gm, 'globalThis.$1 = ');
+
+    // For imageProcessor.js, patch the import calls to use a mock resolver
+    if (filename === 'imageProcessor.js') {
+        // Replace dynamic import calls with a function that checks mocks first
+        modifiedCode = modifiedCode.replace(
+            /import\((.*?)\)/g,
+            'globalThis._mockableImport($1)'
+        );
+
+        // Inject test-only methods into the return statement
+        modifiedCode = modifiedCode.replace(
+            'return { processForUpload };',
+            `return {
+        processForUpload,
+        _resetProcessingFlag() {
+            _processingEnabled = null;
+        },
+        _resetLazyLoaders() {
+            _browserImageCompressionPromise = null;
+            _piexifjsPromise = null;
+            _heic2anyPromise = null;
+        }
+    };`
+        );
+    }
+
     // Execute in eval to ensure true global scope
     eval(modifiedCode);
 }
@@ -36,6 +66,15 @@ beforeAll(() => {
         globalThis.performance = { now: () => Date.now() };
     }
 
+    // Setup mockable import function for testing
+    globalThis._mockableImport = async (specifier) => {
+        if (globalThis._testCdnMocks && globalThis._testCdnMocks[specifier]) {
+            return globalThis._testCdnMocks[specifier];
+        }
+        // Fall through to actual import
+        return import(specifier);
+    };
+
     // Load modules
     loadGlobal('featureFlags.js');
     loadGlobal('api.js');
@@ -46,6 +85,7 @@ beforeAll(() => {
     loadGlobal('uploadTelemetry.js');
     loadGlobal('uploadTransport.js');
     loadGlobal('versionProtocol.js');
+    loadGlobal('imageProcessor.js');
     loadGlobal('uploadQueue.js');
     loadGlobal('progressPanel.js');
     loadGlobal('resumeBanner.js');

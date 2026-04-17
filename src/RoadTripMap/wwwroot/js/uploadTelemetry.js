@@ -140,5 +140,36 @@ const UploadTelemetry = {
             uploadId,
             remainingBlocks
         });
+    },
+
+    /**
+     * Record processing.applied event
+     * @param {string} uploadId - Upload ID
+     * @param {Object} details - { compressionApplied, heicConverted, originalBytes, outputBytes, durationMs }
+     */
+    recordProcessingApplied(uploadId, details) {
+        this.record('processing.applied', {
+            uploadId,
+            compressionApplied: details.compressionApplied,
+            heicConverted: details.heicConverted,
+            originalBytes: details.originalBytes,
+            outputBytes: details.outputBytes,
+            durationMs: details.durationMs,
+            reductionPercent: details.originalBytes > 0
+                ? Math.round((1 - details.outputBytes / details.originalBytes) * 100)
+                : 0,
+        });
+    },
+
+    /**
+     * Record processing.failed event
+     * @param {string} uploadId - Upload ID
+     * @param {string} errorMessage - Error message
+     */
+    recordProcessingFailed(uploadId, errorMessage) {
+        this.record('processing.failed', {
+            uploadId,
+            error: errorMessage,
+        });
     }
 };

@@ -379,6 +379,144 @@ public class UploadEndpointHttpTests : IAsyncLifetime
         realTrip.Should().NotBeNull("unknown-token DELETE must not touch any real trip (C3)");
     }
 
+    [Fact]
+    public async Task RequestUpload_Returns3SasUrls()
+    {
+        // AC5.1 coverage: request-upload returns tier SAS URLs
+        var uploadId = Guid.NewGuid();
+        var resp = await _client.PostAsJsonAsync(
+            $"/api/trips/{_tripSecretToken}/photos/request-upload",
+            new RequestUploadRequest
+            {
+                UploadId = uploadId, Filename = "tier.jpg", ContentType = "image/jpeg", SizeBytes = 1024,
+            });
+
+        resp.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await resp.Content.ReadFromJsonAsync<RequestUploadResponse>();
+        body.Should().NotBeNull();
+        body!.SasUrl.Should().NotBeNullOrEmpty();
+        body!.DisplaySasUrl.Should().NotBeNullOrEmpty();
+        body!.ThumbSasUrl.Should().NotBeNullOrEmpty();
+        body!.DisplaySasUrl.Should().Contain("_display.jpg");
+        body!.ThumbSasUrl.Should().Contain("_thumb.jpg");
+    }
+
+    [Fact]
+    public async Task Commit_WithClientTiers_SkipsServerSideTierGeneration()
+    {
+        // AC5.4, AC5.5 coverage: when client uploads tier blobs, server skips GenerateDerivedTiersAsync
+        var uploadId = Guid.NewGuid();
+
+        // Request upload
+        var reqResp = await _client.PostAsJsonAsync(
+            $"/api/trips/{_tripSecretToken}/photos/request-upload",
+            new RequestUploadRequest
+            {
+                UploadId = uploadId, Filename = "with-tiers.jpg", ContentType = "image/jpeg", SizeBytes = 1024,
+            });
+        reqResp.StatusCode.Should().Be(HttpStatusCode.OK);
+        var reqBody = (await reqResp.Content.ReadFromJsonAsync<RequestUploadResponse>())!;
+
+        // Upload original blocks
+        var blockClient = new BlockBlobClient(new Uri(reqBody.SasUrl));
+        var blockIds = new List<string>();
+        for (int i = 0; i < 2; i++)
+        {
+            var id = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes($"blk-{i:D4}"));
+            blockIds.Add(id);
+            await blockClient.StageBlockAsync(id, new MemoryStream(new byte[50]));
+        }
+
+        // Upload tier blobs directly to the container
+        var containerClient = _factory.Services.CreateScope()
+            .ServiceProvider.GetRequiredService<BlobServiceClient>()
+            .GetBlobContainerClient($"trip-{_tripSecretToken.ToLowerInvariant()}");
+
+        var displayBlob = containerClient.GetBlobClient($"{uploadId}_display.jpg");
+        var thumbBlob = containerClient.GetBlobClient($"{uploadId}_thumb.jpg");
+
+        var fakeTierData = new MemoryStream(new byte[] { 0xFF, 0xD8 }); // JPEG magic bytes
+        await displayBlob.UploadAsync(fakeTierData, overwrite: true);
+        fakeTierData.Position = 0;
+        await thumbBlob.UploadAsync(fakeTierData, overwrite: true);
+
+        // Commit
+        var commitResp = await _client.PostAsJsonAsync(
+            $"/api/trips/{_tripSecretToken}/photos/{uploadId}/commit",
+            new CommitRequest { BlockIds = blockIds });
+
+        commitResp.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        // Verify no warning about missing tiers was logged
+        var joined = string.Join("\n", _logs.Records.Select(r => r.Formatted + " " + (r.Exception?.ToString() ?? "")));
+        joined.Should().NotContain("Client did not upload tier blobs",
+            "when both tier blobs exist, server must skip generation and not log fallback warning");
+    }
+
+    [Fact]
+    public async Task Commit_WithoutClientTiers_FallsBackToServerGeneration()
+    {
+        // AC5.5, ACX.3 coverage: when client doesn't upload tiers, server generates them as fallback
+        var uploadId = Guid.NewGuid();
+
+        // Request upload
+        var reqResp = await _client.PostAsJsonAsync(
+            $"/api/trips/{_tripSecretToken}/photos/request-upload",
+            new RequestUploadRequest
+            {
+                UploadId = uploadId, Filename = "no-tiers.jpg", ContentType = "image/jpeg", SizeBytes = 1024,
+            });
+        reqResp.StatusCode.Should().Be(HttpStatusCode.OK);
+        var reqBody = (await reqResp.Content.ReadFromJsonAsync<RequestUploadResponse>())!;
+
+        // Upload original blocks (but skip tier upload)
+        var blockClient = new BlockBlobClient(new Uri(reqBody.SasUrl));
+        var blockIds = new List<string>();
+        for (int i = 0; i < 2; i++)
+        {
+            var id = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes($"blk-{i:D4}"));
+            blockIds.Add(id);
+            await blockClient.StageBlockAsync(id, new MemoryStream(new byte[50]));
+        }
+
+        // Commit WITHOUT uploading tier blobs
+        var commitResp = await _client.PostAsJsonAsync(
+            $"/api/trips/{_tripSecretToken}/photos/{uploadId}/commit",
+            new CommitRequest { BlockIds = blockIds });
+
+        commitResp.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        // Verify fallback warning was logged
+        var joined = string.Join("\n", _logs.Records.Select(r => r.Formatted + " " + (r.Exception?.ToString() ?? "")));
+        joined.Should().Contain("Client did not upload tier blobs",
+            "when tiers are missing, server must log fallback to generation (ACX.3)");
+    }
+
+    [Fact]
+    public async Task RequestUpload_LogsDoNotContain3SasSignatures()
+    {
+        // ACX.1 coverage: all 3 SAS URLs must not appear in logs
+        _logs.Records.Clear();
+
+        var uploadId = Guid.NewGuid();
+        var resp = await _client.PostAsJsonAsync(
+            $"/api/trips/{_tripSecretToken}/photos/request-upload",
+            new RequestUploadRequest
+            {
+                UploadId = uploadId, Filename = "no-sas-in-logs.jpg", ContentType = "image/jpeg", SizeBytes = 10,
+            });
+        resp.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var body = await resp.Content.ReadFromJsonAsync<RequestUploadResponse>();
+        body.Should().NotBeNull();
+
+        var joined = string.Join("\n", _logs.Records.Select(r => r.Formatted + " " + (r.Exception?.ToString() ?? "")));
+
+        // ACX.1: all SAS signatures must be redacted
+        joined.Should().NotContain("sig=",
+            "SAS signature query parameter must not appear in logs (ACX.1)");
+    }
+
     private static void AssertVersionHeaders(HttpResponseMessage response)
     {
         response.Headers.Should().Contain(h => h.Key == "x-server-version");

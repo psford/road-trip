@@ -1,6 +1,6 @@
 # Road Trip Photo Map
 
-Last verified: 2026-04-14
+Last verified: 2026-04-17
 
 ## Purpose
 
@@ -35,8 +35,8 @@ Mobile-first road trip photo sharing app. Users create a trip, get two secret li
   - All responses include `x-server-version` and `x-client-min-version` headers (resilient-uploads client protocol gate)
   - Geocoding via Nominatim with 1req/sec rate limit and DB cache
   - Upload rate limited to 20/hr per IP (legacy form-POST endpoint `POST /api/trips/{token}/photos`)
-  - Resilient upload flow (Phase 1, backend only — client phases 2–7 pending):
-    - `POST /api/trips/{secretToken}/photos/request-upload` → `RequestUploadResponse` with SAS URL, `BlobPath`, and current server version. Idempotent on `UploadId` Guid. SAS TTL 2 hours.
+  - Resilient upload flow (Phases 1-5 implemented; Phase 5 = client-side image processing, dark-released behind `Upload:ClientSideProcessingEnabled`):
+    - `POST /api/trips/{secretToken}/photos/request-upload` → `RequestUploadResponse` with 3 SAS URLs (`sasUrl` for original, `displaySasUrl`, `thumbSasUrl`), `BlobPath`, and current server version. Idempotent on `UploadId` Guid. SAS TTL 2 hours. Display/thumb SAS URLs target `{uploadId}_display.jpg` and `{uploadId}_thumb.jpg` blobs.
     - Client PUTs blocks directly to Azure using the returned SAS.
     - `POST /api/trips/{secretToken}/photos/{photoId:guid}/commit` → `PhotoResponse`, 400 on `BlockListMismatch`, 404 cross-trip.
     - `POST /api/trips/{secretToken}/photos/{photoId:guid}/abort` → 204 (idempotent).
@@ -66,13 +66,14 @@ Mobile-first road trip photo sharing app. Users create a trip, get two secret li
 - **No SPA framework**: Static HTML pages served same-origin; keeps bundle zero
 - **MapLibre GL JS over Leaflet**: Leaflet had an unfixed popup auto-pan bug on mobile (popup overflow behind header). MapLibre handles popup positioning natively, supports vector tiles, and eliminates the manual pan workaround.
 - **EndpointRegistry over direct env vars**: All connection strings and API keys resolved via `EndpointRegistry.Resolve()` backed by `endpoints.json`. Centralizes endpoint management, supports Key Vault resolution in prod, and enables schema validation via claude-env hooks.
-- **Direct-to-blob resilient uploads (Phase 1 design `2026-04-13-resilient-uploads`)**: Clients get a user-delegation SAS (prod) / account-key SAS (Azurite dev) and upload blocks directly to Azure instead of streaming through the API. Survives network churn, avoids the API server memory ceiling on large uploads, and is the foundation for background uploads in native apps (phases 5–7).
+- **Direct-to-blob resilient uploads (Phase 1 design `2026-04-13-resilient-uploads`)**: Clients get a user-delegation SAS (prod) / account-key SAS (Azurite dev) and upload blocks directly to Azure instead of streaming through the API. Survives network churn, avoids the API server memory ceiling on large uploads, and is the foundation for background uploads in native apps (phases 6–7).
+- **Client-side image processing (Phase 5)**: When `Upload:ClientSideProcessingEnabled=true`, the client compresses oversize images (>14 MB) and generates display (1920px) and thumb (300px) tiers before upload, reducing server CPU. Uses lazy-loaded CDN libs (browser-image-compression, piexifjs, heic2any). Dark-released: `false` in prod appsettings, `true` in dev. Server `CommitAsync` detects missing tier blobs and falls back to server-side generation, so the feature is fully backward-compatible.
 - **Client-provided UploadId as the correlation key**: `RequestUploadResponse.PhotoId` is the same Guid the client sent as `UploadId`. Enables idempotency (duplicate POST returns existing row) and consistent identifiers between request-upload and commit. The EF entity's `int Id` is distinct from this Guid and exposed as `PhotoResponse.id`.
 - **Log sanitization via `LogSanitizer`**: Every logger call touching trip tokens, blob paths, SAS URLs, or GPS coordinates goes through `src/RoadTripMap/Security/LogSanitizer.cs`. Never log raw secret values. Enforced by captured-log assertions in `UploadEndpointHttpTests`.
 
 ## Invariants
 
-- Photos always have all 3 blob tiers (original, display, thumb)
+- Photos always have all 3 blob tiers (original, display, thumb). Tiers may be client-generated (uploaded via display/thumb SAS URLs) or server-generated (fallback in `CommitAsync` when client tier blobs are missing)
 - Blob containers are PRIVATE (PublicAccessType.None); photos served via proxy endpoint. Container naming: legacy `road-trip-photos` OR per-trip `trip-{secretToken.ToLowerInvariant()}`
 - Trip slugs are unique, lowercase alphanumeric with hyphens, max 200 chars
 - Two tokens per trip: SecretToken (upload access via `/post/{token}`), ViewToken (view-only via `/trips/{token}`) — both GUIDs, both unique-indexed
@@ -96,7 +97,7 @@ Mobile-first road trip photo sharing app. Users create a trip, get two secret li
 - `src/RoadTripMap/Services/IAuthStrategy.cs` -- Auth abstraction (upgradeable)
 - `src/RoadTripMap/Services/PhotoService.cs` -- Image processing + legacy blob storage (`road-trip-photos` container)
 - `src/RoadTripMap/Services/PhotoReadService.cs` -- Dual-read photo listing (legacy + per-trip tiers merged in one response)
-- `src/RoadTripMap/Services/UploadService.cs` -- Resilient upload orchestration (idempotent request, block-list validation on commit, EXIF persistence, reverse geocode on commit)
+- `src/RoadTripMap/Services/UploadService.cs` -- Resilient upload orchestration (idempotent request with 3 SAS URLs, block-list validation on commit, conditional server-side tier generation, EXIF persistence, reverse geocode on commit)
 - `src/RoadTripMap/Services/ISasTokenIssuer.cs` + `UserDelegationSasIssuer.cs` / `AccountKeySasIssuer.cs` -- SAS minting; user-delegation in prod, account-key for Azurite
 - `src/RoadTripMap/Services/BlobContainerProvisioner.cs` -- Per-trip container creation with naming validation
 - `src/RoadTripMap/Services/NominatimGeocodingService.cs` -- Reverse geocoding with cache
@@ -109,7 +110,8 @@ Mobile-first road trip photo sharing app. Users create a trip, get two secret li
 - `src/RoadTripMap/wwwroot/js/parkStyle.js` -- MapTiler park polygon restyling
 - `src/RoadTripMap/wwwroot/js/stateParkLayer.js` -- State park boundary polygon rendering (fill, outline, dots, labels, adaptive detail, predictive prefetch)
 - `src/RoadTripMap/wwwroot/js/mapCache.js` -- IndexedDB persistent cache for map data (boundaries, POIs)
-- `src/RoadTripMap/wwwroot/js/uploadQueue.js` -- Client-side upload state machine skeleton (Phase 1 scaffolding; full resilient flow lands in Phases 2–4)
+- `src/RoadTripMap/wwwroot/js/imageProcessor.js` -- Client-side image processing module: oversize compression (>14 MB), HEIC conversion, display/thumb tier generation. Gated by `Upload:ClientSideProcessingEnabled` meta tag. Public API: `ImageProcessor.processForUpload(file)`
+- `src/RoadTripMap/wwwroot/js/uploadQueue.js` -- Client-side upload state machine (resilient upload flow with block uploads, SAS refresh, tier blob uploads, retry logic)
 - `src/RoadTripMap.PoiSeeder/` -- Console app for importing POI data from NPS, Overpass, and PAD-US sources
 - `src/RoadTripMap.PoiSeeder/Importers/PadUsBoundaryImporter.cs` -- Fetches park boundary polygons from PAD-US ArcGIS API with geometry simplification
 - `src/RoadTripMap.PoiSeeder/Geometry/GeoJsonProcessor.cs` -- Geometry utilities for boundary simplification and centroid calculation
@@ -130,6 +132,7 @@ Mobile-first road trip photo sharing app. Users create a trip, get two secret li
 - Two workflows: `roadtrip-ci.yml` runs on every push/PR; `deploy.yml` is `workflow_dispatch` only (manual trigger via GitHub UI)
 - The Phase 1 resilient-upload flow requires client-provided `UploadId` Guid for idempotency; the same Guid is used as the response `PhotoId`. Clients must store it before PUTting blocks.
 - `Status='failed'` is reserved for Phase 2 client-state; nothing server-side writes it yet. `OrphanSweeper` filters strictly `status='pending'`.
+- `Upload:ClientSideProcessingEnabled` is a dark-release flag (default `false` in prod, `true` in dev). When disabled, `ImageProcessor.processForUpload()` returns the original file unmodified with no tier blobs. Server always falls back to server-side tier generation when client tier blobs are absent.
 - Azurite dev tests require Docker; CI unit tests skip them via `--filter "Category!=Integration"`. To run the full suite locally: `dotnet test RoadTripMap.sln`.
 
 ---
