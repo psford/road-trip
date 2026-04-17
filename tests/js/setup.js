@@ -5,14 +5,28 @@
 import 'fake-indexeddb/auto';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
+import { vi } from 'vitest';
 
 const wwwroot = resolve(process.cwd(), 'src/RoadTripMap/wwwroot/js');
+
+// Store for mocked CDN imports (will be populated by tests)
+globalThis._testCdnMocks = {};
 
 function loadGlobal(filename) {
     const code = readFileSync(resolve(wwwroot, filename), 'utf-8');
     // Execute in global scope so declarations become global
     // Convert const X = {...} to globalThis.X = {...}
     let modifiedCode = code.replace(/^const (\w+) = /gm, 'globalThis.$1 = ');
+
+    // For imageProcessor.js, patch the import calls to use a mock resolver
+    if (filename === 'imageProcessor.js') {
+        // Replace dynamic import calls with a function that checks mocks first
+        modifiedCode = modifiedCode.replace(
+            /import\((.*?)\)/g,
+            'globalThis._mockableImport($1)'
+        );
+    }
+
     // Execute in eval to ensure true global scope
     eval(modifiedCode);
 }
@@ -35,6 +49,15 @@ beforeAll(() => {
     if (!globalThis.performance) {
         globalThis.performance = { now: () => Date.now() };
     }
+
+    // Setup mockable import function for testing
+    globalThis._mockableImport = async (specifier) => {
+        if (globalThis._testCdnMocks && globalThis._testCdnMocks[specifier]) {
+            return globalThis._testCdnMocks[specifier];
+        }
+        // Fall through to actual import
+        return import(specifier);
+    };
 
     // Load modules
     loadGlobal('featureFlags.js');
