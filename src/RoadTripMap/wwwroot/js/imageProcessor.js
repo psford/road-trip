@@ -274,12 +274,6 @@ const ImageProcessor = (() => {
     }
 
     return {
-        processForUpload,
-        // Exposed for testing only (injected into test version via setup.js)
-        _resetLazyLoaders() {
-            _browserImageCompressionPromise = null;
-            _piexifjsPromise = null;
-            _heic2anyPromise = null;
-        }
+        processForUpload
     };
 })();

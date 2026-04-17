@@ -25,6 +25,20 @@ function loadGlobal(filename) {
             /import\((.*?)\)/g,
             'globalThis._mockableImport($1)'
         );
+
+        // Inject _resetLazyLoaders into the return statement (test-only method)
+        modifiedCode = modifiedCode.replace(
+            'return {\n        processForUpload\n    };',
+            `return {
+        processForUpload,
+        // Exposed for testing only (injected into test version via setup.js)
+        _resetLazyLoaders() {
+            _browserImageCompressionPromise = null;
+            _piexifjsPromise = null;
+            _heic2anyPromise = null;
+        }
+    };`
+        );
     }
 
     // Execute in eval to ensure true global scope
