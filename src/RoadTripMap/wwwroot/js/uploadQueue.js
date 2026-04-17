@@ -18,6 +18,7 @@ const UploadQueue = {
     _processingPromises: new Map(), // uploadId -> Promise
     _blockListMismatchRetries: new Map(), // uploadId -> retry count
     _uploadStartTimes: new Map(), // uploadId -> Date.now() at start
+    _tierBlobs: new Map(), // uploadId -> { display: Blob, thumb: Blob } (in-memory only)
 
     /**
      * Initialize queue on page load
@@ -31,7 +32,7 @@ const UploadQueue = {
     /**
      * Start a new batch of uploads
      * @param {string} tripToken - Trip secret token
-     * @param {Array<{file: File, metadata: Object, uploadId: string}>} filesWithMetadata
+     * @param {Array<{file: File, metadata: Object, uploadId: string, display?: Blob, thumb?: Blob}>} filesWithMetadata
      * @param {Object} callbacks - { onEachComplete: fn(photoResponse), onAllComplete: fn() }
      * @returns {Promise<void>}
      */
@@ -40,6 +41,14 @@ const UploadQueue = {
 
         const promises = filesWithMetadata.map(async (item) => {
             const uploadId = item.uploadId || UploadUtils.newGuid();
+
+            // Store tier blobs in memory (cannot be persisted through page reload)
+            if (item.display || item.thumb) {
+                this._tierBlobs.set(uploadId, {
+                    display: item.display || null,
+                    thumb: item.thumb || null,
+                });
+            }
 
             // Create item in storage
             const now = new Date().toISOString();
@@ -400,6 +409,8 @@ const UploadQueue = {
                 photo_id: response.photoId,
                 sas_url: response.sasUrl,
                 blob_path: response.blobPath,
+                display_sas_url: response.displaySasUrl || null,
+                thumb_sas_url: response.thumbSasUrl || null,
             });
 
             return await StorageAdapter.getItem(uploadId);
@@ -409,6 +420,51 @@ const UploadQueue = {
             UploadTelemetry.recordFailed(uploadId, 'request_upload_failed', err.message, 1);
             throw err;
         }
+    },
+
+    /**
+     * Upload display and thumb tier blobs via simple PUT requests
+     * Non-fatal: tier upload failure does not prevent commit
+     * @private
+     */
+    async _uploadTiers(item) {
+        const uploadOneTier = async (blob, sasUrl, tierName) => {
+            if (!blob || !sasUrl) return { ok: false, skipped: true, tier: tierName };
+            try {
+                const resp = await fetch(sasUrl, {
+                    method: 'PUT',
+                    headers: {
+                        'x-ms-blob-type': 'BlockBlob',
+                        'Content-Type': 'image/jpeg',
+                    },
+                    body: blob,
+                });
+                if (!resp.ok) {
+                    throw new Error(`HTTP ${resp.status}`);
+                }
+                return { ok: true, tier: tierName };
+            } catch (err) {
+                console.warn(`Tier upload warning: ${tierName} failed (${err.message}). Server will fall back to server-side generation.`);
+                return { ok: false, tier: tierName, error: err.message };
+            }
+        };
+
+        const [displayResult, thumbResult] = await Promise.all([
+            uploadOneTier(item.display, item.display_sas_url, 'display'),
+            uploadOneTier(item.thumb, item.thumb_sas_url, 'thumb'),
+        ]);
+
+        const bothFailed = !displayResult.ok && !displayResult.skipped
+                        && !thumbResult.ok && !thumbResult.skipped;
+
+        if (bothFailed) {
+            // Both uploads failed -- caller's catch will log and fall back to server-side generation
+            throw new Error(
+                `Both tier uploads failed: display=${displayResult.error}, thumb=${thumbResult.error}`
+            );
+        }
+        // One or both succeeded (or were skipped due to missing SAS URL).
+        // The server CommitAsync will detect any missing tier blob and regenerate it.
     },
 
     /**
@@ -477,6 +533,25 @@ const UploadQueue = {
      */
     async _doCommit(uploadId, tripToken, item, file) {
         try {
+            // Upload tiers after block upload completes, before commit
+            try {
+                const tierBlobs = this._tierBlobs.get(uploadId);
+                if (tierBlobs) {
+                    const itemWithTiers = {
+                        ...item,
+                        display: tierBlobs.display,
+                        thumb: tierBlobs.thumb,
+                    };
+                    await this._uploadTiers(itemWithTiers);
+                    // Clean up tier blobs from memory after use
+                    this._tierBlobs.delete(uploadId);
+                }
+            } catch (tierError) {
+                // Tier upload failure is non-fatal -- server will fall back to server-side generation
+                // Log for telemetry but continue to commit
+                console.warn('Tier upload failed, server will generate tiers:', tierError.message);
+            }
+
             await StorageAdapter.updateItemStatus(uploadId, 'committing');
 
             const blocks = await StorageAdapter.listBlocks(uploadId);

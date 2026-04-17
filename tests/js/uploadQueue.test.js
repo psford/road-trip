@@ -25,6 +25,7 @@ describe('UploadQueue', () => {
         UploadQueue._channels.clear();
         UploadQueue._processingPromises.clear();
         UploadQueue._blockListMismatchRetries.clear();
+        UploadQueue._tierBlobs.clear();
         UploadQueue._claimantId = null;
 
         // Stub globals
@@ -556,6 +557,339 @@ describe('UploadQueue', () => {
             // Verify item deleted
             const item = await StorageAdapter.getItem(uploadId);
             expect(item).toBeNull();
+        });
+    });
+
+    describe('Task 2: Tier blob uploads (display and thumb)', () => {
+        describe('Subcomponent A & B: Store tier blobs and SAS URLs', () => {
+            it('stores display and thumb blobs from item entry (in-memory during upload)', async () => {
+                const tripToken = 'test-token';
+                const uploadId = 'upload-1';
+                const file = new File(['content'], 'test.jpg', { type: 'image/jpeg' });
+                const displayBlob = new Blob(['display'], { type: 'image/jpeg' });
+                const thumbBlob = new Blob(['thumb'], { type: 'image/jpeg' });
+
+                // Spy on _uploadTiers to verify blobs are available during upload
+                const uploadTiersSpy = vi.spyOn(UploadQueue, '_uploadTiers');
+                uploadTiersSpy.mockImplementation(async (item) => {
+                    // Verify blobs are in the item at this point
+                    expect(item.display).toBe(displayBlob);
+                    expect(item.thumb).toBe(thumbBlob);
+                });
+
+                // Mock API
+                API.requestUpload = vi.fn().mockResolvedValue({
+                    photoId: 'photo-1',
+                    sasUrl: 'https://...',
+                    blobPath: '/blob',
+                });
+                UploadTransport.uploadFile = vi.fn().mockResolvedValue(['blockId0']);
+                API.commit = vi.fn().mockResolvedValue({ id: 'photo-1' });
+
+                // Start with display and thumb blobs
+                await UploadQueue.start(tripToken, [{
+                    file,
+                    metadata: {},
+                    uploadId,
+                    display: displayBlob,
+                    thumb: thumbBlob,
+                }], {});
+
+                await UploadQueueTestHelper.waitForAll();
+
+                // Verify _uploadTiers was called
+                expect(uploadTiersSpy).toHaveBeenCalled();
+                uploadTiersSpy.mockRestore();
+            });
+
+            it('stores tier SAS URLs from request-upload response', async () => {
+                const tripToken = 'test-token';
+                const uploadId = 'upload-1';
+                const photoId = 'photo-1';
+                const sasUrl = 'https://storage.blob.core.windows.net/container/blob?sig=...';
+                const displaySasUrl = 'https://storage.blob.core.windows.net/container/blob_display?sig=...';
+                const thumbSasUrl = 'https://storage.blob.core.windows.net/container/blob_thumb?sig=...';
+
+                const file = new File(['test'], 'test.jpg', { type: 'image/jpeg' });
+                const displayBlob = new Blob(['d'], { type: 'image/jpeg' });
+                const thumbBlob = new Blob(['t'], { type: 'image/jpeg' });
+
+                API.requestUpload.mockResolvedValue({
+                    photoId,
+                    sasUrl,
+                    blobPath: '/test/blob',
+                    displaySasUrl,
+                    thumbSasUrl,
+                });
+
+                API.commit.mockResolvedValue({ id: photoId });
+                UploadTransport.uploadFile.mockResolvedValue(['blockId0']);
+
+                await UploadQueue.start(tripToken, [{
+                    file,
+                    metadata: {},
+                    uploadId,
+                    display: displayBlob,
+                    thumb: thumbBlob,
+                }], {});
+
+                await UploadQueueTestHelper.waitForAll();
+
+                const item = await StorageAdapter.getItem(uploadId);
+                expect(item.display_sas_url).toBe(displaySasUrl);
+                expect(item.thumb_sas_url).toBe(thumbSasUrl);
+            });
+        });
+
+        describe('Subcomponent C: _uploadTiers method', () => {
+            it('uploads display and thumb blobs via PUT with BlockBlob header', async () => {
+                const tripToken = 'test-token';
+                const uploadId = 'upload-1';
+                const displaySasUrl = 'https://storage.blob.core.windows.net/container/blob_display?sig=...';
+                const thumbSasUrl = 'https://storage.blob.core.windows.net/container/blob_thumb?sig=...';
+
+                const displayBlob = new Blob(['display content'], { type: 'image/jpeg' });
+                const thumbBlob = new Blob(['thumb content'], { type: 'image/jpeg' });
+
+                const item = {
+                    display: displayBlob,
+                    thumb: thumbBlob,
+                    display_sas_url: displaySasUrl,
+                    thumb_sas_url: thumbSasUrl,
+                };
+
+                // Mock fetch for tier uploads
+                globalThis.fetch = vi.fn(async (url) => {
+                    if (url === displaySasUrl || url === thumbSasUrl) {
+                        return { ok: true, status: 201 };
+                    }
+                    return { ok: false, status: 404 };
+                });
+
+                // Call _uploadTiers
+                await UploadQueue._uploadTiers(item);
+
+                // Verify fetch was called twice with correct headers
+                expect(globalThis.fetch).toHaveBeenCalledWith(
+                    displaySasUrl,
+                    expect.objectContaining({
+                        method: 'PUT',
+                        headers: expect.objectContaining({
+                            'x-ms-blob-type': 'BlockBlob',
+                            'Content-Type': 'image/jpeg',
+                        }),
+                        body: displayBlob,
+                    })
+                );
+
+                expect(globalThis.fetch).toHaveBeenCalledWith(
+                    thumbSasUrl,
+                    expect.objectContaining({
+                        method: 'PUT',
+                        headers: expect.objectContaining({
+                            'x-ms-blob-type': 'BlockBlob',
+                            'Content-Type': 'image/jpeg',
+                        }),
+                        body: thumbBlob,
+                    })
+                );
+            });
+
+            it('skips tier upload if blob or SAS URL is missing', async () => {
+                const item = {
+                    display: null,
+                    thumb: null,
+                    display_sas_url: null,
+                    thumb_sas_url: null,
+                };
+
+                globalThis.fetch = vi.fn();
+
+                // Should not throw when both are null
+                await UploadQueue._uploadTiers(item);
+
+                expect(globalThis.fetch).not.toHaveBeenCalled();
+            });
+
+            it('logs warning on individual tier failure but continues', async () => {
+                const displaySasUrl = 'https://storage.blob.core.windows.net/container/blob_display?sig=...';
+                const thumbSasUrl = 'https://storage.blob.core.windows.net/container/blob_thumb?sig=...';
+
+                const displayBlob = new Blob(['d'], { type: 'image/jpeg' });
+                const thumbBlob = new Blob(['t'], { type: 'image/jpeg' });
+
+                const item = {
+                    display: displayBlob,
+                    thumb: thumbBlob,
+                    display_sas_url: displaySasUrl,
+                    thumb_sas_url: thumbSasUrl,
+                };
+
+                globalThis.fetch = vi.fn(async (url) => {
+                    if (url === displaySasUrl) {
+                        return { ok: false, status: 500 };
+                    }
+                    return { ok: true, status: 201 };
+                });
+
+                const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+                // Should not throw when one tier fails
+                await UploadQueue._uploadTiers(item);
+
+                expect(warnSpy).toHaveBeenCalledWith(
+                    expect.stringContaining('display')
+                );
+                warnSpy.mockRestore();
+            });
+
+            it('throws only when both tier uploads fail', async () => {
+                const displaySasUrl = 'https://storage.blob.core.windows.net/container/blob_display?sig=...';
+                const thumbSasUrl = 'https://storage.blob.core.windows.net/container/blob_thumb?sig=...';
+
+                const displayBlob = new Blob(['d'], { type: 'image/jpeg' });
+                const thumbBlob = new Blob(['t'], { type: 'image/jpeg' });
+
+                const item = {
+                    display: displayBlob,
+                    thumb: thumbBlob,
+                    display_sas_url: displaySasUrl,
+                    thumb_sas_url: thumbSasUrl,
+                };
+
+                globalThis.fetch = vi.fn(async () => {
+                    return { ok: false, status: 500 };
+                });
+
+                const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+                // Should throw when both fail
+                await expect(UploadQueue._uploadTiers(item))
+                    .rejects.toThrow();
+
+                warnSpy.mockRestore();
+            });
+        });
+
+        describe('Subcomponent D: Integration into state machine', () => {
+            it('uploads tiers after block upload completes, before commit', async () => {
+                const tripToken = 'test-token';
+                const uploadId = 'upload-1';
+                const photoId = 'photo-1';
+                const sasUrl = 'https://storage.blob.core.windows.net/container/blob?sig=...';
+                const displaySasUrl = 'https://storage.blob.core.windows.net/container/blob_display?sig=...';
+                const thumbSasUrl = 'https://storage.blob.core.windows.net/container/blob_thumb?sig=...';
+
+                const file = new File(['original'], 'test.jpg', { type: 'image/jpeg' });
+                const displayBlob = new Blob(['display'], { type: 'image/jpeg' });
+                const thumbBlob = new Blob(['thumb'], { type: 'image/jpeg' });
+
+                const callOrder = [];
+
+                // Mock to track call order
+                UploadTransport.uploadFile = vi.fn(async () => {
+                    callOrder.push('uploadFile');
+                    return ['blockId0'];
+                });
+
+                globalThis.fetch = vi.fn(async (url) => {
+                    if (url.includes('_display') || url.includes('_thumb')) {
+                        callOrder.push(url.includes('_display') ? 'tier-display' : 'tier-thumb');
+                    }
+                    return { ok: true, status: 201 };
+                });
+
+                API.requestUpload = vi.fn().mockResolvedValue({
+                    photoId,
+                    sasUrl,
+                    blobPath: '/test/blob',
+                    displaySasUrl,
+                    thumbSasUrl,
+                });
+
+                API.commit = vi.fn(async () => {
+                    callOrder.push('commit');
+                    return { id: photoId };
+                });
+
+                await UploadQueue.start(tripToken, [{
+                    file,
+                    metadata: {},
+                    uploadId,
+                    display: displayBlob,
+                    thumb: thumbBlob,
+                }], {});
+
+                await UploadQueueTestHelper.waitForAll();
+
+                // Verify order: uploadFile -> tier uploads -> commit
+                expect(callOrder).toEqual(
+                    expect.arrayContaining(['uploadFile', 'tier-display', 'tier-thumb', 'commit'])
+                );
+
+                // Tier uploads should come before commit
+                const uploadFileIdx = callOrder.indexOf('uploadFile');
+                const commitIdx = callOrder.indexOf('commit');
+                const tierUploadIdx = Math.max(
+                    callOrder.indexOf('tier-display'),
+                    callOrder.indexOf('tier-thumb')
+                );
+
+                expect(uploadFileIdx).toBeLessThan(tierUploadIdx);
+                expect(tierUploadIdx).toBeLessThan(commitIdx);
+            });
+
+            it('continues to commit even if tier upload fails (non-fatal)', async () => {
+                const tripToken = 'test-token';
+                const uploadId = 'upload-1';
+                const photoId = 'photo-1';
+                const sasUrl = 'https://storage.blob.core.windows.net/container/blob?sig=...';
+                const displaySasUrl = 'https://storage.blob.core.windows.net/container/blob_display?sig=...';
+                const thumbSasUrl = 'https://storage.blob.core.windows.net/container/blob_thumb?sig=...';
+
+                const file = new File(['test'], 'test.jpg', { type: 'image/jpeg' });
+                const displayBlob = new Blob(['d'], { type: 'image/jpeg' });
+                const thumbBlob = new Blob(['t'], { type: 'image/jpeg' });
+
+                API.requestUpload.mockResolvedValue({
+                    photoId,
+                    sasUrl,
+                    blobPath: '/test/blob',
+                    displaySasUrl,
+                    thumbSasUrl,
+                });
+
+                UploadTransport.uploadFile.mockResolvedValue(['blockId0']);
+
+                // Tier upload fails
+                globalThis.fetch = vi.fn(async () => {
+                    return { ok: false, status: 500 };
+                });
+
+                API.commit.mockResolvedValue({ id: photoId });
+
+                const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+                // Start upload with failing tier upload
+                await UploadQueue.start(tripToken, [{
+                    file,
+                    metadata: {},
+                    uploadId,
+                    display: displayBlob,
+                    thumb: thumbBlob,
+                }], {});
+
+                await UploadQueueTestHelper.waitForAll();
+
+                // Verify item still reached committed state
+                const item = await StorageAdapter.getItem(uploadId);
+                expect(item.status).toBe('committed');
+
+                // Verify commit was called despite tier upload failure
+                expect(API.commit).toHaveBeenCalled();
+
+                warnSpy.mockRestore();
+            });
         });
     });
 });
