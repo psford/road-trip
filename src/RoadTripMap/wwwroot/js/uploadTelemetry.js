@@ -143,12 +143,12 @@ const UploadTelemetry = {
     },
 
     /**
-     * Record processing:applied event
+     * Record processing.applied event
      * @param {string} uploadId - Upload ID
      * @param {Object} details - { compressionApplied, heicConverted, originalBytes, outputBytes, durationMs }
      */
     recordProcessingApplied(uploadId, details) {
-        this.record('processing:applied', {
+        this.record('processing.applied', {
             uploadId,
             compressionApplied: details.compressionApplied,
             heicConverted: details.heicConverted,
@@ -162,12 +162,12 @@ const UploadTelemetry = {
     },
 
     /**
-     * Record processing:failed event
+     * Record processing.failed event
      * @param {string} uploadId - Upload ID
      * @param {string} errorMessage - Error message
      */
     recordProcessingFailed(uploadId, errorMessage) {
-        this.record('processing:failed', {
+        this.record('processing.failed', {
             uploadId,
             error: errorMessage,
         });

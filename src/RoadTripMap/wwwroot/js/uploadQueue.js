@@ -519,6 +519,8 @@ const UploadQueue = {
 
         await StorageAdapter.updateItemStatus(uploadId, 'uploading', {
             sas_url: response.sasUrl,
+            display_sas_url: response.displaySasUrl || null,
+            thumb_sas_url: response.thumbSasUrl || null,
         });
 
         // Record SAS refresh event
@@ -595,6 +597,8 @@ const UploadQueue = {
 
                         await StorageAdapter.updateItemStatus(uploadId, 'uploading', {
                             sas_url: response.sasUrl,
+                            display_sas_url: response.displaySasUrl || null,
+                            thumb_sas_url: response.thumbSasUrl || null,
                         });
 
                         // Re-upload blocks if we have the file
