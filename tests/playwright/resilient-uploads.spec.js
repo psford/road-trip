@@ -485,6 +485,10 @@ test.describe('Client-side image processing (Phase 3)', () => {
     await imageSynthesis.inject(page);
   });
 
+  test.afterEach(async () => {
+    await page.close();
+  });
+
   test('compresses oversize PNG and commits successfully (AC4.3)', async () => {
     // Generate a ~18MB PNG in-browser
     const fileHandle = await page.evaluateHandle(async () => {

@@ -153,6 +153,7 @@ describe('postUI processing integration', () => {
             if (queueStartSpy.mock.calls.length > 0 || failedEvents.length > 0) return;
             await new Promise(r => setTimeout(r, 10));
         }
+        throw new Error(`waitForProcessing timed out after ${timeoutMs}ms: queueStart calls=${queueStartSpy.mock.calls.length}, failedEvents=${failedEvents.length}`);
     }
 
     // Subcomponent B: Event ordering and queue argument tests
