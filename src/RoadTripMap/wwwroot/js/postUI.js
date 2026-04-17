@@ -368,17 +368,63 @@ const PostUI = {
 
         // Start GPS uploads immediately via queue with new format
         if (gpsFiles.length > 0) {
-            // Transform to resilient queue format: each item needs { file, metadata, uploadId }
-            const filesWithUploadIds = gpsFiles.map(item => ({
-                file: item.file,
-                metadata: item.metadata,
-                uploadId: UploadUtils.newGuid()
-            }));
+            // Transform to resilient queue format with image processing
+            const filesWithUploadIds = [];
+            for (const item of gpsFiles) {
+                const uploadId = UploadUtils.newGuid();
 
-            UploadQueue.start(this.secretToken, filesWithUploadIds, {
-                onEachComplete: () => this.refreshPhotoList(),
-                onAllComplete: () => this.handleNoGpsFiles(noGpsFiles)
-            });
+                // Emit preparing event for progress panel
+                document.dispatchEvent(new CustomEvent('upload:preparing', {
+                    detail: { uploadId, fileName: item.file.name }
+                }));
+
+                let processResult;
+                try {
+                    processResult = await ImageProcessor.processForUpload(item.file, item.metadata);
+                } catch (processingError) {
+                    // Processing failed -- surface error, record telemetry, skip this file
+                    document.dispatchEvent(new CustomEvent('upload:failed', {
+                        detail: {
+                            uploadId,
+                            fileName: item.file.name,
+                            error: processingError.message,
+                            phase: 'processing',
+                        }
+                    }));
+                    if (typeof UploadTelemetry !== 'undefined') {
+                        UploadTelemetry.recordProcessingFailed(uploadId, processingError.message);
+                    }
+                    continue; // Skip to next file
+                }
+
+                filesWithUploadIds.push({
+                    file: processResult.original,
+                    metadata: item.metadata,
+                    uploadId,
+                    display: processResult.display,
+                    thumb: processResult.thumb,
+                });
+
+                // Record telemetry
+                if (typeof UploadTelemetry !== 'undefined') {
+                    UploadTelemetry.recordProcessingApplied(uploadId, {
+                        compressionApplied: processResult.compressionApplied,
+                        heicConverted: processResult.heicConverted,
+                        originalBytes: processResult.originalBytes,
+                        outputBytes: processResult.outputBytes,
+                        durationMs: processResult.durationMs,
+                    });
+                }
+            }
+
+            if (filesWithUploadIds.length > 0) {
+                UploadQueue.start(this.secretToken, filesWithUploadIds, {
+                    onEachComplete: () => this.refreshPhotoList(),
+                    onAllComplete: () => this.handleNoGpsFiles(noGpsFiles)
+                });
+            } else {
+                this.handleNoGpsFiles(noGpsFiles);
+            }
         } else {
             this.handleNoGpsFiles(noGpsFiles);
         }
