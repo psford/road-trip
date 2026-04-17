@@ -1,6 +1,6 @@
-# Morning Runbook — 2026-04-16
+# Morning Runbook — 2026-04-16 (revised 2026-04-17)
 
-This runbook covers the sequenced actions to complete Phase 4 of the resilient-uploads work and ship the new oversize-image-compression design. Every step is labeled with the shell where it runs.
+This runbook covers the sequenced actions to complete Phase 4 of the resilient-uploads work and ship the new client-side image processing design. **Revised** to include client-side tier generation for ALL uploads (not just oversize), eliminating the server-side commit bottleneck. Every step is labeled with the shell where it runs.
 
 **Labels:**
 - `[container]` — runs in the current Claude Code container (dotnet, az, gh, npm all available)
@@ -205,26 +205,38 @@ Phase 4 acceptance signed off 2026-04-16. New UI is the only path."
 
 ---
 
-## Step 5 — Build the compression plan + tests (oversize-image-compression Phase 3)
+## Step 5 — Build the client-side image processing plan + implementation (Design Phases 3–6)
 
-At this point the resilient uploads work is fully closed out. We pivot to the new compression design.
+At this point the resilient uploads work is fully closed out. We pivot to client-side image processing.
+
+**Design scope (revised):** Every photo gets client-side processing — not just oversize ones. The client generates original + display (1920px) + thumb (300px) tiers, uploads all 3 via SAS, and commit becomes a lightweight DB-only operation. Oversize compression is one branch of the same module.
 
 1. `[container]` **Branch off main.**
    ```bash
    git checkout main
    git pull --ff-only
-   git checkout -b feat/oversize-compression
+   git checkout -b feat/client-side-processing
    ```
 
-2. `[container]` **Generate the implementation plan.** Use the `/ed3d-plan-and-execute:start-implementation-plan` slash command (or invoke the `starting-an-implementation-plan` skill directly) pointing at `docs/design-plans/2026-04-16-oversize-image-compression.md`. It will produce `docs/implementation-plans/2026-04-16-oversize-image-compression/` with one phase file per design phase.
+2. `[container]` **Generate the implementation plan.** Use the `starting-an-implementation-plan` skill pointing at `docs/design-plans/2026-04-16-oversize-image-compression.md`. It will produce `docs/implementation-plans/2026-04-16-oversize-image-compression/` with phase files for Design Phases 3–6 (1–2 closed by Steps 1–4).
 
-3. `[container]` **Execute the implementation plan.** Use the `/ed3d-plan-and-execute:execute-implementation-plan` command pointing at that directory. The plan will execute Phase 3 → Phase 4 → Phase 5 → Phase 6 of the design (Phases 1 and 2 of the design are already closed by Steps 1–4 above).
+3. `[container]` **Execute the implementation plan.** The phases are:
+   - **Phase 3**: `imageProcessor.js` module — HEIC conversion, compression, tier generation, EXIF preservation. Vitest coverage.
+   - **Phase 4**: Server contract changes — `RequestUploadResponse` returns 3 SAS URLs. `UploadQueue` uploads 3 blobs. `CommitAsync` skips tier gen when tiers present. Re-run perf test to verify commit <500ms.
+   - **Phase 5**: Integration tests + Playwright e2e.
+   - **Phase 6**: Dark-release flag (`ClientSideProcessingEnabled`) + runbook.
 
 4. `[container]` **Code reviews** happen automatically at the end of each phase per the skill's workflow. Address issues before moving on.
 
+5. `[container]` **Verify perf improvement** after Phase 4 implementation:
+   ```bash
+   python3 /tmp/upload-perf-test.py  # re-run the 20-photo sequential test
+   ```
+   Expected: commit times drop from avg 3700ms to <500ms.
+
 ---
 
-## Step 6 — Dark-release deploy (oversize-image-compression Phase 6)
+## Step 6 — Dark-release deploy (client-side processing Phase 6)
 
 1. `[container]` **Merge PR to main** via GitHub web (CI must pass).
 
@@ -233,25 +245,25 @@ At this point the resilient uploads work is fully closed out. We pivot to the ne
    az webapp config appsettings list \
      --name app-roadtripmap-prod \
      --resource-group rg-roadtripmap-prod \
-     --query "[?name=='Upload__ClientSideCompressionEnabled']" -o table
+     --query "[?name=='Upload__ClientSideProcessingEnabled']" -o table
    ```
    Expect either empty or `"false"`. If empty, set it explicitly:
    ```bash
    az webapp config appsettings set \
      --name app-roadtripmap-prod \
      --resource-group rg-roadtripmap-prod \
-     --settings Upload__ClientSideCompressionEnabled=false
+     --settings Upload__ClientSideProcessingEnabled=false
    ```
 
 3. `[container]` **Trigger deploy.**
    ```bash
    gh workflow run deploy.yml --ref main \
      -f confirm_deploy=deploy \
-     -f reason="Oversize compression code deploy (flag OFF)"
+     -f reason="Client-side processing code deploy (flag OFF)"
    ```
 
 4. `[container]` **Smoke test with flag OFF.**
-   `[mobile]` Upload a normal-size photo. Should work exactly as today. Upload an 18 MB photo. Should still fail with the 15 MB error (unchanged behavior).
+   Upload a normal-size photo. Should work exactly as before (server-side tier gen as fallback). Upload an 18 MB photo — should still fail with the 15 MB error (expected, unchanged).
 
 5. `[container]` **Flip flag on staging slot.**
    ```bash
@@ -259,28 +271,38 @@ At this point the resilient uploads work is fully closed out. We pivot to the ne
      --name app-roadtripmap-prod \
      --resource-group rg-roadtripmap-prod \
      --slot staging \
-     --settings Upload__ClientSideCompressionEnabled=true
+     --settings Upload__ClientSideProcessingEnabled=true
    ```
 
-6. `[mobile]` **Staging smoke test.** Upload an 18 MB iPhone photo against the staging slot URL (`https://app-roadtripmap-prod-staging.azurewebsites.net/post/<token>`). Expect:
-   - Progress panel row with "Compressing…" status for a few seconds
-   - Then normal block-upload progress
-   - Photo ends up committed with correct GPS and thumbnail
+6. **Staging smoke test.** Upload 20 photos (mix of sizes) against staging URL. Expect:
+   - Progress panel shows "Processing…" briefly for each photo
+   - Then block-upload progress
+   - Commits complete in <500ms each (vs 2–6s before)
+   - All 20 photos committed (vs 14/20 before)
+   - Upload an 18 MB photo — now compresses and succeeds
+   - Thumbnails render correctly for all photos
 
-7. `[container]` **Flip flag on prod.**
+7. `[container]` **Re-run perf test against staging.**
+   ```bash
+   # Update TOKEN in /tmp/upload-perf-test.py to staging trip
+   python3 /tmp/upload-perf-test.py
+   ```
+   Expected: avg commit <500ms (was 3700ms).
+
+8. `[container]` **Flip flag on prod.**
    ```bash
    az webapp config appsettings set \
      --name app-roadtripmap-prod \
      --resource-group rg-roadtripmap-prod \
-     --settings Upload__ClientSideCompressionEnabled=true
+     --settings Upload__ClientSideProcessingEnabled=true
    ```
 
-8. `[mobile]` **Prod smoke test** — same flow against prod URL.
+9. **Prod smoke test** — upload a few photos, verify tiers render.
 
-9. `[container]` **Set a reminder to re-check telemetry in 24 hours.**
-   - Query App Insights (or tailed docker logs) for `upload.compression_failed` events
-   - Zero tolerance on `reason: "out_of_memory"` or `reason: "decode_failure"` on common devices
-   - If any appear, flip the flag back to `false` and triage before re-enabling
+10. `[container]` **24-hour telemetry watch.**
+    - Query logs for `upload.processing_failed` events
+    - Zero tolerance on `reason: "out_of_memory"` or `reason: "decode_failure"`
+    - If any appear, flip flag to `false` (server fallback activates immediately)
 
 ---
 
@@ -291,9 +313,9 @@ At this point the resilient uploads work is fully closed out. We pivot to the ne
 2. `[container]` Redeploy. The legacy path stubs are back in code.
 3. `[container]` Set `FeatureFlags__ResilientUploadsUI=false` on App Service.
 
-### Rolling back compression (Step 6)
-1. `[container]` **Fastest rollback**: `az webapp config appsettings set --name app-roadtripmap-prod --resource-group rg-roadtripmap-prod --settings Upload__ClientSideCompressionEnabled=false`. Takes effect on next page load — no redeploy needed.
-2. **If flag-flip doesn't fix it** (e.g. the compression code introduced an unrelated bug): revert the merge commit via PR, redeploy.
+### Rolling back client-side processing (Step 6)
+1. `[container]` **Fastest rollback**: `az webapp config appsettings set --name app-roadtripmap-prod --resource-group rg-roadtripmap-prod --settings Upload__ClientSideProcessingEnabled=false`. Server-side `GenerateDerivedTiersAsync` fallback activates automatically. Takes effect on next page load — no redeploy needed.
+2. **If flag-flip doesn't fix it** (e.g. the code introduced an unrelated bug): revert the merge commit via PR, redeploy.
 
 ---
 
@@ -350,12 +372,12 @@ gh pr create --title "docs: finalize Phase 4 runbook" --body "..." --base main
 
 # Dark release (Step 6)
 # (merge compression PR first)
-az webapp config appsettings set --name app-roadtripmap-prod --resource-group rg-roadtripmap-prod --settings Upload__ClientSideCompressionEnabled=false
+az webapp config appsettings set --name app-roadtripmap-prod --resource-group rg-roadtripmap-prod --settings Upload__ClientSideProcessingEnabled=false
 gh workflow run deploy.yml --ref main -f confirm_deploy=deploy -f reason="Compression code deploy (flag OFF)"
 # (smoke test: sub-threshold upload works, oversize still fails same as before)
-az webapp config appsettings set --name app-roadtripmap-prod --resource-group rg-roadtripmap-prod --slot staging --settings Upload__ClientSideCompressionEnabled=true
+az webapp config appsettings set --name app-roadtripmap-prod --resource-group rg-roadtripmap-prod --slot staging --settings Upload__ClientSideProcessingEnabled=true
 # (staging smoke test with 18 MB photo)
-az webapp config appsettings set --name app-roadtripmap-prod --resource-group rg-roadtripmap-prod --settings Upload__ClientSideCompressionEnabled=true
+az webapp config appsettings set --name app-roadtripmap-prod --resource-group rg-roadtripmap-prod --settings Upload__ClientSideProcessingEnabled=true
 # (prod smoke test)
 # 24 hours later, check telemetry for compression failures
 ```
