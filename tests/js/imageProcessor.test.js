@@ -681,4 +681,92 @@ describe('ImageProcessor', () => {
             expect(result.compressionApplied).toBe(true);
         });
     });
+
+    // ==================== Subcomponent H: Feature flag (client-processing-enabled meta tag) ====================
+
+    describe('feature flag (client-processing-enabled meta tag)', () => {
+        afterEach(() => {
+            // Remove any injected meta tags
+            const meta = document.querySelector('meta[name="client-processing-enabled"]');
+            if (meta) meta.remove();
+            ImageProcessor._resetProcessingFlag();
+            ImageProcessor._resetLazyLoaders();
+        });
+
+        it('processes normally when meta tag is absent (default enabled)', async () => {
+            // No meta tag injected -- should default to enabled
+            const file = new File(['x'.repeat(3 * 1024 * 1024)], 'photo.jpg', { type: 'image/jpeg' });
+            const result = await ImageProcessor.processForUpload(file, { gps: null, timestamp: null });
+
+            expect(result.display).toBeInstanceOf(Blob); // Tiers generated
+            expect(result.thumb).toBeInstanceOf(Blob);
+        });
+
+        it('processes normally when meta tag is "true"', async () => {
+            const meta = document.createElement('meta');
+            meta.name = 'client-processing-enabled';
+            meta.content = 'true';
+            document.head.appendChild(meta);
+
+            const file = new File(['x'.repeat(3 * 1024 * 1024)], 'photo.jpg', { type: 'image/jpeg' });
+            const result = await ImageProcessor.processForUpload(file, { gps: null, timestamp: null });
+
+            expect(result.display).toBeInstanceOf(Blob);
+            expect(result.thumb).toBeInstanceOf(Blob);
+        });
+
+        it('returns passthrough result when meta tag is "false"', async () => {
+            const meta = document.createElement('meta');
+            meta.name = 'client-processing-enabled';
+            meta.content = 'false';
+            document.head.appendChild(meta);
+
+            const file = new File(['x'.repeat(3 * 1024 * 1024)], 'photo.jpg', { type: 'image/jpeg' });
+            const result = await ImageProcessor.processForUpload(file, { gps: null, timestamp: null });
+
+            expect(result.original).toBe(file); // Same reference, passthrough
+            expect(result.display).toBeNull();
+            expect(result.thumb).toBeNull();
+            expect(result.compressionApplied).toBe(false);
+            expect(result.heicConverted).toBe(false);
+            expect(result.durationMs).toBe(0);
+        });
+
+        it('does not load any CDN dependencies when flag is off', async () => {
+            const meta = document.createElement('meta');
+            meta.name = 'client-processing-enabled';
+            meta.content = 'false';
+            document.head.appendChild(meta);
+
+            // Even with an oversize file, no CDN loading should occur
+            const file = new File(['x'.repeat(18 * 1024 * 1024)], 'big.jpg', { type: 'image/jpeg' });
+            const result = await ImageProcessor.processForUpload(file, { gps: null, timestamp: null });
+
+            // Verify no imports were attempted
+            expect(mockCompress).not.toHaveBeenCalled();
+            expect(mockHeic2any).not.toHaveBeenCalled();
+            expect(mockPiexif.load).not.toHaveBeenCalled();
+
+            // File is passed through unchanged even though it's oversize
+            expect(result.original).toBe(file);
+            expect(result.originalBytes).toBe(file.size);
+        });
+
+        it('caches the flag value across calls', async () => {
+            const meta = document.createElement('meta');
+            meta.name = 'client-processing-enabled';
+            meta.content = 'false';
+            document.head.appendChild(meta);
+
+            const file = new File(['data'], 'photo.jpg', { type: 'image/jpeg' });
+            await ImageProcessor.processForUpload(file, { gps: null, timestamp: null });
+
+            // Change the meta tag (simulate config update without page reload)
+            meta.content = 'true';
+
+            // Should still return passthrough (cached value)
+            const result = await ImageProcessor.processForUpload(file, { gps: null, timestamp: null });
+            expect(result.display).toBeNull(); // Still using cached "false"
+        });
+    });
 });

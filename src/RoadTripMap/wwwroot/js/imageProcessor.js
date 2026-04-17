@@ -304,6 +304,11 @@ const ImageProcessor = (() => {
         processForUpload,
         _resetProcessingFlag() {
             _processingEnabled = null;
+        },
+        _resetLazyLoaders() {
+            _browserImageCompressionPromise = null;
+            _piexifjsPromise = null;
+            _heic2anyPromise = null;
         }
     };
 })();
