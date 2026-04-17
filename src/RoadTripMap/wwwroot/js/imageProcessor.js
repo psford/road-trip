@@ -17,6 +17,9 @@ const ImageProcessor = (() => {
     let _piexifjsPromise = null;
     let _heic2anyPromise = null;
 
+    // Feature flag cache (null = not yet checked, boolean = cached result)
+    let _processingEnabled = null;
+
     // ==================== Subcomponent B: Lazy-loading functions ====================
     async function _loadBrowserImageCompression() {
         if (!_browserImageCompressionPromise) {
@@ -40,6 +43,16 @@ const ImageProcessor = (() => {
                 .then(mod => mod.default || mod);
         }
         return _heic2anyPromise;
+    }
+
+    // ==================== Subcomponent B2: Feature flag check ====================
+    function _isProcessingEnabled() {
+        if (_processingEnabled === null) {
+            const meta = document.querySelector('meta[name="client-processing-enabled"]');
+            _processingEnabled = meta ? meta.getAttribute('content') === 'true' : true;
+            // Default to true if meta tag is missing (dev environment, tests)
+        }
+        return _processingEnabled;
     }
 
     // ==================== Subcomponent C: Data URL / Blob conversion helpers ====================
@@ -200,6 +213,20 @@ const ImageProcessor = (() => {
 
     // ==================== Subcomponent G: Main processForUpload function ====================
     async function processForUpload(file, exifData) {
+        // Check feature flag early -- if processing disabled by server config, passthrough
+        if (!_isProcessingEnabled()) {
+            return {
+                original: file,
+                display: null,
+                thumb: null,
+                compressionApplied: false,
+                heicConverted: false,
+                originalBytes: file.size,
+                outputBytes: file.size,
+                durationMs: 0,
+            };
+        }
+
         const startTime = performance.now();
         const originalBytes = file.size;
 
@@ -274,6 +301,9 @@ const ImageProcessor = (() => {
     }
 
     return {
-        processForUpload
+        processForUpload,
+        _resetProcessingFlag() {
+            _processingEnabled = null;
+        }
     };
 })();

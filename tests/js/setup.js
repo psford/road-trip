@@ -27,10 +27,14 @@ function loadGlobal(filename) {
         );
 
         // Inject _resetLazyLoaders into the return statement (test-only method)
+        // Must handle both the old pattern (just processForUpload) and new pattern (with _resetProcessingFlag)
         modifiedCode = modifiedCode.replace(
-            'return {\n        processForUpload\n    };',
+            /return \{\s*processForUpload(?:,\s*_resetProcessingFlag\(\) \{[^}]+\}\s*)?\};/s,
             `return {
         processForUpload,
+        _resetProcessingFlag() {
+            _processingEnabled = null;
+        },
         // Exposed for testing only (injected into test version via setup.js)
         _resetLazyLoaders() {
             _browserImageCompressionPromise = null;
