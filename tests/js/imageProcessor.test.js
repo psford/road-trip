@@ -162,11 +162,23 @@ describe('ImageProcessor', () => {
             // Scale = 1920/4000 = 0.48, target = 1920x1440
             const file = new File(['x'.repeat(3 * 1024 * 1024)], 'photo.jpg', { type: 'image/jpeg' });
 
-            mockCanvas.toBlob.mockClear();
+            // Track canvas dimension assignments
+            const canvasDimensions = [];
+            mockCanvas.toBlob.mockImplementation((cb, type, quality) => {
+                // Record dimensions each time toBlob is called
+                canvasDimensions.push({ width: mockCanvas.width, height: mockCanvas.height });
+                // Simulate successful blob creation
+                cb(new Blob(['fake-tier-data'], { type: 'image/jpeg' }));
+            });
+
             await ImageProcessor.processForUpload(file, { gps: null, timestamp: null });
 
-            // Verify canvas was set up with appropriate dimensions (scale factor 0.48)
-            // First call is for display tier, second for thumb
+            // Display tier should be 1920x1440 (scale = 1920/4000 = 0.48, height = 3000 * 0.48 = 1440)
+            expect(canvasDimensions[0]).toEqual({ width: 1920, height: 1440 });
+
+            // Thumb tier should be 300x225 (scale = 300/4000 = 0.075, height = 3000 * 0.075 = 225)
+            expect(canvasDimensions[1]).toEqual({ width: 300, height: 225 });
+
             expect(mockCanvas.toBlob).toHaveBeenCalledTimes(2);
         });
     });
@@ -230,7 +242,7 @@ describe('ImageProcessor', () => {
             );
         });
 
-        it('verified compressed output is decodable JPEG (AC2.3)', async () => {
+        it('verifies compressed output is decodable JPEG (AC2.3)', async () => {
             const file = new File(['x'.repeat(18 * 1024 * 1024)], 'big.jpg', { type: 'image/jpeg' });
             // Mock compress returning a proper JPEG blob
             const jpegBlob = new Blob(['fake-jpeg-data'], { type: 'image/jpeg' });
@@ -245,7 +257,7 @@ describe('ImageProcessor', () => {
             expect(result.original.type).toBe('image/jpeg');
         });
 
-        it('preserves GPS coordinates within 6 decimal places after compression', async () => {
+        it('preserves GPS coordinates within 6 decimal places after compression (AC2.1)', async () => {
             const file = new File(['x'.repeat(18 * 1024 * 1024)], 'big.jpg', { type: 'image/jpeg' });
             mockCompress.mockResolvedValue(new Blob(['compressed'], { type: 'image/jpeg' }));
 
@@ -263,6 +275,51 @@ describe('ImageProcessor', () => {
             // Verify piexif.insert was called with EXIF object containing GPS
             expect(mockPiexif.insert).toHaveBeenCalled();
             expect(result.compressionApplied).toBe(true);
+        });
+
+        it('verifies GPS coordinate rational encoding for HEIC (AC2.1)', async () => {
+            const file = new File(['heic-data'], 'photo.heic', { type: 'image/heic' });
+            mockHeic2any.mockResolvedValue(new Blob(['jpeg'], { type: 'image/jpeg' }));
+
+            // Known GPS coordinates: 40° 42' 44.442" N, 74° 0' 24.444" W
+            // In decimal: latitude 40.712345, longitude -74.006789
+            const exifData = {
+                latitude: 40.712345,
+                longitude: -74.006789,
+            };
+
+            // Track what gets passed to piexif.dump
+            let capturedExifObj = null;
+            mockPiexif.dump.mockImplementation((exifObj) => {
+                capturedExifObj = exifObj;
+                return 'd';
+            });
+            mockPiexif.insert.mockReturnValue(VALID_JPEG_DATA_URL);
+
+            await ImageProcessor.processForUpload(file, exifData);
+
+            // Verify the GPS data was encoded in rational format (array of [numerator, denominator] pairs)
+            expect(capturedExifObj).toBeDefined();
+            expect(capturedExifObj['GPS']).toBeDefined();
+
+            // GPS latitude should be rational format: [[degrees, 1], [minutes, 1], [seconds, 100]]
+            const gpsLat = capturedExifObj['GPS'][mockPiexif.GPSIFD.GPSLatitude];
+            expect(Array.isArray(gpsLat)).toBe(true);
+            expect(gpsLat.length).toBe(3); // Three rational values
+
+            // For latitude 40.712345:
+            // Degrees: 40, Minutes: 42, Seconds: 44.442
+            expect(gpsLat[0][0]).toBe(40); // degrees numerator
+            expect(gpsLat[0][1]).toBe(1);  // degrees denominator
+            expect(gpsLat[1][0]).toBe(42); // minutes numerator
+            expect(gpsLat[1][1]).toBe(1);  // minutes denominator
+            // Seconds are stored as hundredths: 44.442 * 100 = 4444.2 rounded to 4444
+            expect(gpsLat[2][0]).toBeGreaterThan(4400); // seconds * 100 (approximate)
+            expect(gpsLat[2][1]).toBe(100); // seconds denominator (centiseconds)
+
+            // GPS longitude reference should be 'W' for negative longitude
+            const gpsLngRef = capturedExifObj['GPS'][mockPiexif.GPSIFD.GPSLongitudeRef];
+            expect(gpsLngRef).toBe('W');
         });
     });
 
@@ -393,19 +450,30 @@ describe('ImageProcessor', () => {
             mockPiexif.dump.mockReturnValue('d');
             mockPiexif.insert.mockReturnValue(VALID_JPEG_DATA_URL);
 
-            // First call loads the CDN module (1 call to mockCompress)
-            await ImageProcessor.processForUpload(file, { gps: null, timestamp: null });
-            const firstTotalCalls = mockCompress.mock.calls.length;
+            // Spy on _mockableImport to verify CDN URLs are loaded only once
+            const importSpy = vi.spyOn(globalThis, '_mockableImport');
 
-            // Second call should reuse the cached module (mockCompress still called once per usage)
-            // The caching test verifies that the lazy loader caches the promise, not that
-            // mockCompress is called fewer times. Since both calls process an oversize file,
-            // mockCompress should be called twice (once per file), but the import() should only happen once
-            // This is verified implicitly by the test not throwing
+            // First call loads the CDN module
             await ImageProcessor.processForUpload(file, { gps: null, timestamp: null });
 
-            // Both files should have been compressed, so mockCompress should be called twice
-            expect(mockCompress).toHaveBeenCalledTimes(2);
+            // Get the count of browser-image-compression imports after first call
+            const compressionImportsAfterFirst = importSpy.mock.calls.filter(
+                c => c[0].includes('browser-image-compression')
+            ).length;
+
+            // Second call should reuse the cached module
+            await ImageProcessor.processForUpload(file, { gps: null, timestamp: null });
+
+            // Get the count of browser-image-compression imports after second call
+            const compressionImportsAfterSecond = importSpy.mock.calls.filter(
+                c => c[0].includes('browser-image-compression')
+            ).length;
+
+            // The import should have been called only once (caching works)
+            expect(compressionImportsAfterFirst).toBe(1);
+            expect(compressionImportsAfterSecond).toBe(1);
+
+            importSpy.mockRestore();
         });
 
         it('does not load any CDN modules for sub-threshold non-HEIC files', async () => {

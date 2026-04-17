@@ -57,7 +57,9 @@ const ImageProcessor = (() => {
     }
 
     function _dataUrlToBlob(dataUrl) {
-        const [header, base64] = dataUrl.split(',');
+        const commaIdx = dataUrl.indexOf(',');
+        const header = dataUrl.slice(0, commaIdx);
+        const base64 = dataUrl.slice(commaIdx + 1);
         const mimeMatch = header.match(/:(.*?);/);
         const mime = mimeMatch ? mimeMatch[1] : 'image/jpeg';
         const binary = atob(base64);
@@ -273,7 +275,7 @@ const ImageProcessor = (() => {
 
     return {
         processForUpload,
-        // Exposed for testing only:
+        // Exposed for testing only (injected into test version via setup.js)
         _resetLazyLoaders() {
             _browserImageCompressionPromise = null;
             _piexifjsPromise = null;
