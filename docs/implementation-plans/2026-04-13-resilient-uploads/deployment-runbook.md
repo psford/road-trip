@@ -1555,6 +1555,65 @@ Only after these three conditions are met should the Phase 4 acceptance session 
 
 ---
 
+## Phase 5: Client-Side Image Processing
+
+### Pre-deployment checklist
+
+- [ ] All Vitest tests pass: `npm test`
+- [ ] All .NET tests pass: `dotnet test RoadTripMap.sln`
+- [ ] Playwright E2E tests pass locally: `npx playwright test`
+- [ ] `appsettings.Production.json` has `Upload:ClientSideProcessingEnabled: false`
+- [ ] Code reviewed and merged to develop
+
+### Deployment steps
+
+1. **Deploy code** with processing disabled (default production config):
+   - Follow standard deploy workflow (`.github/workflows/deploy.yml`)
+   - Processing code is inert because `ClientSideProcessingEnabled = false`
+
+2. **Verify inert deployment**:
+   - Upload a photo from web UI
+   - Verify it commits successfully (server-side tier generation, normal flow)
+   - Check browser console: no `imageProcessor.js` CDN fetch activity
+   - Check server logs: `GenerateDerivedTiersAsync` IS called (normal, processing off)
+
+3. **Enable on staging** (if available) or **canary on prod**:
+   - Azure Portal > App Service > Configuration > Application Settings
+   - Add: `Upload__ClientSideProcessingEnabled = true`
+   - Restart App Service (setting takes effect on next page load)
+
+4. **Smoke test with processing enabled**:
+   - [ ] Upload a small JPEG (< 14 MB): commits, all 3 tiers visible
+   - [ ] Upload a large PNG (> 14 MB): compresses client-side, commits, all 3 tiers
+   - [ ] Upload 10 photos batch: all commit, no failures
+   - [ ] Check server logs: `GenerateDerivedTiersAsync` NOT called (tiers uploaded by client)
+   - [ ] Check commit timing: should be < 500ms per photo
+   - [ ] Check browser console: `browser-image-compression` loaded from jsDelivr (only on first upload)
+
+5. **Monitor for 24 hours**:
+   - Watch for: commit failures, tier blob missing warnings, CDN load errors
+   - Expected telemetry events: `processing:applied` for every upload
+
+### Rollback
+
+**If issues found at any step:**
+
+1. Azure Portal > App Service > Configuration
+2. Set `Upload__ClientSideProcessingEnabled = false`
+3. Restart App Service
+4. Takes effect on next page load -- no code deploy needed
+5. Server-side `GenerateDerivedTiersAsync` fallback activates automatically
+6. All uploads continue to work (just slower, with server-side tier gen)
+
+### Sign-off
+
+- [ ] 24-hour monitoring period passed with zero processing-related failures
+- [ ] Commit times consistently < 500ms (verified via server logs)
+- [ ] No `GenerateDerivedTiersAsync` calls in server logs for web uploads
+- [ ] Sign-off: _________________ Date: _________
+
+---
+
 **Document Version:** 1.3  
 **Created:** April 2026 (Phase 1 Implementation)  
 **Author:** Claude Code  
