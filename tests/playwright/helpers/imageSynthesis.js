@@ -98,4 +98,4 @@ const imageSynthesis = {
     },
 };
 
-module.exports = { imageSynthesis };
+export { imageSynthesis };

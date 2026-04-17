@@ -19,6 +19,7 @@ import {
   clearNetworkConditions,
   waitForUploadsComplete
 } from './helpers/networkConditions.js';
+import { imageSynthesis } from './helpers/imageSynthesis.js';
 
 const BASE_URL = 'http://localhost:5100';
 
@@ -62,6 +63,10 @@ test.describe('Resilient Uploads Phase 3 — UI', () => {
       // Feature flag may be off; test setup should ensure it's on
       console.warn('Progress panel not visible; verify FeatureFlags:ResilientUploadsUI=true');
     });
+  });
+
+  test.afterEach(async () => {
+    await page.close();
   });
 
   test('AC5.1 + AC7.1: Batch upload with progress panel and optimistic pins', async () => {
@@ -435,11 +440,29 @@ test.describe('Resilient Uploads Phase 4 — Throttled Network Scenarios', () =>
  * Requires: imageSynthesis helper, running server with Azurite
  */
 test.describe('Client-side image processing (Phase 3)', () => {
-  const { imageSynthesis } = require('./helpers/imageSynthesis.js');
-
   let testTripToken;
   let testTripId;
   let page;
+
+  /**
+   * Helper: Inject file(s) into the file input via DataTransfer dispatch.
+   * This avoids code duplication across 4 test scenarios.
+   *
+   * @param {Page} page - Playwright page object
+   * @param {Handle|Handle[]} fileHandleOrHandles - File handle(s) from page.evaluateHandle()
+   */
+  async function injectFileToInput(page, fileHandleOrHandles) {
+    await page.evaluate((fileData) => {
+      const input = document.querySelector('input[type="file"]');
+      const dt = new DataTransfer();
+      const files = Array.isArray(fileData) ? fileData : [fileData];
+      for (const file of files) {
+        dt.items.add(file);
+      }
+      Object.defineProperty(input, 'files', { value: dt.files, configurable: true });
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    }, fileHandleOrHandles);
+  }
 
   test.beforeEach(async ({ browser, request }) => {
     page = await browser.newPage();
@@ -468,14 +491,8 @@ test.describe('Client-side image processing (Phase 3)', () => {
       return window.__imageSynthesis.createLargePng(18 * 1024 * 1024);
     });
 
-    // Inject the synthesized file into the file input using DataTransfer dispatch
-    await page.evaluate((file) => {
-      const input = document.querySelector('input[type="file"]');
-      const dt = new DataTransfer();
-      dt.items.add(file);
-      Object.defineProperty(input, 'files', { value: dt.files, configurable: true });
-      input.dispatchEvent(new Event('change', { bubbles: true }));
-    }, fileHandle);
+    // Inject the synthesized file into the file input
+    await injectFileToInput(page, fileHandle);
 
     // Wait for "Processing..." to appear in progress panel (AC3.1 via AC4.3)
     await page.waitForSelector('[data-status="processing"]', { timeout: 5000 });
@@ -498,14 +515,8 @@ test.describe('Client-side image processing (Phase 3)', () => {
       return window.__imageSynthesis.createJpeg(4032, 3024, 0.95);
     });
 
-    // Inject the synthesized file into the file input using DataTransfer dispatch
-    await page.evaluate((file) => {
-      const input = document.querySelector('input[type="file"]');
-      const dt = new DataTransfer();
-      dt.items.add(file);
-      Object.defineProperty(input, 'files', { value: dt.files, configurable: true });
-      input.dispatchEvent(new Event('change', { bubbles: true }));
-    }, fileHandle);
+    // Inject the synthesized file into the file input
+    await injectFileToInput(page, fileHandle);
 
     // Measure processing time
     const startTime = Date.now();
@@ -523,14 +534,8 @@ test.describe('Client-side image processing (Phase 3)', () => {
       return window.__imageSynthesis.createJpeg(2000, 1500, 0.9);
     });
 
-    // Inject the synthesized file into the file input using DataTransfer dispatch
-    await page.evaluate((file) => {
-      const input = document.querySelector('input[type="file"]');
-      const dt = new DataTransfer();
-      dt.items.add(file);
-      Object.defineProperty(input, 'files', { value: dt.files, configurable: true });
-      input.dispatchEvent(new Event('change', { bubbles: true }));
-    }, fileHandle);
+    // Inject the synthesized file into the file input
+    await injectFileToInput(page, fileHandle);
 
     await page.waitForSelector('[data-status="committed"]', { timeout: 15000 });
 
@@ -582,17 +587,9 @@ test.describe('Client-side image processing (Phase 3)', () => {
       return files;
     });
 
-    // Inject all 20 files into the file input via DataTransfer dispatch
+    // Inject all 20 files into the file input
     const startTime = Date.now();
-    await page.evaluate((files) => {
-      const input = document.querySelector('input[type="file"]');
-      const dt = new DataTransfer();
-      for (const file of files) {
-        dt.items.add(file);
-      }
-      Object.defineProperty(input, 'files', { value: dt.files, configurable: true });
-      input.dispatchEvent(new Event('change', { bubbles: true }));
-    }, fileHandles);
+    await injectFileToInput(page, fileHandles);
 
     // Wait for all 20 committed rows in the progress panel
     await page.waitForFunction(

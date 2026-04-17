@@ -140,8 +140,19 @@ describe('postUI processing integration', () => {
         // Call PostUI.onMultipleFilesSelected directly with the file list
         await PostUI.onMultipleFilesSelected(fileList);
 
-        // Give async handlers time to process
-        await new Promise(resolve => setTimeout(resolve, 100));
+        // Wait for async processing to complete.
+        // PostUI.onMultipleFilesSelected is fire-and-forget; we need to poll
+        // until either UploadQueue.start has been called or an error occurred.
+        await waitForProcessing(queueStartSpy, failedEvents);
+    }
+
+    // Helper: Condition-based wait for async DOM handlers
+    async function waitForProcessing(queueStartSpy, failedEvents, timeoutMs = 2000) {
+        const start = Date.now();
+        while (Date.now() - start < timeoutMs) {
+            if (queueStartSpy.mock.calls.length > 0 || failedEvents.length > 0) return;
+            await new Promise(r => setTimeout(r, 10));
+        }
     }
 
     // Subcomponent B: Event ordering and queue argument tests
@@ -186,13 +197,11 @@ describe('postUI processing integration', () => {
         const eventOrder = [];
 
         // Wrap extractPhotoMetadata to track metadata extraction completion
-        let metadataExtracted = false;
         const originalExtract = extractMetadataSpy.getMockImplementation();
         extractMetadataSpy.mockImplementation(async (...args) => {
             eventOrder.push('metadata-extraction-started');
             const result = await originalExtract(...args);
             eventOrder.push('metadata-extraction-completed');
-            metadataExtracted = true;
             return result;
         });
 
@@ -205,6 +214,11 @@ describe('postUI processing integration', () => {
             return result;
         });
 
+        // Track UploadQueue.start to know when queue-started fires
+        queueStartSpy.mockImplementation(() => {
+            eventOrder.push('queue-started');
+        });
+
         // Track upload:created event
         document.addEventListener('upload:created', () => {
             eventOrder.push('upload:created');
@@ -213,10 +227,13 @@ describe('postUI processing integration', () => {
         const file = new File(['test-data'], 'photo.jpg', { type: 'image/jpeg' });
         await triggerFileSelection([file]);
 
-        // Verify that processing completed before queue.start was called
-        // (upload:created would be fired when UploadQueue.start is called in the new flow)
-        const processingCompletedIndex = eventOrder.indexOf('processing-completed');
-        expect(processingCompletedIndex).toBeGreaterThanOrEqual(0);
+        // Verify that processing completed BEFORE queue.start was called
+        // This ensures AC3.2: upload:created (fired by queue.start) comes after processing
+        const completedIndex = eventOrder.indexOf('processing-completed');
+        const queueIndex = eventOrder.indexOf('queue-started');
+        expect(completedIndex).toBeGreaterThanOrEqual(0);
+        expect(queueIndex).toBeGreaterThanOrEqual(0);
+        expect(completedIndex).toBeLessThan(queueIndex);
     });
 
     // Subcomponent C: Processing failure tests
