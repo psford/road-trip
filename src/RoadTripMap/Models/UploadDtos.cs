@@ -41,7 +41,7 @@ public record ExifDto
 
 /// <summary>
 /// Response to a successful RequestUploadAsync call.
-/// Contains SAS URL for client-side block uploads and blob metadata.
+/// Contains SAS URLs for client-side block uploads (original, display, thumb) and blob metadata.
 /// </summary>
 public record RequestUploadResponse
 {
@@ -50,6 +50,12 @@ public record RequestUploadResponse
 
     [JsonPropertyName("sasUrl")]
     public required string SasUrl { get; init; }
+
+    [JsonPropertyName("displaySasUrl")]
+    public required string DisplaySasUrl { get; init; }
+
+    [JsonPropertyName("thumbSasUrl")]
+    public required string ThumbSasUrl { get; init; }
 
     [JsonPropertyName("blobPath")]
     public required string BlobPath { get; init; }

@@ -138,10 +138,10 @@ public class UploadServiceTests
         // AC1.3: Returns the same upload ID
         response1.PhotoId.Should().Be(uploadId);
 
-        // AC1.3: SAS issuer called again to regenerate token
+        // AC1.3: SAS issuer called 3 times to regenerate tokens (original, display, thumb)
         mockSasIssuer.Verify(
             s => s.IssueWriteSasAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<TimeSpan>(), It.IsAny<CancellationToken>()),
-            Times.Once);
+            Times.Exactly(3));
     }
 
     [Fact]

@@ -89,10 +89,28 @@ public class UploadService : IUploadService
                 _options.SasTokenTtl,
                 ct);
 
+            // Issue SAS URLs for client-side tier uploads
+            var existingDisplayBlobPath = $"{request.UploadId}_display.jpg";
+            var existingThumbBlobPath = $"{request.UploadId}_thumb.jpg";
+
+            var existingDisplaySasUrl = await _sasTokenIssuer.IssueWriteSasAsync(
+                $"trip-{tripToken.ToLowerInvariant()}",
+                existingDisplayBlobPath,
+                _options.SasTokenTtl,
+                ct);
+
+            var existingThumbSasUrl = await _sasTokenIssuer.IssueWriteSasAsync(
+                $"trip-{tripToken.ToLowerInvariant()}",
+                existingThumbBlobPath,
+                _options.SasTokenTtl,
+                ct);
+
             return new RequestUploadResponse
             {
                 PhotoId = request.UploadId,
                 SasUrl = existingSasUrl.ToString(),
+                DisplaySasUrl = existingDisplaySasUrl.ToString(),
+                ThumbSasUrl = existingThumbSasUrl.ToString(),
                 BlobPath = existingPhoto.BlobPath,
                 MaxBlockSizeBytes = _options.MaxBlockSizeBytes,
                 ServerVersion = ServerVersion.Current,
@@ -135,10 +153,28 @@ public class UploadService : IUploadService
             _options.SasTokenTtl,
             ct);
 
+        // Issue SAS URLs for client-side tier uploads
+        var displayBlobPath = $"{request.UploadId}_display.jpg";
+        var thumbBlobPath = $"{request.UploadId}_thumb.jpg";
+
+        var newDisplaySasUrl = await _sasTokenIssuer.IssueWriteSasAsync(
+            containerName,
+            displayBlobPath,
+            _options.SasTokenTtl,
+            ct);
+
+        var newThumbSasUrl = await _sasTokenIssuer.IssueWriteSasAsync(
+            containerName,
+            thumbBlobPath,
+            _options.SasTokenTtl,
+            ct);
+
         return new RequestUploadResponse
         {
             PhotoId = request.UploadId,
             SasUrl = newSasUrl.ToString(),
+            DisplaySasUrl = newDisplaySasUrl.ToString(),
+            ThumbSasUrl = newThumbSasUrl.ToString(),
             BlobPath = blobPath,
             MaxBlockSizeBytes = _options.MaxBlockSizeBytes,
             ServerVersion = ServerVersion.Current,
@@ -203,20 +239,35 @@ public class UploadService : IUploadService
             request.BlockIds.Count,
             LogSanitizer.SanitizeToken(tripToken));
 
-        // Generate display (1920px) and thumb (300px) tiers from the original blob
-        // so the photo proxy endpoint can serve them. Without this, thumbnails render blank.
-        try
+        // Check if client already uploaded tier blobs
+        var displayBlobClient = containerClient.GetBlobClient($"{photo.UploadId}_display.jpg");
+        var thumbBlobClient = containerClient.GetBlobClient($"{photo.UploadId}_thumb.jpg");
+
+        var displayExists = await displayBlobClient.ExistsAsync(ct);
+        var thumbExists = await thumbBlobClient.ExistsAsync(ct);
+
+        if (!displayExists.Value || !thumbExists.Value)
         {
-            await _photoService.GenerateDerivedTiersAsync(containerName, photo.UploadId!.Value, ct);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex,
-                "Failed to generate derived tiers for photo. photo_id={photoId}, trip_token_prefix={prefix}",
-                photoId,
-                LogSanitizer.SanitizeToken(tripToken));
-            // Continue — photo is committed even if thumbnail generation failed.
-            // The photo proxy will fall back to the original if tiers are missing.
+            // Fallback: client didn't upload tiers (legacy client, failed upload, iOS dev builds)
+            _logger.LogWarning(
+                "Client did not upload tier blobs for photo {PhotoId}. Falling back to server-side generation.",
+                LogSanitizer.SanitizeToken(photo.UploadId!.Value.ToString()));
+
+            // Generate display (1920px) and thumb (300px) tiers from the original blob
+            // so the photo proxy endpoint can serve them. Without this, thumbnails render blank.
+            try
+            {
+                await _photoService.GenerateDerivedTiersAsync(containerName, photo.UploadId!.Value, ct);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex,
+                    "Failed to generate derived tiers for photo. photo_id={photoId}, trip_token_prefix={prefix}",
+                    photoId,
+                    LogSanitizer.SanitizeToken(tripToken));
+                // Continue — photo is committed even if thumbnail generation failed.
+                // The photo proxy will fall back to the original if tiers are missing.
+            }
         }
 
         // AC1.4 & C7: Reverse-geocode to set PlaceName if GPS coordinates present
