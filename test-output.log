@@ -1,0 +1,13 @@
+
+> road-trip@1.0.0 test
+> vitest run
+
+
+ RUN  v4.1.2 /workspaces/road-trip
+
+
+ Test Files  17 passed (17)
+      Tests  227 passed (227)
+   Start at  02:31:16
+   Duration  32.05s (transform 887ms, setup 1.19s, import 1.10s, tests 37.58s, environment 41.31s)
+

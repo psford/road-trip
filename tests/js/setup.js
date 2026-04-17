@@ -26,16 +26,14 @@ function loadGlobal(filename) {
             'globalThis._mockableImport($1)'
         );
 
-        // Inject _resetLazyLoaders into the return statement (test-only method)
-        // Must handle both the old pattern (just processForUpload) and new pattern (with _resetProcessingFlag)
+        // Inject test-only methods into the return statement
         modifiedCode = modifiedCode.replace(
-            /return \{\s*processForUpload(?:,\s*_resetProcessingFlag\(\) \{[^}]+\}\s*)?\};/s,
+            'return { processForUpload };',
             `return {
         processForUpload,
         _resetProcessingFlag() {
             _processingEnabled = null;
         },
-        // Exposed for testing only (injected into test version via setup.js)
         _resetLazyLoaders() {
             _browserImageCompressionPromise = null;
             _piexifjsPromise = null;

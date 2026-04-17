@@ -47,8 +47,8 @@ public class ClientProcessingFlagMiddlewareTests : IAsyncLifetime
 
     private void CreateFactory(bool clientSideProcessingEnabled)
     {
-        var connection = new SqliteConnection("DataSource=:memory:");
-        connection.Open();
+        _connection = new SqliteConnection("DataSource=:memory:");
+        _connection.Open();
 
         _factory = new WebApplicationFactory<Program>()
             .WithWebHostBuilder(builder =>
@@ -73,7 +73,7 @@ public class ClientProcessingFlagMiddlewareTests : IAsyncLifetime
                     if (descriptor != null) services.Remove(descriptor);
 
                     services.AddDbContext<RoadTripDbContext>(options =>
-                        options.UseSqlite(connection));
+                        options.UseSqlite(_connection));
                 });
             });
 
