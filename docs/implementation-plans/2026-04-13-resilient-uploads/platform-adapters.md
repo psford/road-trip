@@ -149,7 +149,11 @@ Delete an item and cascade-delete all its blocks.
 
 ### Tests to Keep Passing
 
-**Location:** `tests/js/uploadQueue.test.js` (if exists) or similar.
+**Locations:**
+- `tests/js/storageAdapter.test.js`
+- `tests/js/uploadQueue.test.js`
+- `tests/js/uploadTransport.test.js` (also tests storageAdapter indirectly)
+- `tests/js/bootstrap-loader.test.js` (loader AC9 scenarios)
 
 Tests exercise:
 - Item CRUD: putItem, getItem, updateItemStatus, deleteItem
@@ -157,6 +161,9 @@ Tests exercise:
 - Cascade delete: deleteItem removes all blocks
 - Fallback: In-memory fallback works when IndexedDB unavailable
 - Idempotency: Duplicate calls are safe
+- Upload resumption: Inspects storage for pending blocks, re-uploads only those
+- SAS refresh and retry: Handles 403 and retryable errors correctly
+- Bootstrap scenarios: Offline-first loading (AC9.1–9.5), platform CSS (AC10.1–10.2)
 
 Verify `npm test` passes with `_platform === 'web'` (default).
 
@@ -242,7 +249,11 @@ Upload entire file as ordered blocks with automatic retry, backoff, and SAS refr
 
 ### Tests to Keep Passing
 
-**Location:** `tests/js/uploadTransport.test.js` (if exists) or similar.
+**Locations:**
+- `tests/js/uploadTransport.test.js` — Transport-specific scenarios
+- `tests/js/uploadQueue.test.js` — Orchestration and integration tests
+- `tests/js/storageAdapter.test.js` — Storage backend tests
+- `tests/js/bootstrap-loader.test.js` — Loader AC9/AC10 scenarios
 
 Tests exercise:
 - Block upload: single block PUT succeeds, throws on non-201 status
@@ -251,6 +262,7 @@ Tests exercise:
 - SAS refresh: on SasExpiredError, calls onSasExpired, retries with new URL
 - Block persistence: resumable uploads inspect storage, re-upload pending blocks
 - Concurrency: respects semaphore limits
+- Integration: StorageAdapter and UploadTransport work together across upload lifecycle
 
 Verify `npm test` passes with `_platform === 'web'` (default).
 

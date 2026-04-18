@@ -1,6 +1,5 @@
-import type {CapacitorConfig} from '@capacitor/cli';
-
-const config: CapacitorConfig = {
+/** @type {import('@capacitor/cli').CapacitorConfig} */
+const config = {
   appId: 'com.psford.roadtripmap',
   appName: 'Road Trip',
   webDir: 'src/bootstrap',
@@ -13,4 +12,4 @@ const config: CapacitorConfig = {
   }
 };
 
-export default config;
+module.exports = config;
