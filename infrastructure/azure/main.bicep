@@ -273,6 +273,8 @@ resource blobServices 'Microsoft.Storage/storageAccounts/blobServices@2023-05-01
           allowedOrigins: [
             'https://roadtripmap.azurewebsites.net'
             'https://localhost:5001'
+            'capacitor://localhost'
+            'ionic://localhost'
           ]
           allowedMethods: [ 'GET', 'PUT', 'HEAD', 'OPTIONS' ]
           allowedHeaders: [ '*' ]
