@@ -59,9 +59,11 @@ The iOS app lives under `ios/` inside the existing `road-trip` repository, not a
 
 ---
 
-## Apple portal follow-ups (remaining)
+## Apple portal follow-ups — all complete (2026-04-18)
 
 - [x] Team ID captured (Decision 3).
-- [ ] Register App ID `com.psford.roadtripmap` under developer.apple.com → Identifiers. Must complete before Task 10 Xcode signing.
-- [ ] Register Patrick's iPhone UDID under developer.apple.com → Devices. Must complete before Task 11 device-smoke matrix.
-- [ ] Create the App Store Connect record for `Road Trip Map` bound to the App ID. Must complete before Task 10 TestFlight upload.
+- [x] App ID `com.psford.roadtripmap` registered under developer.apple.com → Identifiers.
+- [x] Patrick's iPhone UDID registered under developer.apple.com → Devices.
+- [x] App Store Connect record created for `Road Trip Map` bound to the App ID. Name is the current working title — revisable before first public release with no cost; revisable after via a normal review cycle.
+
+Task 10 (TestFlight signing) no longer has any Apple-side blockers. Remaining Phase 5 gating is the implementation work on Tasks 5–7, 9, and 12.
