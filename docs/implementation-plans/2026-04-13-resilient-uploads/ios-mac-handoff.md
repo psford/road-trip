@@ -53,7 +53,7 @@ One-time configuration per clone. In Xcode, with the `App` project selected in t
 
 1. Select the `App` **target** (under TARGETS, not PROJECT) in the editor.
 2. **Signing & Capabilities** tab at the top of the editor.
-3. **Team**: dropdown → pick the team whose Team ID equals `<apple-team-id>` (from `phase-5-decisions.md`). If your team doesn't appear, Xcode → Settings → Accounts → select your Apple ID → Download Manual Profiles, then come back.
+3. **Team**: dropdown → pick the team whose Team ID equals `GP2M7H6R3U` (Patrick's paid Developer Program team; see `phase-5-decisions.md` Decision 3). If your team doesn't appear, Xcode → Settings → Accounts → select your Apple ID → Download Manual Profiles, then come back.
 4. **Bundle Identifier**: set to `<bundle-id>` (from `phase-5-decisions.md`). Must exactly match the App ID registered in developer.apple.com → Identifiers.
 5. **Automatic Signing**: checkbox ON. Xcode will create an "Apple Development" certificate the first time you build to a device, and an "Apple Distribution" certificate the first time you archive.
 6. If you see a red error bar "No matching provisioning profile": wait ~30 seconds; Xcode usually self-heals. If not, click **Try Again** in the error bar. If it still fails, see Troubleshooting below.
@@ -153,7 +153,7 @@ Anything unresolved after 15 minutes → commit what you have, push, and escalat
 
 Fill these in from `phase-5-decisions.md` before starting:
 
-- Apple Team ID: `<apple-team-id>`
+- Apple Team ID: `GP2M7H6R3U`
 - Bundle Identifier: `<bundle-id>`
 - Feature branch name: `<feature-branch-name>`
 - Bundle hosting URL: `<bundle-hosting-url>`

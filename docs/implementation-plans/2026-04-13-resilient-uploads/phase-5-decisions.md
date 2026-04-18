@@ -1,6 +1,6 @@
 # Phase 5 Architectural Decisions
 
-**Decisions finalized on:** 2026-04-18 (Team ID deferred pending Apple Developer Program propagation — see Decision 3).
+**Decisions finalized on:** 2026-04-18 (all decisions final; Team ID filled in same day after Apple Developer Program propagation completed).
 
 These values parameterize every reference in `phase_05.md` and `ios-mac-handoff.md`. When a placeholder like `<bundle-id>` appears in those docs, its value is defined here.
 
@@ -19,12 +19,11 @@ The iOS app lives under `ios/` inside the existing `road-trip` repository, not a
 - Matches the project's existing `com.psford.*` convention.
 - Must be registered letter-for-letter in developer.apple.com → Certificates, Identifiers & Profiles → Identifiers → App IDs before Task 10 on the Mac.
 
-## 3. Apple Developer Team ID — **TBD**
+## 3. Apple Developer Team ID — **`GP2M7H6R3U`**
 
-- Apple Developer Program renewal paid 2026-04-18; propagation to developer.apple.com and App Store Connect not yet complete at time of writing.
-- Fill this value in once the portal shows the paid team (typically <24h, sometimes up to 48h).
-- Patrick pulls the Team ID from: developer.apple.com → Account → Membership details → Team ID (10 alphanumeric chars, e.g. `AB12CD34EF`).
-- **Blocks:** Task 10 (TestFlight signing). Does NOT block Tasks 3–9 and 12.
+- Retrieved 2026-04-18 from developer.apple.com → Account → Membership details, after Apple Developer Program renewal propagated.
+- Role: Account Holder / Admin.
+- Used in: `ios/App/App.xcodeproj/project.pbxproj` (set by Xcode via Signing & Capabilities → Team dropdown on the Mac side); also inlined into `ios-mac-handoff.md` Sections 3 and 10.
 
 ## 4. TestFlight internal testers — **Patrick only, Phase 5**
 
@@ -60,13 +59,9 @@ The iOS app lives under `ios/` inside the existing `road-trip` repository, not a
 
 ---
 
-## Fill-in checklist (apply when Apple propagates)
+## Apple portal follow-ups (remaining)
 
-When the developer portal shows Patrick's renewed membership:
-
-- [ ] Replace `<apple-team-id>` in `ios-mac-handoff.md` Section 10 with the real Team ID.
-- [ ] Register App ID `com.psford.roadtripmap` under developer.apple.com → Identifiers.
-- [ ] Register Patrick's iPhone UDID under developer.apple.com → Devices (for non-TestFlight dev builds).
-- [ ] Create the App Store Connect record for `Road Trip Map` bound to that App ID.
-- [ ] Update this file's Decision 3 to replace TBD with the actual Team ID and strike the "Fill-in checklist" section.
-- [ ] Commit: `docs(ios): fill in Team ID after Apple propagation`.
+- [x] Team ID captured (Decision 3).
+- [ ] Register App ID `com.psford.roadtripmap` under developer.apple.com → Identifiers. Must complete before Task 10 Xcode signing.
+- [ ] Register Patrick's iPhone UDID under developer.apple.com → Devices. Must complete before Task 11 device-smoke matrix.
+- [ ] Create the App Store Connect record for `Road Trip Map` bound to the App ID. Must complete before Task 10 TestFlight upload.
