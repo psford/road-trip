@@ -564,6 +564,128 @@ describe('Bootstrap Loader', () => {
     });
   });
 
+  describe('IDB write error: injects bundle + logs error (writeCache rejection path)', () => {
+    it('should inject bundle even if IndexedDB write fails', async () => {
+      // Arrange: set up AC9.1 preconditions (no pre-seeded cache)
+      const manifest = {
+        version: '1.0.0',
+        client_min_version: '1.0.0',
+        files: {
+          'app.js': { size: 100, sha256: 'aaa' },
+          'app.css': { size: 200, sha256: 'bbb' },
+          'ios.css': { size: 50, sha256: 'ccc' }
+        }
+      };
+
+      const appJs = '// app.js bundle';
+      const appCss = 'body { color: red; }';
+      const iosCss = 'body { color: blue; }';
+
+      const fetchMock = vi.fn(async (url) => {
+        if (url === 'https://app-roadtripmap-prod.azurewebsites.net/bundle/manifest.json') {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => manifest
+          };
+        }
+        if (url === 'https://app-roadtripmap-prod.azurewebsites.net/bundle/app.js') {
+          return { ok: true, status: 200, text: async () => appJs };
+        }
+        if (url === 'https://app-roadtripmap-prod.azurewebsites.net/bundle/app.css') {
+          return { ok: true, status: 200, text: async () => appCss };
+        }
+        if (url === 'https://app-roadtripmap-prod.azurewebsites.net/bundle/ios.css') {
+          return { ok: true, status: 200, text: async () => iosCss };
+        }
+        throw new Error(`Unexpected fetch: ${url}`);
+      });
+
+      const alertMock = vi.fn();
+
+      // Patch indexedDB.open to make the write transaction fail.
+      // We intercept the second transaction (writeCache; first is readCache).
+      const originalOpen = globalThis.indexedDB.open;
+      let transactionCount = 0;
+      globalThis.indexedDB.open = function(...args) {
+        const request = originalOpen.apply(this, args);
+        const originalSuccess = request.onsuccess;
+
+        request.onsuccess = function(evt) {
+          const db = this.result;
+          const originalTx = db.transaction;
+
+          db.transaction = function(...txArgs) {
+            transactionCount++;
+            const tx = originalTx.apply(this, txArgs);
+
+            // For the second transaction (writeCache), make put fail
+            if (transactionCount === 2) {
+              const originalStore = tx.objectStore;
+              tx.objectStore = function(...storeArgs) {
+                const store = originalStore.apply(this, storeArgs);
+                const originalPut = store.put;
+
+                store.put = function(...putArgs) {
+                  const putReq = originalPut.apply(this, putArgs);
+
+                  // Async: fire onerror after microtask queue flushes
+                  Promise.resolve().then(() => {
+                    // Manually call the onerror handler
+                    if (putReq.onerror) {
+                      putReq.error = 'SimulatedQuotaExceededError';
+                      putReq.onerror({ target: putReq });
+                    }
+                  });
+
+                  return putReq;
+                };
+
+                return store;
+              };
+            }
+
+            return tx;
+          };
+
+          // Call the original onsuccess
+          if (originalSuccess) {
+            originalSuccess.call(this, evt);
+          }
+        };
+
+        return request;
+      };
+
+      try {
+        // Act
+        await runLoaderInScope(fetchMock, alertMock);
+
+        // Assert: CSS and JS still injected (fail-open behavior)
+        const styles = document.querySelectorAll('style');
+        expect(styles.length).toBeGreaterThan(0);
+        const style = styles[styles.length - 1];
+        expect(style.textContent).toContain('body { color: red; }');
+        expect(style.textContent).toContain('body { color: blue; }');
+
+        const scripts = document.querySelectorAll('script');
+        const loaderScript = Array.from(scripts).find((s) =>
+          s.textContent.includes('// app.js bundle')
+        );
+        expect(loaderScript).toBeTruthy();
+
+        // Assert: bootstrap-progress removed
+        expect(document.getElementById('bootstrap-progress')).toBeNull();
+
+        // Assert: alert was not called (no version mismatch, not AC9.5)
+        expect(alertMock).not.toHaveBeenCalled();
+      } finally {
+        // Restore original indexedDB.open
+        globalThis.indexedDB.open = originalOpen;
+      }
+    });
+  });
+
   describe('compareSemver', () => {
     it('should return 0 when versions are equal', () => {
       expect(compareSemver('1.0.0', '1.0.0')).toBe(0);
