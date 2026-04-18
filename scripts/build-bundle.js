@@ -101,12 +101,28 @@ function concatCss(dir) {
     .join('\n');
 }
 
+function checkBundleSyntax(bundlePath) {
+  try {
+    execSync(`node --check "${bundlePath}"`, { stdio: ['ignore', 'pipe', 'pipe'] });
+    return true;
+  } catch (err) {
+    console.error(`\nSyntax check failed for ${bundlePath}`);
+    console.error(err.stderr ? err.stderr.toString() : err.toString());
+    return false;
+  }
+}
+
 function main() {
   fs.mkdirSync(outDir, { recursive: true });
 
   const jsOut = concatJs();
   const jsPath = path.join(outDir, 'app.js');
   fs.writeFileSync(jsPath, jsOut);
+
+  // Regression test: verify bundle is syntactically valid
+  if (!checkBundleSyntax(jsPath)) {
+    process.exit(1);
+  }
 
   const cssOut = concatCss(cssDir);
   const cssPath = path.join(outDir, 'app.css');
