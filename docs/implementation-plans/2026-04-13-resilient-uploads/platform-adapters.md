@@ -361,16 +361,16 @@ function getPlatform() {
 
 ### Phase 5 (Current)
 
-All tests run with `_platform === 'web'`. Verify:
+All tests run without platform branching (single `web`-equivalent code path — no `_platform` variable exists in Phase 5). Verify:
 - `npm test` passes (all test suites)
 - `dotnet test RoadTripMap.sln` passes (.NET integration tests)
 
 ### Phase 6 Preparation
 
-Add platform-aware test fixtures:
+Add platform-aware test fixtures once Phase 6 introduces the `_platform` constant (or equivalent call-time detection):
 - Mock `window.Capacitor` and `getPlatform()` in test harness.
-- Run StorageAdapter tests with `_platform === 'web'` and `_platform === 'ios'` (will test IndexedDB on both, since Phase 5 seam returns same adapter).
-- Phase 6 will add SQLite-backed tests for `ios` path.
+- Run StorageAdapter tests under both `web` and `ios` code paths. In Phase 5 there is no branching, so these fixtures are Phase-6-specific.
+- Phase 6 will add SQLite-backed tests for the `ios` path.
 
 ### Phase 6 Validation
 

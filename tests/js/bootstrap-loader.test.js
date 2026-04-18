@@ -602,59 +602,32 @@ describe('Bootstrap Loader', () => {
       });
 
       const alertMock = vi.fn();
+      const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
-      // Patch indexedDB.open to make the write transaction fail.
-      // We intercept the second transaction (writeCache; first is readCache).
+      // Force openDatabase() to fail on its 2nd call (writeCache's call; the
+      // 1st call is from readCache which must succeed so bootstrap reaches
+      // the write path). Pattern: make the IDBOpenDBRequest reject
+      // asynchronously via onerror. writeCache awaits openDatabase() so it
+      // rejects, the caller's try/catch in the IIFE logs via console.error.
       const originalOpen = globalThis.indexedDB.open;
-      let transactionCount = 0;
+      let openCallCount = 0;
       globalThis.indexedDB.open = function(...args) {
-        const request = originalOpen.apply(this, args);
-        const originalSuccess = request.onsuccess;
-
-        request.onsuccess = function(evt) {
-          const db = this.result;
-          const originalTx = db.transaction;
-
-          db.transaction = function(...txArgs) {
-            transactionCount++;
-            const tx = originalTx.apply(this, txArgs);
-
-            // For the second transaction (writeCache), make put fail
-            if (transactionCount === 2) {
-              const originalStore = tx.objectStore;
-              tx.objectStore = function(...storeArgs) {
-                const store = originalStore.apply(this, storeArgs);
-                const originalPut = store.put;
-
-                store.put = function(...putArgs) {
-                  const putReq = originalPut.apply(this, putArgs);
-
-                  // Async: fire onerror after microtask queue flushes
-                  Promise.resolve().then(() => {
-                    // Manually call the onerror handler
-                    if (putReq.onerror) {
-                      putReq.error = 'SimulatedQuotaExceededError';
-                      putReq.onerror({ target: putReq });
-                    }
-                  });
-
-                  return putReq;
-                };
-
-                return store;
-              };
-            }
-
-            return tx;
+        openCallCount++;
+        if (openCallCount >= 2) {
+          // Return a fake IDBOpenDBRequest that fires onerror on next microtask
+          const fakeReq = {
+            result: null,
+            error: new Error('SimulatedQuotaExceededError'),
+            onerror: null,
+            onsuccess: null,
+            onupgradeneeded: null
           };
-
-          // Call the original onsuccess
-          if (originalSuccess) {
-            originalSuccess.call(this, evt);
-          }
-        };
-
-        return request;
+          Promise.resolve().then(() => {
+            if (fakeReq.onerror) fakeReq.onerror({ target: fakeReq });
+          });
+          return fakeReq;
+        }
+        return originalOpen.apply(this, args);
       };
 
       try {
@@ -679,9 +652,17 @@ describe('Bootstrap Loader', () => {
 
         // Assert: alert was not called (no version mismatch, not AC9.5)
         expect(alertMock).not.toHaveBeenCalled();
+
+        // Assert: the error was logged (not silently swallowed).
+        // Catches regression to writeCache silently resolving on IDB failure.
+        expect(consoleErrorSpy).toHaveBeenCalledWith(
+          expect.stringContaining('failed to cache'),
+          expect.anything()
+        );
       } finally {
-        // Restore original indexedDB.open
+        // Restore original indexedDB.open and console.error
         globalThis.indexedDB.open = originalOpen;
+        consoleErrorSpy.mockRestore();
       }
     });
   });
