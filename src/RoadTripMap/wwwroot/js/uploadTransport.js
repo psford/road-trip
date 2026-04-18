@@ -3,7 +3,9 @@
  * Implements AC3.2 (retry with backoff), AC3.3 (failure after 6 attempts), AC3.5 (SAS refresh)
  */
 
-const UploadTransport = {
+const _platform = (typeof window !== 'undefined' && window.Capacitor?.getPlatform?.()) || 'web';
+
+const _uploadTransportImpl = {
     /**
      * Error class for transient failures that should be retried
      */
@@ -271,3 +273,6 @@ const UploadTransport = {
         return blockIds;
     },
 };
+
+// Platform-adapter seam: Phase 6 will replace the 'ios' branch with native BackgroundUpload.enqueue
+const UploadTransport = _platform === 'ios' ? _uploadTransportImpl : _uploadTransportImpl;

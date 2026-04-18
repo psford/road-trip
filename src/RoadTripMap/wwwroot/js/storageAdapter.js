@@ -4,7 +4,9 @@
  * Implements the pattern from mapCache.js for consistency
  */
 
-const StorageAdapter = {
+const _platform = (typeof window !== 'undefined' && window.Capacitor?.getPlatform?.()) || 'web';
+
+const _storageAdapterImpl = {
     _db: null,
     _dbName: 'RoadTripUploadQueue',
     _version: 1,
@@ -504,3 +506,6 @@ const StorageAdapter = {
         }
     }
 };
+
+// Platform-adapter seam: Phase 6 will replace the 'ios' branch with createSqliteAdapter()
+const StorageAdapter = _platform === 'ios' ? _storageAdapterImpl : _storageAdapterImpl;
