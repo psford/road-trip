@@ -6,7 +6,7 @@
 
 **Cross-machine sequencing:** Tasks 1–9 and 12 execute on WSL (this machine). Tasks 10–11 execute on Patrick's Mac. Every WSL task commits + pushes so the Mac can `git pull`; every Mac task commits artifacts back so WSL can resume.
 
-**Tech Stack:** Capacitor 7.x, Swift 5.5+, Xcode ≥15, esbuild, IndexedDB.
+**Tech Stack:** Capacitor 8.x (SPM), Swift 5.9+, Xcode ≥26.3, esbuild, IndexedDB.
 
 **Scope:** Phase 5 of 7.
 
@@ -53,6 +53,74 @@ Every task lists the shell it runs in:
 
 ---
 
+<!-- START_SUBCOMPONENT_0 (task 0) -->
+## Subcomponent 0: Plan revisions (WSL) — MUST run first
+
+Added 2026-04-18 after environment verification on Patrick's new Mac (Xcode 26.4.1, Capacitor 8 current). These deltas change commands and the Tech Stack line but **do NOT** change any acceptance criterion. Apply them in-place in this file and cascade into the handoff/decisions docs produced by Tasks 1 and 2.
+
+<!-- START_TASK_REVISIONS -->
+### Task 0: Apply Xcode 26 / Capacitor 8 / MCP revisions to this plan
+
+**Shell:** `[WSL]`
+
+**Verifies:** None (plan hygiene; unblocks correct execution of Tasks 1 and 5).
+
+**Files:**
+- Modify: `docs/implementation-plans/2026-04-13-resilient-uploads/phase_05.md` (this file — header Tech Stack line, Task 1 prerequisites/clone-setup/troubleshooting subsections, Task 5 implementation steps)
+
+**Background / why these changes are needed:**
+
+1. **Capacitor 8 defaults to Swift Package Manager (SPM), not CocoaPods.** Capacitor 8 is required for Xcode 26.0+; `npx cap add ios` no longer generates a Podfile by default. Opting back in with `--packagemanager CocoaPods` is possible but unnecessary — SPM is the forward direction for both Apple and Ionic. See `https://capacitorjs.com/docs/ios/spm`.
+2. **Xcode 26.3 ships a native MCP server (`xcrun mcpbridge`)** that lets Claude Code on the Mac host drive Xcode directly (build, run, test, capture previews, ~20 tools total). Apple co-designed the Claude Code integration, so it works out of the box. See `https://developer.apple.com/documentation/xcode/giving-external-agents-access-to-xcode`. This is available only on the Mac host — the Linux container in which Tasks 1–9 and 12 run cannot spawn `mcpbridge`, so the MCP bridge is a **Mac-host-only** convenience.
+3. **Minimum Xcode bumped to 26.3** (required for both Capacitor 8 and the MCP bridge). Minimum Swift is 5.9+ per Xcode 26.
+
+**Implementation (exact edits — apply as one commit):**
+
+- **Header Tech Stack line** (search `**Tech Stack:** Capacitor 7.x`): change to
+  `**Tech Stack:** Capacitor 8.x (SPM), Swift 5.9+, Xcode ≥26.3, esbuild, IndexedDB.`
+
+- **Task 1 prerequisites checklist**: replace the current 6 bullets with:
+  - Xcode ≥ 26.3 (verify: `xcodebuild -version`)
+  - Command Line Tools (`xcode-select --install`, then `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer`)
+  - Node 20+ (`node -v`)
+  - Apple Developer Program enrollment (active) — Apple ID added via Xcode → Settings → Accounts
+  - `gh` CLI authenticated to GitHub (`gh auth status`)
+  - (Recommended) Claude Code installed natively on the Mac host with the Xcode MCP bridge wired up: `claude mcp add --transport stdio xcode -- xcrun mcpbridge`. Gives the Mac-session agent direct build/run/test/screenshot access to Xcode for Tasks 10–11.
+
+- **Task 1 First-time clone + setup** block: replace `cd ios/App && pod install && cd ../..` with nothing (delete the line). SPM resolution is automatic on `npx cap sync ios` and on first Xcode open. Resulting block:
+  ```bash
+  git clone git@github.com:psford/road-trip.git
+  cd road-trip
+  git fetch origin
+  git checkout <feature-branch-name>
+  npm ci
+  npm run build:bundle
+  npx cap sync ios
+  npx cap open ios
+  ```
+
+- **Task 1 Troubleshooting** subsection: remove the two CocoaPods-specific bullets (`CocoaPods install errors …` and `pod install fails on M1/M2 …`). Replace with:
+  - SPM package resolution stalled → in Xcode: File → Packages → Reset Package Caches, then Resolve Package Versions.
+  - Xcode MCP bridge not responding → `xcrun mcpbridge --version` in Terminal; if missing, install additional Xcode components via Xcode → Settings → Platforms.
+
+- **Task 1 "Push results back to the repo"** step: drop `ios/App/Podfile` / `Podfile.lock` references; the only iOS files that should be staged on the Mac side are `ios/App/App.xcodeproj/project.pbxproj` and `ios/App/App/Info.plist` (already listed).
+
+- **Task 5 steps**: in the `[WSL]` portion, the four `npm install` / `npx cap init` / `npx cap add ios` steps stay verbatim (Capacitor's CLI picks SPM automatically in v8). Delete the entire `[Mac — Terminal]` step 5 block about `pod install` and `ios/App/Pods/`. Replace with: *"Step 5 (optional): On `[Mac — Terminal]` after WSL pushes, run `git pull && cd ios/App && xcodebuild -resolvePackageDependencies` to warm the SPM cache. Not strictly required — Xcode resolves on first open."*
+
+- **Task 5 decisions note in `phase-5-decisions.md`** (produced by Task 2): add an explicit "Package manager: Swift Package Manager (Capacitor 8 default)" decision line.
+
+**Verification:**
+
+- `grep -n "pod install\|CocoaPods\|Podfile\|Capacitor 7" docs/implementation-plans/2026-04-13-resilient-uploads/phase_05.md` returns no matches after the edit.
+- Tech Stack line reads `Capacitor 8.x (SPM), Swift 5.9+, Xcode ≥26.3`.
+- Task 1 prerequisites include the MCP bridge bullet.
+
+**Commit:** `docs(ios): Phase 5 revisions — SPM over CocoaPods, Xcode 26.3+ minimum, MCP bridge for Mac session`
+<!-- END_TASK_REVISIONS -->
+<!-- END_SUBCOMPONENT_0 -->
+
+---
+
 <!-- START_SUBCOMPONENT_A (tasks 1-2) -->
 ## Subcomponent A: Docs and decisions (WSL)
 
@@ -71,12 +139,12 @@ Every task lists the shell it runs in:
 This document is the Mac session's operating manual. Include:
 
 1. **Prerequisites checklist**
-   - Xcode ≥ 15 (verify: `xcodebuild -version`)
-   - Command Line Tools (`xcode-select --install`)
+   - Xcode ≥ 26.3 (verify: `xcodebuild -version`)
+   - Command Line Tools (`xcode-select --install`, then `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer`)
    - Node 20+ (`node -v`)
-   - CocoaPods (`sudo gem install cocoapods`, then `pod --version`)
-   - Apple Developer Program enrollment (active)
+   - Apple Developer Program enrollment (active) — Apple ID added via Xcode → Settings → Accounts
    - `gh` CLI authenticated to GitHub (`gh auth status`)
+   - (Recommended) Claude Code installed natively on the Mac host with the Xcode MCP bridge wired up: `claude mcp add --transport stdio xcode -- xcrun mcpbridge`. Gives the Mac-session agent direct build/run/test/screenshot access to Xcode for Tasks 10–11.
 
 2. **First-time clone + setup**
    ```bash
@@ -87,7 +155,6 @@ This document is the Mac session's operating manual. Include:
    npm ci
    npm run build:bundle
    npx cap sync ios
-   cd ios/App && pod install && cd ../..
    npx cap open ios
    ```
 
@@ -128,11 +195,11 @@ This document is the Mac session's operating manual. Include:
    ```
 
 9. **Troubleshooting**
-   - CocoaPods install errors → `pod repo update && pod install`.
+   - SPM package resolution stalled → in Xcode: File → Packages → Reset Package Caches, then Resolve Package Versions.
+   - Xcode MCP bridge not responding → `xcrun mcpbridge --version` in Terminal; if missing, install additional Xcode components via Xcode → Settings → Platforms.
    - Code signing error "No matching provisioning profile" → confirm Team ID matches in Xcode + Apple Developer portal.
    - Bundle load 404 → confirm App Service `/bundle/manifest.json` returns 200 in Safari.
    - White screen on launch → attach Safari Web Inspector to the device; check for bootstrap errors.
-   - `pod install` fails on M1/M2 → `arch -x86_64 pod install` fallback.
 
 **Verification:**
 
@@ -171,6 +238,8 @@ Present to Patrick (in chat) and record final decisions in `phase-5-decisions.md
 5. **Bundle hosting URL**: `https://roadtripmap.azurewebsites.net/bundle/` (same App Service) or a dedicated CDN path. Recommendation: App Service for Phase 5; move to CDN if bandwidth becomes an issue.
 
 6. **iOS deployment target**: minimum iOS version (design implies modern — iOS 15 or 16 minimum given HEIC support, background tasks).
+
+7. **iOS package manager**: Swift Package Manager (Capacitor 8 default). Recorded to preempt any stale CocoaPods references in older docs. No decision needed from Patrick — this is locked.
 
 Once Patrick signs off, the doc is committed and referenced from Task 1's handoff doc.
 
@@ -304,19 +373,18 @@ On `[WSL]` (commit + push each step):
        }
      };
      ```
-4. `npx cap add ios` — this writes `ios/App/` scaffold (Xcode project, Podfile, AppDelegate.swift, Info.plist). Commit all of it.
+4. `npx cap add ios` — this writes `ios/App/` scaffold (Xcode project, `Package.swift`-wired SPM dependencies, `AppDelegate.swift`, `Info.plist`). No Podfile is generated on Capacitor 8. Commit all of it.
 
-On `[Mac — Terminal]` after WSL pushes:
+On `[Mac — Terminal]` after WSL pushes (optional):
 
-5. `git pull`; `cd ios/App && pod install`. Commit `ios/App/Podfile.lock` + `ios/App/Pods/` (confirm .gitignore does NOT ignore Pods — Capacitor recommends committing them; but for team-of-one, committing them is fine). Actually, recommend adding `ios/App/Pods/` to `.gitignore` and running `pod install` on every fresh clone (per `ios-mac-handoff.md` step 2). Decision captured in `phase-5-decisions.md` (Task 2). Push.
+5. `git pull && cd ios/App && xcodebuild -resolvePackageDependencies` to warm the SPM cache. Not strictly required — Xcode resolves Swift packages on first open.
 
 **Verification:**
 
 - `[WSL]`: `ls ios/App/App.xcodeproj` exists after steps 1–4.
-- `[Mac — Terminal]`: `pod install` exits 0.
-- `[Mac — Xcode]`: opening `ios/App/App.xcworkspace` (NOT .xcodeproj) shows the project without errors.
+- `[Mac — Xcode]`: opening `ios/App/App.xcodeproj` shows the project without errors; Swift Package dependencies resolve on first open (no CocoaPods workspace in Capacitor 8).
 
-**Commit:** (WSL) `feat(ios): Capacitor scaffold + ios platform`; (Mac) `chore(ios): pod install lockfile`
+**Commit:** (WSL) `feat(ios): Capacitor scaffold + ios platform (SPM)`; (Mac) — no commit needed unless SPM cache warmup produces lockfile changes.
 <!-- END_TASK_4 -->
 
 <!-- START_TASK_5 -->
@@ -546,7 +614,7 @@ Expected: Pass.
 **Implementation:**
 
 Per `ios-mac-handoff.md` steps 3 and 6:
-1. Open `ios/App/App.xcworkspace` in Xcode.
+1. Open `ios/App/App.xcodeproj` in Xcode (Capacitor 8 uses SPM; there is no `.xcworkspace`).
 2. Target App → Signing & Capabilities → set Team, toggle Automatic Signing.
 3. General tab → set Deployment Target (per Task 2 decision).
 4. Info tab → add `NSPhotoLibraryUsageDescription`.
