@@ -7,6 +7,26 @@ const LOADER_SOURCE = fs.readFileSync(
   'utf8'
 );
 
+// Extract compareSemver function by evaluating the loader source in isolation
+// This allows us to test the pure function directly
+function extractCompareSemver() {
+  let compareSemver;
+  const scope = {
+    compareSemver: undefined
+  };
+  // Execute only the compareSemver function definition
+  const funcMatch = LOADER_SOURCE.match(
+    /function compareSemver\(a, b\)\s*{[\s\S]*?return 0;\s*}/
+  );
+  if (!funcMatch) {
+    throw new Error('Failed to extract compareSemver function');
+  }
+  eval(`compareSemver = ${funcMatch[0]}`);
+  return compareSemver;
+}
+
+const compareSemver = extractCompareSemver();
+
 /**
  * Helper: Run loader in isolated scope with mocked fetch and alert.
  * The IIFE in loader.js runs immediately on eval, and is async.
@@ -222,20 +242,20 @@ describe('Bootstrap Loader', () => {
       const iosCss = 'body { color: blue; }';
 
       const fetchMock = vi.fn(async (url) => {
-        if (url === 'https://roadtripmap.azurewebsites.net/bundle/manifest.json') {
+        if (url === 'https://app-roadtripmap-prod.azurewebsites.net/bundle/manifest.json') {
           return {
             ok: true,
             status: 200,
             json: async () => manifest
           };
         }
-        if (url === 'https://roadtripmap.azurewebsites.net/bundle/app.js') {
+        if (url === 'https://app-roadtripmap-prod.azurewebsites.net/bundle/app.js') {
           return { ok: true, status: 200, text: async () => appJs };
         }
-        if (url === 'https://roadtripmap.azurewebsites.net/bundle/app.css') {
+        if (url === 'https://app-roadtripmap-prod.azurewebsites.net/bundle/app.css') {
           return { ok: true, status: 200, text: async () => appCss };
         }
-        if (url === 'https://roadtripmap.azurewebsites.net/bundle/ios.css') {
+        if (url === 'https://app-roadtripmap-prod.azurewebsites.net/bundle/ios.css') {
           return { ok: true, status: 200, text: async () => iosCss };
         }
         throw new Error(`Unexpected fetch: ${url}`);
@@ -249,17 +269,17 @@ describe('Bootstrap Loader', () => {
       // Assert: fetch was called for manifest + 3 files (4 total)
       expect(fetchMock).toHaveBeenCalledTimes(4);
       expect(fetchMock).toHaveBeenCalledWith(
-        'https://roadtripmap.azurewebsites.net/bundle/manifest.json',
+        'https://app-roadtripmap-prod.azurewebsites.net/bundle/manifest.json',
         expect.any(Object)
       );
       expect(fetchMock).toHaveBeenCalledWith(
-        'https://roadtripmap.azurewebsites.net/bundle/app.js'
+        'https://app-roadtripmap-prod.azurewebsites.net/bundle/app.js'
       );
       expect(fetchMock).toHaveBeenCalledWith(
-        'https://roadtripmap.azurewebsites.net/bundle/app.css'
+        'https://app-roadtripmap-prod.azurewebsites.net/bundle/app.css'
       );
       expect(fetchMock).toHaveBeenCalledWith(
-        'https://roadtripmap.azurewebsites.net/bundle/ios.css'
+        'https://app-roadtripmap-prod.azurewebsites.net/bundle/ios.css'
       );
 
       // Assert: CSS and JS injected into DOM
@@ -324,7 +344,7 @@ describe('Bootstrap Loader', () => {
       // Assert: fetch called once for manifest only (not for files)
       expect(fetchMock).toHaveBeenCalledTimes(1);
       expect(fetchMock).toHaveBeenCalledWith(
-        'https://roadtripmap.azurewebsites.net/bundle/manifest.json',
+        'https://app-roadtripmap-prod.azurewebsites.net/bundle/manifest.json',
         expect.any(Object)
       );
 
@@ -375,20 +395,20 @@ describe('Bootstrap Loader', () => {
       const newIosCss = '/* new ios */';
 
       const fetchMock = vi.fn(async (url) => {
-        if (url === 'https://roadtripmap.azurewebsites.net/bundle/manifest.json') {
+        if (url === 'https://app-roadtripmap-prod.azurewebsites.net/bundle/manifest.json') {
           return {
             ok: true,
             status: 200,
             json: async () => manifest
           };
         }
-        if (url === 'https://roadtripmap.azurewebsites.net/bundle/app.js') {
+        if (url === 'https://app-roadtripmap-prod.azurewebsites.net/bundle/app.js') {
           return { ok: true, status: 200, text: async () => newAppJs };
         }
-        if (url === 'https://roadtripmap.azurewebsites.net/bundle/app.css') {
+        if (url === 'https://app-roadtripmap-prod.azurewebsites.net/bundle/app.css') {
           return { ok: true, status: 200, text: async () => newAppCss };
         }
-        if (url === 'https://roadtripmap.azurewebsites.net/bundle/ios.css') {
+        if (url === 'https://app-roadtripmap-prod.azurewebsites.net/bundle/ios.css') {
           return { ok: true, status: 200, text: async () => newIosCss };
         }
         throw new Error(`Unexpected fetch: ${url}`);
@@ -431,7 +451,7 @@ describe('Bootstrap Loader', () => {
       const fallbackHtml = '<h1>Offline Mode</h1><p>Please connect to the internet.</p>';
 
       const fetchMock = vi.fn(async (url) => {
-        if (url === 'https://roadtripmap.azurewebsites.net/bundle/manifest.json') {
+        if (url === 'https://app-roadtripmap-prod.azurewebsites.net/bundle/manifest.json') {
           const err = new Error('Network error');
           err.name = 'AbortError'; // Mimic AbortSignal.timeout() error
           throw err;
@@ -494,20 +514,20 @@ describe('Bootstrap Loader', () => {
       const newIosCss = '/* new ios */';
 
       const fetchMock = vi.fn(async (url) => {
-        if (url === 'https://roadtripmap.azurewebsites.net/bundle/manifest.json') {
+        if (url === 'https://app-roadtripmap-prod.azurewebsites.net/bundle/manifest.json') {
           return {
             ok: true,
             status: 200,
             json: async () => manifest
           };
         }
-        if (url === 'https://roadtripmap.azurewebsites.net/bundle/app.js') {
+        if (url === 'https://app-roadtripmap-prod.azurewebsites.net/bundle/app.js') {
           return { ok: true, status: 200, text: async () => newAppJs };
         }
-        if (url === 'https://roadtripmap.azurewebsites.net/bundle/app.css') {
+        if (url === 'https://app-roadtripmap-prod.azurewebsites.net/bundle/app.css') {
           return { ok: true, status: 200, text: async () => newAppCss };
         }
-        if (url === 'https://roadtripmap.azurewebsites.net/bundle/ios.css') {
+        if (url === 'https://app-roadtripmap-prod.azurewebsites.net/bundle/ios.css') {
           return { ok: true, status: 200, text: async () => newIosCss };
         }
         throw new Error(`Unexpected fetch: ${url}`);
@@ -541,6 +561,59 @@ describe('Bootstrap Loader', () => {
       const cached = await readCachedBundle();
       expect(cached.client_min_version).toBe('2.0.0');
       expect(cached.files['app.js']).toBe(newAppJs);
+    });
+  });
+
+  describe('compareSemver', () => {
+    it('should return 0 when versions are equal', () => {
+      expect(compareSemver('1.0.0', '1.0.0')).toBe(0);
+      expect(compareSemver('2.3.4', '2.3.4')).toBe(0);
+      expect(compareSemver('0.0.0', '0.0.0')).toBe(0);
+    });
+
+    it('should return -1 when first version is less than second', () => {
+      expect(compareSemver('1.0.0', '1.0.1')).toBe(-1);
+      expect(compareSemver('1.0.0', '2.0.0')).toBe(-1);
+      expect(compareSemver('1.9.9', '2.0.0')).toBe(-1);
+      expect(compareSemver('0.0.1', '1.0.0')).toBe(-1);
+    });
+
+    it('should return 1 when first version is greater than second', () => {
+      expect(compareSemver('1.0.1', '1.0.0')).toBe(1);
+      expect(compareSemver('2.0.0', '1.9.9')).toBe(1);
+      expect(compareSemver('2.0.0', '1.0.0')).toBe(1);
+      expect(compareSemver('1.0.0', '0.0.1')).toBe(1);
+    });
+
+    it('should handle uneven length version strings', () => {
+      // 1.0 should be treated as 1.0.0
+      expect(compareSemver('1.0', '1.0.0')).toBe(0);
+      expect(compareSemver('1', '1.0.0')).toBe(0);
+      expect(compareSemver('1.0.0', '1')).toBe(0);
+      expect(compareSemver('2.0', '1.9.9')).toBe(1);
+    });
+
+    it('should handle null and undefined by treating as 0.0.0', () => {
+      expect(compareSemver(null, '0.0.0')).toBe(0);
+      expect(compareSemver(undefined, '0.0.0')).toBe(0);
+      expect(compareSemver('0.0.0', null)).toBe(0);
+      expect(compareSemver('1.0.0', null)).toBe(1);
+      expect(compareSemver(null, '1.0.0')).toBe(-1);
+    });
+
+    it('should handle non-numeric segments by treating as 0', () => {
+      // Segments that parse to NaN are treated as 0
+      // e.g., "1.0.0-rc.1" → [1, 0, 0, NaN] → [1, 0, 0, 0]
+      expect(compareSemver('1.0.0-rc', '1.0.0')).toBe(0);
+      expect(compareSemver('1.0.0-rc', '1.0.1-alpha')).toBe(-1);
+    });
+
+    it('should handle extra zero segments in longer versions', () => {
+      // Additional segments beyond the compared versions should be treated as 0
+      expect(compareSemver('1.0.0.0', '1.0.0')).toBe(0);
+      expect(compareSemver('1.0.0', '1.0.0.0')).toBe(0);
+      expect(compareSemver('1.0.0.1', '1.0.0')).toBe(1);
+      expect(compareSemver('1.0.0', '1.0.0.1')).toBe(-1);
     });
   });
 });

@@ -31,9 +31,10 @@ The iOS app lives under `ios/` inside the existing `road-trip` repository, not a
 - As the Developer Program Account Holder, Patrick is auto-granted access to any internal build and does **not** need to be added manually to the Internal Testing group — but the Apple ID is captured here for later phases and for any reference in the handoff doc.
 - Additional testers join in Phase 6 or 7 as background-upload and native-EXIF work mature.
 
-## 5. Bundle hosting URL — **`https://roadtripmap.azurewebsites.net/bundle/`**
+## 5. Bundle hosting URL — **`https://app-roadtripmap-prod.azurewebsites.net/bundle/`**
 
 - Served by the existing App Service via static-file middleware (configured in Task 4).
+- Host is `app-roadtripmap-prod` per infrastructure/azure/main.bicep (§App Service naming).
 - No CDN for Phase 5 — global edge caching would add operational surface without measurable benefit while the app is one-developer-one-tester.
 - If bandwidth becomes an issue, Phase 6 moves to Azure Front Door or a CDN profile; no client changes required (the bootstrap loader is URL-agnostic).
 

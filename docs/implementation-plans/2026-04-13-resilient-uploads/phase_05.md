@@ -237,7 +237,7 @@ Present to Patrick (in chat) and record final decisions in `phase-5-decisions.md
 
 4. **TestFlight internal testers**: list of Apple IDs. Initial = Patrick + original reporter (the tester).
 
-5. **Bundle hosting URL**: `https://roadtripmap.azurewebsites.net/bundle/` (same App Service) or a dedicated CDN path. Recommendation: App Service for Phase 5; move to CDN if bandwidth becomes an issue.
+5. **Bundle hosting URL**: `https://app-roadtripmap-prod.azurewebsites.net/bundle/` (same App Service) or a dedicated CDN path. Recommendation: App Service for Phase 5; move to CDN if bandwidth becomes an issue.
 
 6. **iOS deployment target**: minimum iOS version (design implies modern — iOS 15 or 16 minimum given HEIC support, background tasks).
 
@@ -423,7 +423,7 @@ On `[Mac — Terminal]` after WSL pushes (optional):
 `src/bootstrap/loader.js` — the bootstrap protocol (AC9):
 
 ```js
-const BUNDLE_URL = 'https://roadtripmap.azurewebsites.net/bundle';
+const BUNDLE_URL = 'https://app-roadtripmap-prod.azurewebsites.net/bundle';
 const DB_NAME = 'RoadTripBundle';
 const STORE = 'files';
 
@@ -723,7 +723,7 @@ Append `## Phase 5 — Capacitor shell + bundle hosting`:
 
 2. **Bundle deploy**
    - `[bash/WSL]` Confirm CI ran `npm run build:bundle` (check App Service wwwroot/bundle has the files).
-   - `[bash/WSL]` `curl https://roadtripmap.azurewebsites.net/bundle/manifest.json` returns 200 with valid JSON.
+   - `[bash/WSL]` `curl https://app-roadtripmap-prod.azurewebsites.net/bundle/manifest.json` returns 200 with valid JSON.
 
 3. **iOS build (on Mac)**
    - Refer to `ios-mac-handoff.md` Section 6 (Build and archive).

@@ -2,7 +2,7 @@
 // Bootstrap loader: fetches, caches, and injects the iOS hybrid bundle from Azure.
 // Implements AC9 (offline-first bundle loading) and AC10.1 (platform-ios class before paint).
 
-const BUNDLE_URL = 'https://roadtripmap.azurewebsites.net/bundle';
+const BUNDLE_URL = 'https://app-roadtripmap-prod.azurewebsites.net/bundle';
 const DB_NAME = 'RoadTripBundle';
 const STORE_NAME = 'files';
 
@@ -107,21 +107,21 @@ async function readCache() {
 
 /**
  * Write bundle to IndexedDB cache.
+ * Rejects on any error (quota exceeded, transaction failure, etc.).
+ * Caller must handle rejection to decide whether to proceed or halt.
  */
 async function writeCache(obj) {
-  try {
-    const db = await openDatabase();
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction([STORE_NAME], 'readwrite');
-      const store = tx.objectStore(STORE_NAME);
-      const req = store.put(obj, 'bundle');
+  const db = await openDatabase();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction([STORE_NAME], 'readwrite');
+    const store = tx.objectStore(STORE_NAME);
+    const req = store.put(obj, 'bundle');
 
-      req.onerror = () => reject(req.error);
-      req.onsuccess = () => resolve();
-    });
-  } catch (e) {
-    console.error('writeCache failed', e);
-  }
+    req.onerror = () => reject(new Error(`failed to write cache: ${req.error}`));
+    req.onsuccess = () => resolve();
+
+    tx.onerror = () => reject(new Error(`cache transaction failed: ${tx.error}`));
+  });
 }
 
 /**
@@ -199,7 +199,11 @@ async function renderFallback() {
         files,
         client_min_version: manifest.client_min_version
       };
-      await writeCache(bundle);
+      try {
+        await writeCache(bundle);
+      } catch (e) {
+        console.error('failed to cache bundle (IDB error); proceeding with injection:', e);
+      }
       return inject(bundle);
     }
 
@@ -216,7 +220,11 @@ async function renderFallback() {
         files,
         client_min_version: manifest.client_min_version
       };
-      await writeCache(bundle);
+      try {
+        await writeCache(bundle);
+      } catch (e) {
+        console.error('failed to cache updated bundle (IDB error); proceeding with injection:', e);
+      }
       return inject(bundle);
     }
 
