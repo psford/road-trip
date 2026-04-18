@@ -1849,28 +1849,60 @@ ls -lh docs/implementation-plans/2026-04-13-resilient-uploads/phase-5-device-smo
 
 If a critical issue is discovered during device validation or post-deployment:
 
-#### Rollback Step 1: iOS Bundle Version
+#### Rollback Step 1: Redeploy Previous Container Image
 
-On the App Service, temporarily pin the old bundle version:
+The bundle is baked into the App Service container (wwwroot/bundle) at build time. To roll back the iOS bundle, redeploy a prior container image.
+
+**Option A (Primary): Redeploy Previous Container Image**
+
+Find the prior image tag from the container registry:
 
 ```bash
-# Option A: Revert manifest version on App Service wwwroot
-# Re-run CI with the previous commit's bundle version, or
-# Manually upload the previous manifest.json via Azure Storage Account
-
-az storage blob upload \
-  --account-name storoadtripmapprod \
-  --container-name <bundle-container> \
-  --name manifest.json \
-  --file /tmp/manifest.json.old \
-  --overwrite
+# List recent images for roadtripmap
+az acr repository show-tags \
+  --registry acrstockanalyzerer34ug \
+  --repository roadtripmap \
+  --orderby time_desc \
+  --top 5
 ```
 
-Alternatively, set `client_min_version` to a high value to force old cached bundle:
+Example output (pick the image before the current one):
+```
+v1.0.0-abc1234  (current bad build)
+v1.0.0-def5678  (previous good build)
+```
+
+Redeploy the previous good image:
 
 ```bash
-# Edit manifest.json: increase client_min_version to > current cached version
-# This forces iOS app to re-fetch even if cache exists
+az webapp config container set \
+  --name app-roadtripmap-prod \
+  --resource-group rg-roadtripmap-prod \
+  --container-image-name acrstockanalyzerer34ug.azurecr.io/roadtripmap:v1.0.0-def5678 \
+  --container-registry-url https://acrstockanalyzerer34ug.azurecr.io \
+  --container-registry-username <username> \
+  --container-registry-password <password>
+```
+
+Wait for the App Service to restart with the previous image. Verify:
+
+```bash
+curl -I https://app-roadtripmap-prod.azurewebsites.net/bundle/manifest.json
+```
+
+**Option B (Client-side workaround): Force Re-fetch via Version Pin**
+
+If a new App Service container image is not readily available, you can temporarily force all iOS clients to use an older cached bundle by increasing `client_min_version` in the manifest. This does NOT roll back the code — it only delays app load time by one refresh cycle while the issue is being fixed. Not recommended as a permanent solution.
+
+```bash
+# This requires access to App Service Kudu console or direct file upload
+# Step 1: Retrieve current manifest
+curl -s https://app-roadtripmap-prod.azurewebsites.net/bundle/manifest.json > /tmp/manifest.json
+
+# Step 2: Edit the manifest to increase client_min_version higher than any cached version
+# (e.g., change "1.0.0" to "99.0.0" temporarily)
+
+# Step 3: Re-deploy via CI or manual upload (this method is complex; prefer Option A)
 ```
 
 #### Rollback Step 2: TestFlight Build
