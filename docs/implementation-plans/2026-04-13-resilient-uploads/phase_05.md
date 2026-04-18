@@ -514,24 +514,19 @@ Via Task 9 unit tests. Later: `[Mac — Xcode]` device smoke (Task 11).
 
 **Implementation:**
 
-Add at module top:
+**Note (cycle-2 correction):** The illustrative `_platform` pattern and ternary examples below were rejected during Phase 5 cycle-1 review. See `platform-adapters.md` for the actual Phase 5 adapter shape and Phase 6 hook target.
+
+In Phase 5, adapters are single factories called once at module load:
 ```js
-const _platform = (typeof window !== 'undefined' && window.Capacitor?.getPlatform?.()) || 'web';
+const StorageAdapter = createIndexedDbAdapter();
+const UploadTransport = createFetchTransport();
 ```
 
-`StorageAdapter` factory selects backend: `web` → IndexedDB; `ios` → IndexedDB for Phase 5 (native SQLite in Phase 6). The selection is wrapped so Phase 6 replaces just the factory contents:
-```js
-const StorageAdapter = _platform === 'ios' ? createIndexedDbAdapter() : createIndexedDbAdapter();
-// Phase 6 changes the 'ios' branch to createSqliteAdapter()
-```
-
-`UploadTransport` similarly: `ios` → fetch-based for Phase 5, native `BackgroundUpload.enqueue` for Phase 6.
-
-`platform-adapters.md` documents the seam contract so Phase 6 has a clear target: adapter interface, lifecycle, tests to keep passing.
+No platform branching exists in Phase 5. Phase 6 will add platform detection—either via call-time checks inside the exported adapter, or via factory-time detection at module load if both implementations are ready. `platform-adapters.md` documents the seam contract and both design options so Phase 6 has a clear target.
 
 **Verification:**
 
-`npm test` — existing tests still pass with `_platform === 'web'`.
+`npm test` — all existing tests pass (no platform-specific branching).
 
 **Commit:** `feat(web): platform-adapter seams for iOS override in Phase 6`
 <!-- END_TASK_6 -->

@@ -6,33 +6,43 @@ This document defines the seam contract for platform-specific adapter selection 
 
 In Phase 5, both platforms (`web` and `ios`) use the same IndexedDB-backed storage and fetch-based transport. Phase 6 will replace the `ios` branch with native implementations: SQLite for storage and background-upload native API for transport.
 
-## Platform Detection
+## Platform Detection (Phase 6 Hook Point)
 
-Each shared JS module defines a platform constant at module scope:
+**Phase 5 status:** Platform-specific detection is deferred to Phase 6. Currently, all platforms use the same factory functions, defined once at module scope.
 
-```js
-const _platform = (typeof window !== 'undefined' && window.Capacitor?.getPlatform?.()) || 'web';
-```
+**Phase 6 design:** When a second adapter implementation exists (SQLite for storage, native background-upload for transport), the module will add runtime platform detection. Two realistic approaches:
 
-### Possible Values
+1. **Call-time detection (simpler):** The exported factory checks `window.Capacitor?.getPlatform?.()` internally:
+   ```js
+   const StorageAdapter = {
+     async putItem(item) {
+       const platform = window.Capacitor?.getPlatform?.() || 'web';
+       if (platform === 'ios') {
+         return createSqliteAdapter().putItem(item);
+       }
+       return createIndexedDbAdapter().putItem(item);
+     },
+     // ... other methods delegate similarly
+   };
+   ```
+   **Advantage:** Simple, no duplicate constants. **Disadvantage:** Platform check on every call (minor perf cost).
 
-- **`'web'`** — Browser environment (default). No Capacitor plugin available.
-- **`'ios'`** — iOS app via Capacitor. `window.Capacitor.getPlatform()` returns `'ios'`.
-- **`'android'`** — (Reserved for Phase 7) Android app via Capacitor.
+2. **Factory-time detection (faster):** Detect once at module load:
+   ```js
+   const _platform = (typeof window !== 'undefined' && window.Capacitor?.getPlatform?.()) || 'web';
+   const StorageAdapter = _platform === 'ios' ? createSqliteAdapter() : createIndexedDbAdapter();
+   ```
+   **Advantage:** Single detection, direct reference. **Disadvantage:** Requires distinct local names (`_storagePlatform`, `_transportPlatform`) if both adapters use it to avoid const redeclaration (or wrap in IIFE).
 
-### Safe-Guarded Detection
-
-The expression is safe even in environments without Capacitor:
-
-- `typeof window !== 'undefined'` guards against SSR or non-browser contexts.
-- Optional chaining (`?.`) prevents errors if `Capacitor` or `getPlatform` are undefined.
-- Falls back to `'web'` if detection fails.
+Phase 6 should pick the approach that best fits the native adapter's design.
 
 ## StorageAdapter Contract
 
 ### Current Implementation (Phase 5)
 
 Location: `src/RoadTripMap/wwwroot/js/storageAdapter.js`
+
+**Shape:** Single exported constant (`StorageAdapter`) is the result of calling a factory function (`_storageAdapterImpl`) once at module load. No platform branching.
 
 Backend: IndexedDB with in-memory fallback.
 
@@ -164,14 +174,17 @@ Tests exercise:
 - Upload resumption: Inspects storage for pending blocks, re-uploads only those
 - SAS refresh and retry: Handles 403 and retryable errors correctly
 - Bootstrap scenarios: Offline-first loading (AC9.1–9.5), platform CSS (AC10.1–10.2)
+- IDB write error: Loader injects bundle even if cache write fails (IDB quota exceeded, transaction error, etc.)
 
-Verify `npm test` passes with `_platform === 'web'` (default).
+Verify `npm test` passes (all 245+ scenarios).
 
 ## UploadTransport Contract
 
 ### Current Implementation (Phase 5)
 
 Location: `src/RoadTripMap/wwwroot/js/uploadTransport.js`
+
+**Shape:** Single exported constant (`UploadTransport`) is the result of calling a factory function (`_uploadTransportImpl`) once at module load. No platform branching.
 
 Backend: Fetch API to Azure Blob Storage with block uploads, retry, backoff, SAS refresh.
 
@@ -264,7 +277,7 @@ Tests exercise:
 - Concurrency: respects semaphore limits
 - Integration: StorageAdapter and UploadTransport work together across upload lifecycle
 
-Verify `npm test` passes with `_platform === 'web'` (default).
+Verify `npm test` passes (all 245+ scenarios).
 
 ## Phase 6 Hook Points
 
@@ -272,16 +285,33 @@ Verify `npm test` passes with `_platform === 'web'` (default).
 
 **File:** `src/RoadTripMap/wwwroot/js/storageAdapter.js`
 
-**Line (Phase 5):**
+**Current (Phase 5):**
 ```js
-const StorageAdapter = _platform === 'ios' ? _storageAdapterImpl : _storageAdapterImpl;
+const StorageAdapter = _storageAdapterImpl;
 ```
 
-**Phase 6 change:** Replace the `_platform === 'ios'` branch with a new factory or object:
+**Phase 6 Seam:** The factory function itself is the replacement point. Choose one approach from the Platform Detection section above. Example (call-time):
 
 ```js
-// Phase 6: createSqliteAdapter() defined in new file or conditional import
-const StorageAdapter = _platform === 'ios' ? createSqliteAdapter() : _storageAdapterImpl;
+// Phase 6: Add platform check inside the exported object
+const StorageAdapter = {
+  async putItem(item) {
+    const impl = getPlatform() === 'ios' ? createSqliteAdapter() : _storageAdapterImpl;
+    return impl.putItem(item);
+  },
+  // ... repeat for all methods
+};
+
+function getPlatform() {
+  return (typeof window !== 'undefined' && window.Capacitor?.getPlatform?.()) || 'web';
+}
+```
+
+Or alternatively (factory-time, if both adapters are ready):
+
+```js
+const _storagePlatform = (typeof window !== 'undefined' && window.Capacitor?.getPlatform?.()) || 'web';
+const StorageAdapter = _storagePlatform === 'ios' ? createSqliteAdapter() : createIndexedDbAdapter();
 ```
 
 **Contract for new implementation:**
@@ -295,16 +325,29 @@ const StorageAdapter = _platform === 'ios' ? createSqliteAdapter() : _storageAda
 
 **File:** `src/RoadTripMap/wwwroot/js/uploadTransport.js`
 
-**Line (Phase 5):**
+**Current (Phase 5):**
 ```js
-const UploadTransport = _platform === 'ios' ? _uploadTransportImpl : _uploadTransportImpl;
+const UploadTransport = _uploadTransportImpl;
 ```
 
-**Phase 6 change:** Replace the `_platform === 'ios'` branch with a new factory or object:
+**Phase 6 Seam:** Similar to StorageAdapter, the factory function is the replacement point. Example (call-time):
 
 ```js
-// Phase 6: BackgroundUpload wrapper defined in new file or conditional import
-const UploadTransport = _platform === 'ios' ? createBackgroundUploadTransport() : _uploadTransportImpl;
+// Phase 6: Add platform check inside the exported object
+const UploadTransport = {
+  async putBlock(sasUrl, blockId, blob, options) {
+    const impl = getPlatform() === 'ios' ? createBackgroundUploadTransport() : _uploadTransportImpl;
+    return impl.putBlock(sasUrl, blockId, blob, options);
+  },
+  async uploadFile(params) {
+    const impl = getPlatform() === 'ios' ? createBackgroundUploadTransport() : _uploadTransportImpl;
+    return impl.uploadFile(params);
+  }
+};
+
+function getPlatform() {
+  return (typeof window !== 'undefined' && window.Capacitor?.getPlatform?.()) || 'web';
+}
 ```
 
 **Contract for new implementation:**
@@ -337,4 +380,4 @@ Add platform-aware test fixtures:
 
 ## Summary
 
-The seams introduce a minimal, non-functional runtime check that shapes code for Phase 6 without changing behavior in Phase 5. Both branches return identical implementations, allowing tests and callers to remain unchanged. Phase 6 can replace one branch at a time, verified against the contracts above.
+Phase 5 ships a single implementation for each adapter. The seam for Phase 6 is the factory function itself: it can either grow an internal platform check (call-time or factory-time) or be replaced wholesale. The contracts above ensure that whichever approach Phase 6 takes, the public API and error semantics are stable. Tests and callers need not change when the implementation swaps.
