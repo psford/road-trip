@@ -1,5 +1,7 @@
 # Resilient Photo Uploads — Phase 5: Capacitor Shell, Bundled Bootstrap, Azure-Hosted Bundle
 
+> ⚠️ **Mid-phase resume point.** Tasks 0, 1, 2, 3, 4, and 8 completed 2026-04-18 (commits `48e3954`…`cb5c245`). Remaining container-side tasks: **5, 6, 7, 9, 12**. Tasks 10–11 are Mac-only and stay deferred. **Read [`RESUME.md`](./RESUME.md) before dispatching any subagent.**
+
 **Goal:** Ship a TestFlight build that loads the web UI natively via a hybrid bootstrap. iOS still uses `fetch`-based uploads (web transport) — native background uploads land in Phase 6.
 
 **Architecture:** Capacitor iOS shell bundles a tiny loader (`src/bootstrap/`). The real app bundle (JS/CSS) is hosted by the existing App Service under `/bundle/*` and cached in IndexedDB on the device. Shared JS modules are packaged via a minimal esbuild concatenation step — no framework migration, same window-globals at runtime.
