@@ -142,6 +142,37 @@ This design follows multiple existing patterns from the codebase rather than int
 
 ## Implementation Phases
 
+<!-- START_PHASE_0 -->
+### Phase 0: Prerequisites — clean up prior WIP stash
+
+**Goal:** Bring the working tree to a clean, committed state by reconciling the existing `stash@{0}` from the abandoned phase_05 work, so subsequent phases start from a known baseline.
+
+**Background:** As of design-doc commit, develop has a stash entry: *"WIP Phase 5 paused (deeper): signing+photo perm+SPM cache+storyboard+defer fix on bootstrap/index.html"*. It contains:
+- `ios/App/App/Info.plist` — adds `NSPhotoLibraryUsageDescription` (KEEP — still needed for the upload feature)
+- `ios/App/App.xcodeproj/project.pbxproj` — adds `DEVELOPMENT_TEAM = GP2M7H6R3U` in Debug + Release (KEEP — needed for any iOS build, including Phase 3's on-device spike)
+- `ios/App/App/Base.lproj/Main.storyboard` — Xcode 26 auto-migration (KEEP — Xcode will re-migrate on every open if reverted)
+- `src/bootstrap/index.html` — adds `defer` to the loader.js `<script>` tag (DROP — Phase 5 rewrites both `index.html` and `loader.js` end-to-end; this partial fix becomes redundant)
+- Untracked `ios/App/App.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/` — contains `Package.resolved` (lockfile, KEEP and commit) and `configuration/` (cache, gitignore)
+
+**Components:**
+- Pop `stash@{0}` on develop
+- Discard the `src/bootstrap/index.html` defer change (e.g., `git checkout -- src/bootstrap/index.html`)
+- Add `.gitignore` entries: `ios/App/App.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/configuration/` and `ios/App/App.xcodeproj/xcuserdata/`
+- Stage and commit the remaining changes as a single atomic commit on develop with a message describing them as completed Task 10 prerequisites (signing team, photo permission, Xcode 26 storyboard migration, SPM lockfile, gitignore for SPM caches)
+
+**Dependencies:** None (first phase).
+
+**ACs covered:** None (housekeeping; verification is operational, not behavioral).
+
+**Done when:**
+- `git stash list` no longer contains the WIP entry
+- `grep DEVELOPMENT_TEAM ios/App/App.xcodeproj/project.pbxproj` returns `GP2M7H6R3U` in both Debug and Release configs
+- `grep NSPhotoLibraryUsageDescription ios/App/App/Info.plist` shows the photo-permission entry
+- `src/bootstrap/index.html` is unchanged from the develop tip prior to Phase 0 (defer change discarded)
+- `git status -s` shows a clean working tree
+- The Phase 0 commit is on develop
+<!-- END_PHASE_0 -->
+
 <!-- START_PHASE_1 -->
 ### Phase 1: Page-cache IDB layer + `cachedFetch` wrapper
 
@@ -152,7 +183,7 @@ This design follows multiple existing patterns from the codebase rather than int
 - New module `src/bootstrap/cachedFetch.js` exporting `cachedFetch(url, {asJson, signal}) → {response, source: 'network' | 'cache'}`
 - Bypass-list constant: regex pattern matching `^/api/(poi|park-boundaries)` (and any other `mapCache`-owned URLs). Caller must consult before invoking `cachedFetch` for `/api/*` routes.
 
-**Dependencies:** None.
+**Dependencies:** Phase 0 (clean working tree).
 
 **ACs covered:** `ios-offline-shell.AC3.1`, `AC3.2`, `AC3.3`, `AC3.5`, `AC3.7`.
 
