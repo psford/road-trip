@@ -717,25 +717,4 @@ const UploadQueue = {
         );
     },
 
-    /**
-     * Legacy fallback: Create status bar for non-feature-flag path
-     * Called only if FeatureFlags.isEnabled('resilient-uploads-ui') is false
-     * Stub: implementation deferred to Phase 4 if legacy path is needed
-     * @private
-     */
-    createStatusBar() {
-        // Legacy path not implemented in current phase
-        // Feature flag gates this: if flag is on, use new ProgressPanel instead
-    },
-
-    /**
-     * Legacy fallback: Update status bar for non-feature-flag path
-     * Called only if FeatureFlags.isEnabled('resilient-uploads-ui') is false
-     * Stub: implementation deferred to Phase 4 if legacy path is needed
-     * @private
-     */
-    updateStatusBar() {
-        // Legacy path not implemented in current phase
-        // Feature flag gates this: if flag is on, use new ProgressPanel instead
-    },
 };

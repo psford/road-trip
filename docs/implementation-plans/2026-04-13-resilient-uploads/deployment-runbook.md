@@ -1614,7 +1614,365 @@ Only after these three conditions are met should the Phase 4 acceptance session 
 
 ---
 
-**Document Version:** 1.3  
+## Phase 5 — Capacitor shell + bundle hosting
+
+**Phase:** Phase 5 (Subcomponents A–F, Tasks 0–12)  
+**Scope:** Deploy Capacitor iOS app with bundled bootstrap loader, Azure-hosted shared JS/CSS bundle, TestFlight distribution, and device validation matrix.
+
+### Prerequisites
+
+Before starting Phase 5 deployment:
+
+- **Phases 1–4 deployed and healthy**: Verify via `curl https://app-roadtripmap-prod.azurewebsites.net/api/version` returning 200 with version headers.
+- **All WSL tasks (0–8) merged to main** with CI passing.
+- **Mac session prerequisites met**: See `docs/implementation-plans/2026-04-13-resilient-uploads/ios-mac-handoff.md` Section 1.
+- **Architectural decisions finalized**: See `docs/implementation-plans/2026-04-13-resilient-uploads/phase-5-decisions.md`.
+- **Local tooling (WSL bash)**:
+  - `az` CLI 2.50+
+  - `curl`
+  - `jq` (for JSON parsing)
+  - `git`
+
+---
+
+### 1. Pre-flight
+
+#### [bash/WSL] Confirm Git State
+
+```bash
+cd /workspaces/road-trip
+git fetch origin
+git log origin/main..develop --oneline
+```
+
+**Expected outcome:** No output (all WSL tasks 0–8 merged to main).
+
+#### [bash/WSL] Verify Phase 4 Healthy
+
+```bash
+curl -i https://app-roadtripmap-prod.azurewebsites.net/api/version
+```
+
+**Expected output:**
+- **HTTP Status:** `200 OK`
+- **Headers:** `x-server-version` and `x-client-min-version` present
+
+#### [File] Verify Handoff and Decisions Documents
+
+```bash
+# Check handoff document
+ls -lh docs/implementation-plans/2026-04-13-resilient-uploads/ios-mac-handoff.md
+
+# Check decisions document
+ls -lh docs/implementation-plans/2026-04-13-resilient-uploads/phase-5-decisions.md
+```
+
+**Expected outcome:** Both files exist and contain final settings.
+
+**Deviation log entry:**  
+[ ] WSL tasks (0–8) merged to main  
+[ ] Phase 4 production healthy  
+[ ] Handoff and decisions documents finalized  
+
+---
+
+### 2. Bundle Deploy
+
+#### [bash/WSL] Confirm CI Built Bundle
+
+Check that the App Service has the bundle files deployed:
+
+```bash
+curl -I https://app-roadtripmap-prod.azurewebsites.net/bundle/manifest.json
+```
+
+**Expected output:**
+- **HTTP Status:** `200 OK`
+
+#### [bash/WSL] Validate Bundle Manifest
+
+Fetch and inspect the manifest JSON structure:
+
+```bash
+curl -s https://app-roadtripmap-prod.azurewebsites.net/bundle/manifest.json | jq '.'
+```
+
+**Expected output:**
+```json
+{
+  "version": "<semver>+build.<number>-<short-sha>",
+  "client_min_version": "1.0.0",
+  "files": {
+    "app.js": {
+      "size": <bytes>,
+      "sha256": "<hash>"
+    },
+    "app.css": {
+      "size": <bytes>,
+      "sha256": "<hash>"
+    },
+    "ios.css": {
+      "size": <bytes>,
+      "sha256": "<hash>"
+    }
+  }
+}
+```
+
+#### [bash/WSL] Verify Bundle Files Accessible
+
+Test that all three bundle files are served:
+
+```bash
+# Test app.js
+curl -I https://app-roadtripmap-prod.azurewebsites.net/bundle/app.js
+
+# Test app.css
+curl -I https://app-roadtripmap-prod.azurewebsites.net/bundle/app.css
+
+# Test ios.css
+curl -I https://app-roadtripmap-prod.azurewebsites.net/bundle/ios.css
+```
+
+**Expected output:** All return **HTTP 200**.
+
+**Deviation log entry:**  
+[ ] Bundle manifest endpoint returns 200 with valid JSON  
+[ ] Bundle files (app.js, app.css, ios.css) all accessible  
+[ ] Manifest version and file hashes recorded  
+
+---
+
+### 3. iOS Build (on Mac)
+
+#### [Mac — Xcode] Follow Handoff Build Steps
+
+On Patrick's Mac, execute the build and archive steps per `ios-mac-handoff.md` Section 6 (Build and archive):
+
+```bash
+# From Mac Terminal
+cd /path/to/road-trip
+git pull origin main
+
+# Open in Xcode (or use CLI)
+npx cap open ios
+
+# In Xcode:
+# 1. Product → Destination → select "Any iOS Device (arm64)"
+# 2. Product → Archive
+# 3. Wait for archive to complete
+```
+
+#### [Mac] Capture Build Log Excerpt
+
+After the archive succeeds, save a log excerpt to `phase-5-device-smoke.md`:
+
+```bash
+# Example: extract archive success timestamp and build info
+# This will be added during the device smoke steps (Task 11)
+```
+
+**Deviation log entry:**  
+[ ] Archive created successfully in Xcode Organizer  
+[ ] Build version and number recorded  
+
+---
+
+### 4. TestFlight Submission
+
+#### [Mac — Xcode] Distribute to App Store Connect
+
+Per `ios-mac-handoff.md` Section 6 and Task 10 of phase_05.md:
+
+1. Archive complete and Organizer is open.
+2. Click **Distribute App**.
+3. Select **App Store Connect** → **Upload**.
+4. Confirm automatic signing.
+5. Click **Upload**.
+
+#### [browser] Confirm Build Processed
+
+Wait for the processing email (typically 10–15 minutes), then verify:
+
+```bash
+# Navigate to appstoreconnect.apple.com in browser
+# Apps → Road Trip → TestFlight tab
+# Confirm the build appears in the list with status "Ready to Test"
+```
+
+**Expected outcome:** Build visible to internal testers; no blockers noted.
+
+**Deviation log entry:**  
+[ ] Build distributed to App Store Connect  
+[ ] Processing email received  
+[ ] Build status "Ready to Test" in TestFlight dashboard  
+
+---
+
+### 5. Device Validation
+
+#### [Mac — iPhone] Execute Smoke Matrix
+
+On Patrick's iPhone, run through the acceptance criteria matrix per Task 11 of phase_05.md. Record results in `docs/implementation-plans/2026-04-13-resilient-uploads/phase-5-device-smoke.md`:
+
+- **AC9.1** — First online launch: fetch bundle, render UI
+- **AC9.2** — Offline second launch: load from cache
+- **AC9.3** — New bundle deployment: picked up on next launch
+- **AC9.4** — First-ever offline launch: fallback.html shown
+- **AC9.5** — Version mismatch: alert shown, re-fetch triggered
+- **AC10.1** — iOS CSS applied before paint (no flash)
+- **AC10.2** — ios.css update picked up on next launch
+
+#### [File] Verify Smoke Test Document
+
+Check that all 7 matrix entries are complete with sign-off:
+
+```bash
+ls -lh docs/implementation-plans/2026-04-13-resilient-uploads/phase-5-device-smoke.md
+```
+
+**Expected outcome:** File exists with all 7 entries marked PASS and signed by Patrick.
+
+**Deviation log entry:**  
+[ ] AC9.1 (first online) — PASS  
+[ ] AC9.2 (offline second) — PASS  
+[ ] AC9.3 (new bundle) — PASS  
+[ ] AC9.4 (first offline) — PASS  
+[ ] AC9.5 (version mismatch) — PASS  
+[ ] AC10.1 (iOS CSS no flash) — PASS  
+[ ] AC10.2 (ios.css update) — PASS  
+[ ] Patrick signed off on matrix  
+
+---
+
+### 6. Rollback
+
+If a critical issue is discovered during device validation or post-deployment:
+
+#### Rollback Step 1: Redeploy Previous Container Image
+
+The bundle is baked into the App Service container (wwwroot/bundle) at build time. To roll back the iOS bundle, redeploy a prior container image.
+
+**Option A (Primary): Redeploy Previous Container Image**
+
+Find the prior image tag from the container registry:
+
+```bash
+# List recent images for roadtripmap
+az acr repository show-tags \
+  --registry acrstockanalyzerer34ug \
+  --repository roadtripmap \
+  --orderby time_desc \
+  --top 5
+```
+
+Example output (pick the image before the current one):
+```
+v1.0.0-abc1234  (current bad build)
+v1.0.0-def5678  (previous good build)
+```
+
+Redeploy the previous good image:
+
+```bash
+az webapp config container set \
+  --name app-roadtripmap-prod \
+  --resource-group rg-roadtripmap-prod \
+  --container-image-name acrstockanalyzerer34ug.azurecr.io/roadtripmap:v1.0.0-def5678 \
+  --container-registry-url https://acrstockanalyzerer34ug.azurecr.io \
+  --container-registry-username <username> \
+  --container-registry-password <password>
+```
+
+Wait for the App Service to restart with the previous image. Verify:
+
+```bash
+curl -I https://app-roadtripmap-prod.azurewebsites.net/bundle/manifest.json
+```
+
+**Option B (Client-side workaround): Force Re-fetch via Version Pin**
+
+If a new App Service container image is not readily available, you can temporarily force all iOS clients to use an older cached bundle by increasing `client_min_version` in the manifest. This does NOT roll back the code — it only delays app load time by one refresh cycle while the issue is being fixed. Not recommended as a permanent solution.
+
+```bash
+# This requires access to App Service Kudu console or direct file upload
+# Step 1: Retrieve current manifest
+curl -s https://app-roadtripmap-prod.azurewebsites.net/bundle/manifest.json > /tmp/manifest.json
+
+# Step 2: Edit the manifest to increase client_min_version higher than any cached version
+# (e.g., change "1.0.0" to "99.0.0" temporarily)
+
+# Step 3: Re-deploy via CI or manual upload (this method is complex; prefer Option A)
+```
+
+#### Rollback Step 2: TestFlight Build
+
+Mark the TestFlight build as inactive so testers revert to the previous build:
+
+1. Navigate to appstoreconnect.apple.com.
+2. Apps → Road Trip → TestFlight tab.
+3. Select the problematic build.
+4. Click **Deactivate** (or **Remove from Testing**).
+5. Internal testers will revert to the prior build on next app launch.
+
+#### Rollback Step 3: Code Revert (if needed)
+
+If the issue is code-level (e.g., bootstrap loader bug), revert the Phase 5 commit and redeploy:
+
+```bash
+cd /workspaces/road-trip
+git log --oneline origin/main | head -5  # Find Phase 5 merge commit
+
+# Create rollback branch
+git checkout -b rollback/phase-5-issue
+git revert <phase-5-commit-hash>
+git push origin rollback/phase-5-issue
+
+# Open PR and merge
+gh pr create --base main --title "rollback: Phase 5 iOS bundle issue"
+```
+
+**Note:** No Bicep rollback needed for Phase 5 (only App Service container + bundle files).
+
+---
+
+### 7. Sign-Off
+
+#### Approval Chain
+
+After completing all sections above, obtain sign-off from Patrick + Mac session:
+
+| Section | Status | Signed By | Timestamp (UTC) |
+|---------|--------|-----------|-----------------|
+| 1. Pre-flight | ☐ Pass / ☐ Deviation | | |
+| 2. Bundle Deploy | ☐ Pass / ☐ Deviation | | |
+| 3. iOS Build (Mac) | ☐ Pass / ☐ Deviation | | |
+| 4. TestFlight Submission | ☐ Pass / ☐ Deviation | | |
+| 5. Device Validation | ☐ Pass / ☐ Deviation | | |
+
+#### Deviation Log
+
+Record any deviations from the runbook below:
+
+| Step | Expected | Actual | Resolution | Sign-off |
+|------|----------|--------|------------|----------|
+| | | | | |
+| | | | | |
+| | | | | |
+
+**Final Status:** ☐ **PHASE 5 DEPLOYMENT SUCCEEDED** / ☐ **PHASE 5 DEPLOYMENT ROLLED BACK**
+
+**Patrick + Mac Session Final Sign-Off:**
+
+```
+Initials: _____
+UTC Timestamp: _____
+Commit this runbook with deviations and sign-off recorded.
+```
+
+---
+
+**Document Version:** 1.4  
 **Created:** April 2026 (Phase 1 Implementation)  
 **Author:** Claude Code  
-**Last Reviewed:** (to be filled during Phase 4 deployment)
+**Last Reviewed:** (to be filled during Phase 5 deployment)

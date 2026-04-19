@@ -1,0 +1,56 @@
+/*
+ * iOS-specific overrides for the Road Trip Capacitor shell (Phase 5 Task 8).
+ *
+ * Scoped to the `platform-ios` body class, which the iOS bootstrap loader
+ * (src/bootstrap/loader.js) sets before first paint. Web-path users never
+ * match this class, so these rules do not affect the browser experience.
+ *
+ * AC10.1 coverage: no unstyled flash on launch — the class is on <body> by
+ * the time the bundle injects CSS, and these selectors are scoped so they
+ * take effect atomically.
+ */
+
+/* ---- Safe-area insets (notch / home indicator) ---- */
+/* Use env() so the same rule works on any device — devices without a notch
+ * report 0px and the property is a no-op. */
+.platform-ios #map,
+.platform-ios .map-container {
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+}
+
+/* ---- Tap target minimums (Apple HIG: 44x44 pt) ---- */
+.platform-ios .upload-panel__retry,
+.platform-ios .upload-panel__discard,
+.platform-ios .resume-banner button,
+.platform-ios .photo-carousel__control,
+.platform-ios button {
+  min-height: 44px;
+  min-width: 44px;
+}
+
+/* ---- System font stack ---- */
+.platform-ios {
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ---- Disable rubber-band scrolling on body (keep on map) ---- */
+/* The map needs pan/zoom gestures; body bounce is just visual noise. */
+.platform-ios body {
+  overscroll-behavior: none;
+}
+
+/* ---- Prevent tap-highlight flash on buttons ---- */
+.platform-ios button,
+.platform-ios a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* ---- Disable iOS text-size inflation ---- */
+/* WebKit auto-scales font sizes on rotate/zoom; opt out for consistent layout. */
+.platform-ios body {
+  -webkit-text-size-adjust: 100%;
+}

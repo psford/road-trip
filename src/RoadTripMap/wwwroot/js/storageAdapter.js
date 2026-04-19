@@ -4,7 +4,7 @@
  * Implements the pattern from mapCache.js for consistency
  */
 
-const StorageAdapter = {
+const _storageAdapterImpl = {
     _db: null,
     _dbName: 'RoadTripUploadQueue',
     _version: 1,
@@ -504,3 +504,7 @@ const StorageAdapter = {
         }
     }
 };
+
+// Exported adapter for use in uploadQueue.js and tests
+// Phase 6 will add platform detection and iOS-specific adapter (createSqliteAdapter)
+const StorageAdapter = _storageAdapterImpl;

@@ -3,7 +3,7 @@
  * Implements AC3.2 (retry with backoff), AC3.3 (failure after 6 attempts), AC3.5 (SAS refresh)
  */
 
-const UploadTransport = {
+const _uploadTransportImpl = {
     /**
      * Error class for transient failures that should be retried
      */
@@ -271,3 +271,7 @@ const UploadTransport = {
         return blockIds;
     },
 };
+
+// Exported transport for use in uploadQueue.js and tests
+// Phase 6 will add platform detection and iOS-specific adapter (native BackgroundUpload.enqueue)
+const UploadTransport = _uploadTransportImpl;

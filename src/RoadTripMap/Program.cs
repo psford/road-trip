@@ -98,6 +98,25 @@ builder.Services.AddHttpClient("Overpass", c => {
 });
 builder.Services.AddScoped<IGeocodingService, NominatimGeocodingService>();
 
+// Phase 5: CORS for the Capacitor iOS WebView origin. iOS loads src/bootstrap/
+// as capacitor://localhost and then fetches /bundle/* and /api/* from this App
+// Service (cross-origin). Web-path browser traffic is still same-origin and
+// unaffected. Exposes version headers so the iOS loader can read them without
+// a CORS preflight violation.
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("IosAppOrigin", policy =>
+    {
+        policy.WithOrigins(
+                "capacitor://localhost",
+                "ionic://localhost",
+                "https://localhost")
+              .AllowAnyHeader()
+              .AllowAnyMethod()
+              .WithExposedHeaders("x-server-version", "x-client-min-version", "x-correlation-id");
+    });
+});
+
 var app = builder.Build();
 
 // Initialize server version from configuration and assembly metadata
@@ -130,8 +149,11 @@ using (var scope = app.Services.CreateScope())
     }
 }
 
-// CORS not needed for Phase 1 — frontend served same-origin.
-// If native apps need cross-origin API access later, add CORS policy here.
+// Phase 5: CORS for the Capacitor iOS WebView. Must come before UseStaticFiles
+// so /bundle/* responses carry the Access-Control-Allow-Origin header. Web-path
+// same-origin requests are unaffected — CORS middleware is a no-op when the
+// request has no Origin header or the origin matches the request host.
+app.UseCors("IosAppOrigin");
 
 // Correlation ID middleware — generates x-correlation-id header on each request
 app.Use(async (context, next) =>
@@ -211,12 +233,6 @@ app.Use(async (context, next) =>
         memoryStream.Position = 0;
         var reader = new StreamReader(memoryStream);
         var content = await reader.ReadToEndAsync();
-
-        // Inject feature flags into the meta tag
-        var resilientUploadsUI = app.Configuration.GetValue<bool>("FeatureFlags:ResilientUploadsUI");
-        content = content.Replace(
-            """<meta id="featureFlags" data-resilient-uploads-ui="">""",
-            $"""<meta id="featureFlags" data-resilient-uploads-ui="{resilientUploadsUI.ToString().ToLower()}">""");
 
         // Inject client-processing-enabled meta tag
         var clientProcessingEnabled = app.Configuration.GetValue<bool>("Upload:ClientSideProcessingEnabled", false);
