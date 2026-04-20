@@ -54,3 +54,11 @@
 .platform-ios body {
   -webkit-text-size-adjust: 100%;
 }
+
+/* AC2.4: glasses indicator for view-only saved trips on iOS shell. */
+.platform-ios .my-trip-card[data-role="viewer"]::before {
+    content: '👓';
+    margin-right: 0.5em;
+    font-size: 1.2em;
+    vertical-align: middle;
+}

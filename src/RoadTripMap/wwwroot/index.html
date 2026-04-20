@@ -43,6 +43,7 @@
                 const card = document.createElement('a');
                 card.href = trip.postUrl;
                 card.className = 'my-trip-card';
+                card.dataset.role = TripStorage.getRoleForUrl(trip.postUrl);  // AC2.4
                 card.innerHTML = `<span class="my-trip-name">${trip.name}</span><span class="my-trip-arrow">&#8250;</span>`;
                 list.appendChild(card);
             });

@@ -1,4 +1,13 @@
-<div style="padding:2rem;text-align:center;font-family:system-ui">
-  <h1>Connect to the internet to finish setting up</h1>
-  <p>Road Trip will download once your device is online.</p>
+<div style="padding:2rem;text-align:center;font-family:-apple-system,BlinkMacSystemFont,system-ui">
+  <h1>Page not cached yet</h1>
+  <p>Connect to the internet to load this page for the first time. Once it's loaded, it'll be available offline.</p>
+  <button id="bootstrap-retry" style="margin:0.5rem;padding:0.75rem 1.5rem;font-size:1rem">Retry</button>
+  <button id="bootstrap-back" style="margin:0.5rem;padding:0.75rem 1.5rem;font-size:1rem">Back</button>
 </div>
+<script>
+  (function () {
+    var back = document.getElementById('bootstrap-back');
+    if (back) back.addEventListener('click', function () { history.back(); });
+    // bootstrap-retry is wired by loader.js (calls location.reload).
+  })();
+</script>
