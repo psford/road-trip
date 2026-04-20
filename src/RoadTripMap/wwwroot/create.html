@@ -77,7 +77,11 @@
 
                 // Redirect straight to the post page
                 if (typeof FetchAndSwap !== 'undefined' && typeof FetchAndSwap.fetchAndSwap === 'function') {
-                    history.pushState({}, '', result.postUrl);
+                    // pushState resolves against document.baseURI (APP_BASE via <base href>).
+                    // In the iOS shell at capacitor://localhost/ that's cross-origin and
+                    // SecurityErrors. Resolve against window.location.href to stay same-origin.
+                    const pushUrl = new URL(result.postUrl, window.location.href).href;
+                    history.pushState({}, '', pushUrl);
                     FetchAndSwap.fetchAndSwap(result.postUrl);
                 } else {
                     window.location.href = result.postUrl;

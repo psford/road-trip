@@ -137,7 +137,12 @@ describe('create-flow', () => {
         // Verify FetchAndSwap.fetchAndSwap was called and window.location.href was NOT set
         expect(FetchAndSwap.fetchAndSwap).toHaveBeenCalledWith('/post/test-token');
         expect(hrefSetValue).toBeNull();
-        expect(history.pushState).toHaveBeenCalledWith({}, '', '/post/test-token');
+        // pushState receives a same-origin absolute URL; only the path portion is stable.
+        expect(history.pushState).toHaveBeenCalledWith(
+            {},
+            '',
+            expect.stringMatching(/\/post\/test-token$/)
+        );
 
         // Cleanup
         Object.defineProperty(window, 'location', {

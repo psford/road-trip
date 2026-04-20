@@ -14,6 +14,20 @@
         }
     }
 
+    // Build a same-origin URL for history.pushState. pushState resolves the URL
+    // against document.baseURI, which fetchAndSwap sets to APP_BASE via <base href>
+    // for AC1.4 (in-page relative URL resolution). In the iOS shell at
+    // capacitor://localhost/, that resolution produces a cross-origin URL and
+    // pushState SecurityErrors. Resolving explicitly against window.location.href
+    // bypasses document.baseURI and stays within the document's actual origin.
+    function _sameOriginUrl(path) {
+        try {
+            return new URL(path, window.location.href).href;
+        } catch {
+            return path;
+        }
+    }
+
     function _isModifiedClick(event) {
         return event.metaKey || event.ctrlKey || event.shiftKey || event.altKey;
     }
@@ -96,7 +110,7 @@
             return;  // Defensive: if FetchAndSwap isn't loaded yet, fall through to native nav.
         }
         event.preventDefault();
-        history.pushState({}, '', result.url);
+        history.pushState({}, '', _sameOriginUrl(result.url));
         FetchAndSwap.fetchAndSwap(result.url).catch((err) => {
             // Phase 5's loader-level error handler renders fallback.html when needed.
             console.error('Intercept: fetchAndSwap failed for', result.url, err);
@@ -114,7 +128,7 @@
                 if (typeof v === 'string') params.append(k, v);
             }
             const fullUrl = result.url + (params.toString() ? '?' + params.toString() : '');
-            history.pushState({}, '', fullUrl);
+            history.pushState({}, '', _sameOriginUrl(fullUrl));
             FetchAndSwap.fetchAndSwap(fullUrl).catch((err) => {
                 console.error('Intercept: GET form fetchAndSwap failed for', fullUrl, err);
             });
@@ -127,7 +141,7 @@
                 });
                 if (!response.ok) throw new Error(`POST ${result.url} returned ${response.status}`);
                 const html = await response.text();
-                history.pushState({}, '', result.url);
+                history.pushState({}, '', _sameOriginUrl(result.url));
                 await FetchAndSwap._swapFromHtml(html, result.url);
             } catch (err) {
                 console.error('Intercept: POST form failed for', result.url, err);

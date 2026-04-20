@@ -289,7 +289,35 @@ describe('click handler', () => {
         link.dispatchEvent(evt);
 
         expect(FetchAndSwap.fetchAndSwap).toHaveBeenCalledWith('/post/abc');
-        expect(history.pushState).toHaveBeenCalledWith({}, '', '/post/abc');
+        // pushState receives a same-origin absolute URL (resolved against
+        // window.location.href, which is jsdom's default e.g. http://localhost:3000/).
+        // The path portion is what matters; the origin varies by runtime.
+        expect(history.pushState).toHaveBeenCalledWith(
+            {},
+            '',
+            expect.stringMatching(/\/post\/abc$/)
+        );
+    });
+
+    it('pushState URL stays same-origin (not APP_BASE) — prevents SecurityError in iOS shell', async () => {
+        // Regression: fetchAndSwap injects <base href="APP_BASE"> which makes
+        // pushState resolve '/post/abc' to 'https://app.../post/abc' — cross-origin
+        // in the iOS shell at capacitor://localhost → SecurityError. intercept.js
+        // resolves against window.location.href instead.
+        document.body.innerHTML = '<a id="x" href="/post/abc">x</a>';
+        Intercept.installIntercept();
+        const link = document.querySelector('#x');
+
+        const evt = new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 });
+        link.dispatchEvent(evt);
+
+        const pushStateCall = history.pushState.mock.calls[0];
+        const pushStateUrl = pushStateCall[2];
+        // The URL must NOT be the App Service origin — that's the bug we're preventing.
+        expect(pushStateUrl).not.toMatch(/^https:\/\/app-roadtripmap-prod/);
+        // It should start with whatever the document's origin is (jsdom's about:blank
+        // or http://localhost, never the App Service APP_BASE).
+        expect(pushStateUrl).toMatch(new RegExp(`^${window.location.origin}`));
     });
 
     it('preventDefault was called for internal clicks', async () => {
