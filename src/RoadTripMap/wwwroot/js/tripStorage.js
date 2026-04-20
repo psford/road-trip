@@ -88,5 +88,46 @@ const TripStorage = {
             // localStorage unavailable — silent fail, matches saveTrip convention
         }
         return true;
+    },
+
+    /**
+     * Classify a URL by role: owner (post pages) or viewer (trip pages).
+     * Defensive: returns 'unknown' for non-strings, empty strings, malformed URLs.
+     * @param {string|null|undefined} url - URL to classify (absolute or relative)
+     * @returns {'owner'|'viewer'|'unknown'} The derived role
+     */
+    getRoleForUrl(url) {
+        if (typeof url !== 'string' || url.length === 0) return 'unknown';
+        let pathname;
+        try {
+            pathname = new URL(url, 'https://app-roadtripmap-prod.azurewebsites.net').pathname;
+        } catch {
+            return 'unknown';
+        }
+        if (/^\/post\/[^/]+$/.test(pathname)) return 'owner';
+        if (/^\/trips\/[^/]+$/.test(pathname)) return 'viewer';
+        return 'unknown';
+    },
+
+    /**
+     * Get the default trip for the user (the one most recently opened or added).
+     * Returns the trip with the highest lastOpenedAt (or fallback to savedAt).
+     * @returns {object|null} Trip record enriched with role field, or null if no trips
+     */
+    getDefaultTrip() {
+        const trips = this.getTrips();
+        if (trips.length === 0) return null;
+        let best = null;
+        let bestScore = -Infinity;
+        for (const t of trips) {
+            const score = typeof t.lastOpenedAt === 'number'
+                ? t.lastOpenedAt
+                : (Date.parse(t.savedAt) || 0);
+            if (score > bestScore) {
+                bestScore = score;
+                best = t;
+            }
+        }
+        return best ? { ...best, role: this.getRoleForUrl(best.postUrl) } : null;
     }
 };

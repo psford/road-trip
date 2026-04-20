@@ -292,4 +292,92 @@ describe('TripStorage', () => {
             expect(after.savedAt).toBe(before.savedAt);
         });
     });
+
+    describe('getRoleForUrl', () => {
+        it.each([
+            ['/post/abc', 'owner'],
+            ['/post/abc?query=x', 'owner'],
+            ['https://app-roadtripmap-prod.azurewebsites.net/post/abc', 'owner'],
+            ['/trips/xyz', 'viewer'],
+            ['/trips/xyz?query=y', 'viewer'],
+            ['https://app-roadtripmap-prod.azurewebsites.net/trips/xyz', 'viewer'],
+            ['/', 'unknown'],
+            ['/api/trips/view/xyz', 'unknown'],
+            ['/post/', 'unknown'],
+            ['/trips/', 'unknown'],
+            ['not a url', 'unknown'],
+            ['', 'unknown'],
+            [null, 'unknown'],
+            [undefined, 'unknown'],
+        ])('classifies %s as %s', (input, expected) => {
+            expect(TripStorage.getRoleForUrl(input)).toBe(expected);
+        });
+    });
+
+    describe('getDefaultTrip', () => {
+        it('returns null when no trips are saved', () => {
+            expect(TripStorage.getDefaultTrip()).toBeNull();
+        });
+
+        it('AC2.5 success: returns the trip with greatest lastOpenedAt', () => {
+            TripStorage.saveTrip('Trip A', '/post/aaa', '/trips/aaa');
+            TripStorage.saveTrip('Trip B', '/post/bbb', '/trips/bbb');
+            TripStorage.markOpened('/post/aaa');
+            // Wait one tick so subsequent timestamp is strictly greater
+            const t = Date.now();
+            while (Date.now() === t) { /* spin briefly */ }
+            TripStorage.markOpened('/post/bbb');
+            expect(TripStorage.getDefaultTrip().postUrl).toBe('/post/bbb');
+        });
+
+        it('AC2.5 fallback: legacy entry without lastOpenedAt uses savedAt', () => {
+            const legacy = [
+                { name: 'Old', postUrl: '/post/old', viewUrl: '/trips/old', savedAt: '2026-01-01T00:00:00.000Z' },
+                { name: 'New', postUrl: '/post/new', viewUrl: '/trips/new', savedAt: '2026-04-01T00:00:00.000Z' },
+            ];
+            localStorage.setItem(TripStorage.STORAGE_KEY, JSON.stringify(legacy));
+            expect(TripStorage.getDefaultTrip().postUrl).toBe('/post/new');
+        });
+
+        it('AC2.5 mixed: lastOpenedAt beats savedAt fallback', () => {
+            const records = [
+                { name: 'A', postUrl: '/post/a', viewUrl: '/trips/a', savedAt: '2026-04-01T00:00:00.000Z' },
+                { name: 'B', postUrl: '/post/b', viewUrl: '/trips/b', savedAt: '2026-01-01T00:00:00.000Z', lastOpenedAt: Date.now() },
+            ];
+            localStorage.setItem(TripStorage.STORAGE_KEY, JSON.stringify(records));
+            expect(TripStorage.getDefaultTrip().postUrl).toBe('/post/b');
+        });
+
+        it('returned record is enriched with role field', () => {
+            TripStorage.saveTrip('Trip A', '/post/abc', '/trips/aaa');
+            expect(TripStorage.getDefaultTrip().role).toBe('owner');
+        });
+
+        it('AC2.6: returned record preserves existing fields', () => {
+            TripStorage.saveTrip('Trip A', '/post/abc', '/trips/aaa');
+            const defaultTrip = TripStorage.getDefaultTrip();
+            expect(defaultTrip).toMatchObject({
+                name: 'Trip A',
+                postUrl: '/post/abc',
+                viewUrl: '/trips/aaa',
+            });
+            expect(typeof defaultTrip.savedAt).toBe('string');
+        });
+
+        it('handles unparseable savedAt by treating as 0 (lowest priority)', () => {
+            const records = [
+                { name: 'A', postUrl: '/post/a', viewUrl: '/trips/a', savedAt: 'not-a-date' },
+                { name: 'B', postUrl: '/post/b', viewUrl: '/trips/b', savedAt: '2026-01-01T00:00:00.000Z' },
+            ];
+            localStorage.setItem(TripStorage.STORAGE_KEY, JSON.stringify(records));
+            expect(TripStorage.getDefaultTrip().postUrl).toBe('/post/b');
+        });
+
+        it('returns a clone (mutating result does not affect storage)', () => {
+            TripStorage.saveTrip('Trip A', '/post/abc', '/trips/aaa');
+            const defaultTrip = TripStorage.getDefaultTrip();
+            defaultTrip.name = 'Mutated';
+            expect(TripStorage.getTrips()[0].name).toBe('Trip A');
+        });
+    });
 });
