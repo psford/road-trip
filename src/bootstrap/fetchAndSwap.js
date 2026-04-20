@@ -1,4 +1,8 @@
+// pattern: Imperative Shell
 (function () {
+    // Prod App Service origin. The iOS shell only ships against prod; dev/staging
+    // variants are out of scope for the offline-shell design (see plan Phase 3 §
+    // Module contract). Exposed as _APP_BASE for test inspection, not configuration.
     const APP_BASE = 'https://app-roadtripmap-prod.azurewebsites.net/';
 
     async function _recreateScripts(scriptsInOrder, parentNode) {
@@ -51,7 +55,12 @@
         document.head.innerHTML = parsed.head.innerHTML;
         document.body.innerHTML = parsed.body.innerHTML;
 
-        // Task 3: Recreate scripts
+        // Task 3: Recreate scripts. All scripts are appended to document.body
+        // regardless of their original parent. Browsers execute scripts synchronously
+        // on append in source order, so execution semantics are preserved. The DOM
+        // shape differs from the fetched page (head-origin scripts live in body
+        // post-swap); this is acceptable for the offline-shell's current consumers
+        // (postUI.js, mapUI.js) which do not query `head > script`.
         await _recreateScripts(scriptsInOrder, document.body);
 
         // Task 4: Synthetic DOMContentLoaded for handlers attached during script execution.

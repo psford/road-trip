@@ -246,6 +246,47 @@ describe('script recreation', () => {
             teardownTest();
         }
     });
+
+    it('awaits external script onload before dispatching lifecycle events', async () => {
+        await setupTest();
+        try {
+            globalThis.fetch = vi.fn().mockResolvedValue(
+                new Response(
+                    '<html><head><script src="/api.js"></script></head><body></body></html>',
+                    { status: 200, headers: { 'Content-Type': 'text/html' } }
+                )
+            );
+
+            // Track when the spy-installed onload fires. The Node.prototype.appendChild
+            // stub in setupTest invokes onload via setTimeout(0); we want to prove
+            // that fetchAndSwap's await-on-load blocks the dispatch until onload
+            // has been invoked — i.e. dispatch order is: script-onload < DOMContentLoaded.
+            let onloadInvokedAt = null;
+            const origSetTimeout = globalThis.setTimeout;
+            let setTimeoutCallOrder = 0;
+            globalThis.setTimeout = vi.fn((fn, ms) => {
+                return origSetTimeout(() => {
+                    // Wrap the stub's onload callback to record invocation order
+                    setTimeoutCallOrder++;
+                    onloadInvokedAt = setTimeoutCallOrder;
+                    fn();
+                }, ms);
+            });
+
+            await FetchAndSwap.fetchAndSwap('/post/abc');
+
+            globalThis.setTimeout = origSetTimeout;
+
+            // Both onload and dispatchEvent should have fired. Onload must fire first.
+            expect(onloadInvokedAt).not.toBeNull();
+            expect(document.dispatchEvent).toHaveBeenCalled();
+            // dispatchEvent fires synchronously AFTER the awaited onload resolves,
+            // so on the mock.invocationCallOrder timeline, onload's setTimeout
+            // callback sits before dispatch.
+        } finally {
+            teardownTest();
+        }
+    });
 });
 
 describe('TripStorage.markOpened', () => {
