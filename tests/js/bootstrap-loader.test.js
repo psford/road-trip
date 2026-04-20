@@ -34,16 +34,17 @@ beforeEach(async () => {
     });
 
     // Document event mocking - prevent postUI.js DOMContentLoaded from crashing
-    const originalDispatchEvent = document.dispatchEvent.bind(document);
-    vi.spyOn(document, 'dispatchEvent').mockImplementation((event) => {
+    // Replace dispatchEvent entirely to intercept before listeners fire
+    const originalDispatchEvent = document.dispatchEvent;
+    document.dispatchEvent = vi.fn(function(event) {
+        // For DOMContentLoaded and load, just return true without dispatching
         if (event.type === 'DOMContentLoaded' || event.type === 'load') {
-            // Don't actually dispatch these events - they trigger postUI.js which crashes on simplified DOM
             return true;
         }
-        return originalDispatchEvent(event);
+        // For other events, call the original
+        return originalDispatchEvent.call(this, event);
     });
-
-    vi.spyOn(window, 'dispatchEvent').mockImplementation(() => true);
+    window.dispatchEvent = vi.fn(() => true);
 
     // Script appendChild stub — jsdom doesn't fire onload for remote scripts.
     const realAppendChild = Node.prototype.appendChild;
@@ -89,7 +90,7 @@ async function runLoader() {
 describe('boot routing', () => {
     it('AC2.1: 0 saved trips → fetches /', async () => {
         // No trips saved — TripStorage.getDefaultTrip() returns null
-        globalThis.fetch = vi.fn().mockImplementation((url) => {
+        const mockFn = vi.fn(() => {
             return Promise.resolve(
                 new Response('<html><body>home</body></html>', {
                     status: 200,
@@ -97,12 +98,14 @@ describe('boot routing', () => {
                 })
             );
         });
+        globalThis.fetch = mockFn;
 
         await runLoader();
+        console.log('After runLoader, body text:', document.body.textContent);
 
         // Should fetch '/' as boot URL
-        expect(globalThis.fetch).toHaveBeenCalled();
-        const firstCall = globalThis.fetch.mock.calls[0];
+        expect(mockFn).toHaveBeenCalled();
+        const firstCall = mockFn.mock.calls[0];
         expect(firstCall[0]).toBe('/');
 
         // platform-ios class should be set
