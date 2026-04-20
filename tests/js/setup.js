@@ -82,6 +82,7 @@ beforeAll(() => {
     loadGlobal('uploadUtils.js');
     loadGlobal('uploadSemaphore.js');
     loadGlobal('storageAdapter.js');
+    loadGlobal('tripStorage.js');
     loadGlobal('uploadTelemetry.js');
     loadGlobal('uploadTransport.js');
     loadGlobal('versionProtocol.js');
