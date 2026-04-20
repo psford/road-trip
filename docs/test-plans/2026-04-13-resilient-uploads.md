@@ -142,7 +142,7 @@ iOS doesn't expose modifier keys via touch. Verify on iOS Simulator with attache
 
 **Steps:**
 1. After AC3.1 (cache populated), force-quit.
-2. Cold-launch with cellular off (Wi-Fi off too) — actually WAIT, just launch normally.
+2. Cold-launch normally (network on). Cache-first means the page renders from IDB before any network fetch settles.
 3. Web Inspector → Network: NO request for the page (only the background revalidate ETag-conditional request).
 
 **Pass:** Page renders before any network fetch settles.
