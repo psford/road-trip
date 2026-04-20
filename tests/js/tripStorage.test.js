@@ -114,9 +114,6 @@ describe('TripStorage', () => {
         });
 
         it('silent fail when localStorage.setItem throws', () => {
-            const originalSetItem = store.set;
-            let setItemThrew = false;
-
             // Override stub mid-test to throw
             vi.stubGlobal('localStorage', {
                 getItem: (k) => (store.has(k) ? store.get(k) : null),
@@ -320,14 +317,15 @@ describe('TripStorage', () => {
         });
 
         it('AC2.5 success: returns the trip with greatest lastOpenedAt', () => {
+            const nowSpy = vi.spyOn(Date, 'now');
             TripStorage.saveTrip('Trip A', '/post/aaa', '/trips/aaa');
             TripStorage.saveTrip('Trip B', '/post/bbb', '/trips/bbb');
+            nowSpy.mockReturnValue(1000);
             TripStorage.markOpened('/post/aaa');
-            // Wait one tick so subsequent timestamp is strictly greater
-            const t = Date.now();
-            while (Date.now() === t) { /* spin briefly */ }
+            nowSpy.mockReturnValue(2000);
             TripStorage.markOpened('/post/bbb');
             expect(TripStorage.getDefaultTrip().postUrl).toBe('/post/bbb');
+            nowSpy.mockRestore();
         });
 
         it('AC2.5 fallback: legacy entry without lastOpenedAt uses savedAt', () => {
