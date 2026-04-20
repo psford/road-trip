@@ -184,6 +184,60 @@ async function _writeThrough(storeName, url, responseClone, asJson) {
     }
 }
 
+/**
+ * Background revalidate: fire-and-forget fetch with conditional headers.
+ * Called on cache hit to check if the cached content is stale.
+ * - Sends If-None-Match and/or If-Modified-Since only if the cached record has them.
+ * - 304 Not Modified → keep stale cache, no write.
+ * - 200 OK → write updated content to IDB via _writeThrough.
+ * - Non-OK response → keep stale cache, no write.
+ * - Network error → swallowed silently (AC3.5).
+ * - IDB write error → swallowed silently.
+ * Live document is NOT updated; Phase 3 enforces AC3.4 externally.
+ */
+async function _backgroundRevalidate(url, asJson, cached) {
+    try {
+        const headers = {};
+        if (cached.etag) headers['If-None-Match'] = cached.etag;
+        if (cached.lastModified) headers['If-Modified-Since'] = cached.lastModified;
+
+        let response;
+        try {
+            response = await fetch(url, { headers });
+        } catch {
+            // AC3.5: network error is swallowed silently
+            return;
+        }
+
+        if (!response || response.status === 304) {
+            // Not Modified — keep stale cache
+            return;
+        }
+
+        if (!response.ok) {
+            // Server error — keep stale cache
+            return;
+        }
+
+        const db = await _getDb();
+        if (!db) {
+            // IDB unavailable — silently skip write
+            return;
+        }
+
+        const storeName = asJson ? STORE_API : STORE_PAGES;
+        try {
+            await _writeThrough(storeName, url, response, asJson);
+        } catch {
+            // IDB write error — swallowed silently
+            return;
+        }
+    } catch {
+        // Any unexpected error is swallowed
+        return;
+    }
+}
+
 // === CachedFetch Public API ===
 
 /**
@@ -213,8 +267,8 @@ async function cachedFetch(url, opts = {}) {
     if (db) {
         const cached = await _getRecord(storeName, url);
         if (cached) {
+            void _backgroundRevalidate(url, asJson, cached);  // fire-and-forget; intentional un-awaited promise
             return { response: _toResponse(cached, asJson), source: 'cache' };
-            // Background revalidate added in Task 5
         }
     }
 
