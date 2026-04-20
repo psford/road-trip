@@ -76,7 +76,12 @@
                 TripStorage.saveTrip(name, result.postUrl, result.viewUrl || '');
 
                 // Redirect straight to the post page
-                window.location.href = result.postUrl;
+                if (typeof FetchAndSwap !== 'undefined' && typeof FetchAndSwap.fetchAndSwap === 'function') {
+                    history.pushState({}, '', result.postUrl);
+                    FetchAndSwap.fetchAndSwap(result.postUrl);
+                } else {
+                    window.location.href = result.postUrl;
+                }
             } catch (error) {
                 errorEl.textContent = error.message || 'Failed to create trip';
                 errorEl.classList.remove('hidden');
