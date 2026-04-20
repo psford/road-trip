@@ -28,15 +28,7 @@
         }
     }
 
-    async function fetchAndSwap(url, options = {}) {
-        if (typeof CachedFetch === 'undefined' || typeof CachedFetch.cachedFetch !== 'function') {
-            throw new Error('fetchAndSwap: CachedFetch is not loaded');
-        }
-        const { response } = await CachedFetch.cachedFetch(url, options);
-        if (!response.ok) {
-            throw new Error(`fetchAndSwap: HTTP ${response.status} for ${url}`);
-        }
-        const html = await response.text();
+    async function _swapFromHtml(html, url) {
         const parsed = new DOMParser().parseFromString(html, 'text/html');
 
         // Inject <base href> if not already present (AC1.4)
@@ -76,5 +68,17 @@
         }
     }
 
-    globalThis.FetchAndSwap = { fetchAndSwap, _APP_BASE: APP_BASE };
+    async function fetchAndSwap(url, options = {}) {
+        if (typeof CachedFetch === 'undefined' || typeof CachedFetch.cachedFetch !== 'function') {
+            throw new Error('fetchAndSwap: CachedFetch is not loaded');
+        }
+        const { response } = await CachedFetch.cachedFetch(url, options);
+        if (!response.ok) {
+            throw new Error(`fetchAndSwap: HTTP ${response.status} for ${url}`);
+        }
+        const html = await response.text();
+        await _swapFromHtml(html, url);
+    }
+
+    globalThis.FetchAndSwap = { fetchAndSwap, _swapFromHtml, _APP_BASE: APP_BASE };
 })();

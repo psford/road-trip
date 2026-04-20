@@ -412,3 +412,19 @@ describe('lifecycle events', () => {
         }
     });
 });
+
+describe('_swapFromHtml', () => {
+    it('works without going through cachedFetch', async () => {
+        await setupTest();
+        try {
+            const html = '<html><head><title>X</title></head><body><h1>Hi</h1></body></html>';
+            await FetchAndSwap._swapFromHtml(html, '/post/abc');
+
+            expect(document.body.querySelector('h1').textContent).toBe('Hi');
+            const baseEl = document.head.querySelector('base[href]');
+            expect(baseEl).not.toBeNull();
+        } finally {
+            teardownTest();
+        }
+    });
+});

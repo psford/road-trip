@@ -90,7 +90,38 @@
             console.error('Intercept: fetchAndSwap failed for', result.url, err);
         });
     }
-    function _onSubmit(_event) { /* Task 3 */ }
+    async function _onSubmit(event) {
+        const result = _classifySubmit(event);
+        if (!result.intercept) return;
+        if (typeof FetchAndSwap === 'undefined' || typeof FetchAndSwap.fetchAndSwap !== 'function') return;
+        event.preventDefault();
+        if (result.method === 'get') {
+            const fd = new FormData(result.form);
+            const params = new URLSearchParams();
+            for (const [k, v] of fd.entries()) {
+                if (typeof v === 'string') params.append(k, v);
+            }
+            const fullUrl = result.url + (params.toString() ? '?' + params.toString() : '');
+            history.pushState({}, '', fullUrl);
+            FetchAndSwap.fetchAndSwap(fullUrl).catch((err) => {
+                console.error('Intercept: GET form fetchAndSwap failed for', fullUrl, err);
+            });
+        } else {
+            // POST: bypass cache. Raw fetch + _swapFromHtml.
+            try {
+                const response = await fetch(result.url, {
+                    method: 'POST',
+                    body: new FormData(result.form)
+                });
+                if (!response.ok) throw new Error(`POST ${result.url} returned ${response.status}`);
+                const html = await response.text();
+                history.pushState({}, '', result.url);
+                await FetchAndSwap._swapFromHtml(html, result.url);
+            } catch (err) {
+                console.error('Intercept: POST form failed for', result.url, err);
+            }
+        }
+    }
     function _onPopState(_event) { /* Task 4 */ }
 
     globalThis.Intercept = {

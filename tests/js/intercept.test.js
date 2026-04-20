@@ -386,3 +386,89 @@ describe('click handler', () => {
         expect(evt.defaultPrevented).toBe(false);
     });
 });
+
+describe('submit handler', () => {
+    beforeEach(() => {
+        globalThis.FetchAndSwap = {
+            fetchAndSwap: vi.fn().mockResolvedValue(undefined),
+            _swapFromHtml: vi.fn().mockResolvedValue(undefined)
+        };
+        globalThis.fetch = vi.fn();
+        vi.spyOn(history, 'pushState').mockImplementation(() => {});
+        vi.spyOn(console, 'error').mockImplementation(() => {});
+    });
+
+    it('GET form serializes fields and calls fetchAndSwap', async () => {
+        document.body.innerHTML = '<form id="f" action="/search" method="get"><input name="q" value="hello"><input name="x" value="1"></form>';
+        Intercept.installIntercept();
+        const form = document.querySelector('#f');
+
+        const evt = new SubmitEvent('submit', { bubbles: true, cancelable: true });
+        form.dispatchEvent(evt);
+
+        expect(evt.defaultPrevented).toBe(true);
+        expect(FetchAndSwap.fetchAndSwap).toHaveBeenCalledWith('/search?q=hello&x=1');
+    });
+
+    it('POST form calls raw fetch + _swapFromHtml', async () => {
+        globalThis.fetch = vi.fn().mockResolvedValue(
+            new Response('<html><body>posted</body></html>', { status: 200 })
+        );
+
+        document.body.innerHTML = '<form id="f" action="/api/something" method="post"><input name="x" value="y"></form>';
+        Intercept.installIntercept();
+        const form = document.querySelector('#f');
+
+        const evt = new SubmitEvent('submit', { bubbles: true, cancelable: true });
+        form.dispatchEvent(evt);
+
+        await new Promise(r => setTimeout(r, 10));
+
+        expect(globalThis.fetch).toHaveBeenCalledWith('/api/something', expect.objectContaining({ method: 'POST' }));
+        expect(FetchAndSwap._swapFromHtml).toHaveBeenCalledWith('<html><body>posted</body></html>', '/api/something');
+        expect(FetchAndSwap.fetchAndSwap).not.toHaveBeenCalled();
+    });
+
+    it('external form action not intercepted', () => {
+        document.body.innerHTML = '<form id="f" action="https://example.com/x" method="post"></form>';
+        Intercept.installIntercept();
+        const form = document.querySelector('#f');
+
+        const evt = new SubmitEvent('submit', { bubbles: true, cancelable: true });
+        form.dispatchEvent(evt);
+
+        expect(globalThis.fetch).not.toHaveBeenCalled();
+    });
+
+    it('exotic method (PUT) not intercepted', () => {
+        // jsdom normalizes unknown methods to 'get', so we override the property
+        document.body.innerHTML = '<form id="f" action="/x" method="post"></form>';
+        const form = document.querySelector('#f');
+        Object.defineProperty(form, 'method', {
+            configurable: true,
+            get: () => 'put'
+        });
+
+        Intercept.installIntercept();
+
+        const evt = new SubmitEvent('submit', { bubbles: true, cancelable: true });
+        form.dispatchEvent(evt);
+
+        expect(evt.defaultPrevented).toBe(false);
+    });
+
+    it('POST failure logs but doesn\'t throw', async () => {
+        globalThis.fetch = vi.fn().mockRejectedValue(new Error('offline'));
+
+        document.body.innerHTML = '<form id="f" action="/api/something" method="post"><input name="x" value="y"></form>';
+        Intercept.installIntercept();
+        const form = document.querySelector('#f');
+
+        const evt = new SubmitEvent('submit', { bubbles: true, cancelable: true });
+        form.dispatchEvent(evt);
+
+        await new Promise(r => setTimeout(r, 10));
+
+        expect(console.error).toHaveBeenCalled();
+    });
+});
