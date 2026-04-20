@@ -43,46 +43,6 @@ function loadGlobal(filename) {
         );
     }
 
-    // For postUI.js in test context, wrap the DOMContentLoaded listener to prevent crashes
-    // when elements don't exist in the test DOM
-    if (filename === 'postUI.js') {
-        modifiedCode = modifiedCode.replace(
-            `document.addEventListener('DOMContentLoaded', () => {
-    // Extract secret token from URL
-    const pathParts = window.location.pathname.split('/');
-    const secretToken = pathParts[pathParts.length - 1];
-
-    if (!secretToken || secretToken === 'post') { // pragma: allowlist secret
-        document.getElementById('errorMessage').textContent = 'Invalid trip URL';
-        document.getElementById('errorMessage').classList.remove('hidden');
-        return;
-    }
-
-    PostUI.init(secretToken);
-});`,
-            `document.addEventListener('DOMContentLoaded', () => {
-    try {
-        // Extract secret token from URL
-        const pathParts = window.location.pathname.split('/');
-        const secretToken = pathParts[pathParts.length - 1];
-
-        if (!secretToken || secretToken === 'post') { // pragma: allowlist secret
-            const el = document.getElementById('errorMessage');
-            if (el) {
-                el.textContent = 'Invalid trip URL';
-                el.classList.remove('hidden');
-            }
-            return;
-        }
-
-        PostUI.init(secretToken);
-    } catch (err) {
-        // In test context with missing DOM elements, silently ignore. // pragma: allowlist secret
-    }
-});`
-        );
-    }
-
     // Execute in eval to ensure true global scope
     eval(modifiedCode);
 }
@@ -131,10 +91,6 @@ beforeAll(() => {
     loadGlobal('progressPanel.js');
     loadGlobal('resumeBanner.js');
     loadGlobal('postUI.js');
-
-    // Post-load: store the DOMContentLoaded listener that postUI.js just registered,
-    // so test files can manage it safely without the listener crashing on missing DOM elements.
-    // Tests will spy on dispatchEvent to prevent this listener from being invoked.
 });
 
 /**
