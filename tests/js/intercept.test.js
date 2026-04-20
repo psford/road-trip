@@ -270,3 +270,119 @@ describe('installIntercept', () => {
         expect(spy).not.toHaveBeenCalled();
     });
 });
+
+describe('click handler', () => {
+    beforeEach(() => {
+        globalThis.FetchAndSwap = { fetchAndSwap: vi.fn().mockResolvedValue(undefined) };
+        // Mock pushState to prevent jsdom's security check from failing when
+        // trying to push to a different origin than the current about:blank
+        vi.spyOn(history, 'pushState').mockImplementation(() => {});
+        vi.spyOn(console, 'error').mockImplementation(() => {});
+    });
+
+    it('AC1.2 — internal click triggers fetchAndSwap and pushState', async () => {
+        document.body.innerHTML = '<a id="x" href="/post/abc">x</a>';
+        Intercept.installIntercept();
+        const link = document.querySelector('#x');
+
+        const evt = new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 });
+        link.dispatchEvent(evt);
+
+        expect(FetchAndSwap.fetchAndSwap).toHaveBeenCalledWith('/post/abc');
+        expect(history.pushState).toHaveBeenCalledWith({}, '', '/post/abc');
+    });
+
+    it('preventDefault was called for internal clicks', async () => {
+        document.body.innerHTML = '<a id="x" href="/post/abc">x</a>';
+        Intercept.installIntercept();
+        const link = document.querySelector('#x');
+
+        const evt = new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 });
+        link.dispatchEvent(evt);
+
+        expect(evt.defaultPrevented).toBe(true);
+    });
+
+    it('AC1.5 — external click NOT intercepted', () => {
+        document.body.innerHTML = '<a id="x" href="https://github.com/psford">x</a>';
+        Intercept.installIntercept();
+        const link = document.querySelector('#x');
+
+        const evt = new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 });
+        link.dispatchEvent(evt);
+
+        expect(FetchAndSwap.fetchAndSwap).not.toHaveBeenCalled();
+        expect(evt.defaultPrevented).toBe(false);
+    });
+
+    it('AC1.6 — modifier-key click NOT intercepted', () => {
+        document.body.innerHTML = '<a id="x" href="/post/abc">x</a>';
+        Intercept.installIntercept();
+        const link = document.querySelector('#x');
+
+        const evt = new MouseEvent('click', { bubbles: true, cancelable: true, button: 0, metaKey: true });
+        link.dispatchEvent(evt);
+
+        expect(FetchAndSwap.fetchAndSwap).not.toHaveBeenCalled();
+    });
+
+    it('AC1.6 — middle-click NOT intercepted', () => {
+        document.body.innerHTML = '<a id="x" href="/post/abc">x</a>';
+        Intercept.installIntercept();
+        const link = document.querySelector('#x');
+
+        const evt = new MouseEvent('click', { bubbles: true, cancelable: true, button: 1 });
+        link.dispatchEvent(evt);
+
+        expect(FetchAndSwap.fetchAndSwap).not.toHaveBeenCalled();
+    });
+
+    it('data-no-shell opt-out NOT intercepted', () => {
+        document.body.innerHTML = '<a id="x" href="/post/abc" data-no-shell="true">x</a>';
+        Intercept.installIntercept();
+        const link = document.querySelector('#x');
+
+        const evt = new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 });
+        link.dispatchEvent(evt);
+
+        expect(FetchAndSwap.fetchAndSwap).not.toHaveBeenCalled();
+    });
+
+    it('click on nested element bubbles to anchor and is intercepted', () => {
+        document.body.innerHTML = '<a id="x" href="/post/abc"><span id="inner">x</span></a>';
+        Intercept.installIntercept();
+        const span = document.querySelector('#inner');
+
+        const evt = new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 });
+        span.dispatchEvent(evt);
+
+        expect(FetchAndSwap.fetchAndSwap).toHaveBeenCalledWith('/post/abc');
+    });
+
+    it('fetchAndSwap rejection is logged but doesn\'t throw', async () => {
+        document.body.innerHTML = '<a id="x" href="/post/abc">x</a>';
+        globalThis.FetchAndSwap = { fetchAndSwap: vi.fn().mockRejectedValue(new Error('boom')) };
+        Intercept.installIntercept();
+        const link = document.querySelector('#x');
+
+        const evt = new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 });
+        link.dispatchEvent(evt);
+
+        // Let async rejection settle
+        await new Promise(r => setTimeout(r, 10));
+
+        expect(console.error).toHaveBeenCalled();
+    });
+
+    it('FetchAndSwap missing → falls through (no preventDefault)', () => {
+        document.body.innerHTML = '<a id="x" href="/post/abc">x</a>';
+        delete globalThis.FetchAndSwap;
+        Intercept.installIntercept();
+        const link = document.querySelector('#x');
+
+        const evt = new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 });
+        link.dispatchEvent(evt);
+
+        expect(evt.defaultPrevented).toBe(false);
+    });
+});

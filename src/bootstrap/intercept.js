@@ -77,7 +77,19 @@
         window.addEventListener('popstate', _onPopState);                   // Filled by Task 4
     }
 
-    function _onClick(_event) { /* Task 2 */ }
+    function _onClick(event) {
+        const result = _classifyClick(event);
+        if (!result.intercept) return;
+        if (typeof FetchAndSwap === 'undefined' || typeof FetchAndSwap.fetchAndSwap !== 'function') {
+            return;  // Defensive: if FetchAndSwap isn't loaded yet, fall through to native nav.
+        }
+        event.preventDefault();
+        history.pushState({}, '', result.url);
+        FetchAndSwap.fetchAndSwap(result.url).catch((err) => {
+            // Phase 5's loader-level error handler renders fallback.html when needed.
+            console.error('Intercept: fetchAndSwap failed for', result.url, err);
+        });
+    }
     function _onSubmit(_event) { /* Task 3 */ }
     function _onPopState(_event) { /* Task 4 */ }
 
