@@ -15,6 +15,13 @@ const SOURCES = {
 
 let lsStore;
 beforeEach(async () => {
+    // Close any prior cachedFetch IDB handle BEFORE deleting globals/database.
+    // Otherwise indexedDB.deleteDatabase blocks on the still-open connection
+    // from the previous test's IIFE closure.
+    if (typeof CachedFetch !== 'undefined' && CachedFetch._internals && CachedFetch._internals._closeDb) {
+        CachedFetch._internals._closeDb();
+    }
+
     delete globalThis.CachedFetch;
     delete globalThis.TripStorage;
     delete globalThis.FetchAndSwap;
@@ -60,9 +67,10 @@ beforeEach(async () => {
     document.body.innerHTML = '<div id="bootstrap-progress">Loading…</div>';
     document.body.classList.remove('platform-ios');
 
-    // Stub fetch BEFORE evaluating bootstrap modules so they use the stubbed version
-    // Default mock returns a rejection so tests that don't set up the mock fail fast
-    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Mock not configured')));
+    // Default fetch mock — each test reassigns globalThis.fetch for its specific scenario.
+    // Direct assignment matches the pattern used in fetchAndSwap.test.js (vi.stubGlobal
+    // appears to interact oddly with subsequent direct reassignment in this harness).
+    globalThis.fetch = vi.fn().mockRejectedValue(new TypeError('Mock not configured'));
 
     // Use eval with proper scope - this ensures all modules see globalThis changes
     eval(SOURCES.cachedFetch);
@@ -82,48 +90,39 @@ afterEach(() => {
 
 async function runLoader() {
     eval(SOURCES.loader);
-    // Let the async IIFE run; flush microtasks.
-    await new Promise((r) => setTimeout(r, 0));
-    await new Promise((r) => setTimeout(r, 0));
+    // Let the async IIFE run; flush microtasks + macrotasks. The boot chain is
+    // deep: wrapper → original fetchAndSwap → cachedFetch → fetch → writeThrough
+    // (IDB + clone text) → response.text() → _swapFromHtml. Enough awaits to
+    // settle all the promises in the chain.
+    for (let i = 0; i < 5; i++) {
+        await new Promise((r) => setTimeout(r, 0));
+    }
 }
 
 describe('boot routing', () => {
     it('AC2.1: 0 saved trips → fetches /', async () => {
         // No trips saved — TripStorage.getDefaultTrip() returns null
-        const mockFn = vi.fn(() => {
-            return Promise.resolve(
+        globalThis.fetch = vi.fn().mockImplementation(() =>
+            Promise.resolve(
                 new Response('<html><body>home</body></html>', {
                     status: 200,
                     headers: { 'Content-Type': 'text/html' }
                 })
-            );
-        });
-        globalThis.fetch = mockFn;
+            )
+        );
 
         await runLoader();
-        console.log('After runLoader, body text:', document.body.textContent);
 
-        // Should fetch '/' as boot URL
-        expect(mockFn).toHaveBeenCalled();
-        const firstCall = mockFn.mock.calls[0];
+        expect(globalThis.fetch).toHaveBeenCalled();
+        const firstCall = globalThis.fetch.mock.calls[0];
         expect(firstCall[0]).toBe('/');
-
-        // platform-ios class should be set
         expect(document.body.classList.contains('platform-ios')).toBe(true);
-
-        // Page content should be swapped
         expect(document.body.textContent).toContain('home');
     });
 
     it('AC2.2: 1+ trips → fetches default trip postUrl', async () => {
-        // Save a trip
-        TripStorage.saveTrip({
-            name: 'Trip A',
-            postUrl: '/post/aaa',
-            viewUrl: '/trips/aaa',
-            createdAt: new Date().getTime(),
-            lastOpenedAt: new Date().getTime()
-        });
+        // TripStorage.saveTrip takes positional args: (name, postUrl, viewUrl)
+        TripStorage.saveTrip('Trip A', '/post/aaa', '/trips/aaa');
 
         globalThis.fetch = vi.fn().mockImplementation(() =>
             Promise.resolve(
@@ -136,39 +135,26 @@ describe('boot routing', () => {
 
         await runLoader();
 
-        // Should fetch the trip's postUrl
         expect(globalThis.fetch).toHaveBeenCalled();
         const firstCall = globalThis.fetch.mock.calls[0];
         expect(firstCall[0]).toBe('/post/aaa');
-
-        // Page content should reflect trip
         expect(document.body.textContent).toContain('trip-a');
     });
 
     it('AC2.2: most-recently-opened wins with multiple trips', async () => {
-        // Save three trips with different lastOpenedAt
-        const now = Date.now();
-        TripStorage.saveTrip({
-            name: 'Trip A',
-            postUrl: '/post/aaa',
-            viewUrl: '/trips/aaa',
-            createdAt: now - 6000,
-            lastOpenedAt: now - 6000  // Oldest
-        });
-        TripStorage.saveTrip({
-            name: 'Trip B',
-            postUrl: '/post/bbb',
-            viewUrl: '/trips/bbb',
-            createdAt: now - 3000,
-            lastOpenedAt: now - 3000  // Middle
-        });
-        TripStorage.saveTrip({
-            name: 'Trip C',
-            postUrl: '/post/ccc',
-            viewUrl: '/trips/ccc',
-            createdAt: now,
-            lastOpenedAt: now  // Most recent
-        });
+        // Save three trips, then markOpened them with deterministic timestamps via Date.now spy.
+        TripStorage.saveTrip('Trip A', '/post/aaa', '/trips/aaa');
+        TripStorage.saveTrip('Trip B', '/post/bbb', '/trips/bbb');
+        TripStorage.saveTrip('Trip C', '/post/ccc', '/trips/ccc');
+
+        const nowSpy = vi.spyOn(Date, 'now');
+        nowSpy.mockReturnValue(1000);
+        TripStorage.markOpened('/post/aaa');
+        nowSpy.mockReturnValue(2000);
+        TripStorage.markOpened('/post/bbb');
+        nowSpy.mockReturnValue(3000);
+        TripStorage.markOpened('/post/ccc');
+        nowSpy.mockRestore();
 
         globalThis.fetch = vi.fn().mockImplementation(() =>
             Promise.resolve(
@@ -181,12 +167,9 @@ describe('boot routing', () => {
 
         await runLoader();
 
-        // Should fetch the most recently opened trip
         expect(globalThis.fetch).toHaveBeenCalled();
         const firstCall = globalThis.fetch.mock.calls[0];
         expect(firstCall[0]).toBe('/post/ccc');
-
-        // Page content should reflect that trip
         expect(document.body.textContent).toContain('trip-c');
     });
 });
