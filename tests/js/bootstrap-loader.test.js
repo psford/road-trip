@@ -1,722 +1,406 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import fs from 'fs';
-import path from 'path';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const LOADER_SOURCE = fs.readFileSync(
-  path.join(process.cwd(), 'src/bootstrap/loader.js'),
-  'utf8'
-);
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const SHELL = path.resolve(__dirname, '../../src/bootstrap');
+const SOURCES = {
+    cachedFetch: fs.readFileSync(path.join(SHELL, 'cachedFetch.js'), 'utf8'),
+    tripStorage: fs.readFileSync(path.join(SHELL, 'tripStorage.js'), 'utf8'),
+    fetchAndSwap: fs.readFileSync(path.join(SHELL, 'fetchAndSwap.js'), 'utf8'),
+    intercept: fs.readFileSync(path.join(SHELL, 'intercept.js'), 'utf8'),
+    loader: fs.readFileSync(path.join(SHELL, 'loader.js'), 'utf8'),
+};
 
-// Extract compareSemver function by evaluating the loader source in isolation
-// This allows us to test the pure function directly
-function extractCompareSemver() {
-  let compareSemver;
-  const scope = {
-    compareSemver: undefined
-  };
-  // Execute only the compareSemver function definition
-  const funcMatch = LOADER_SOURCE.match(
-    /function compareSemver\(a, b\)\s*{[\s\S]*?return 0;\s*}/
-  );
-  if (!funcMatch) {
-    throw new Error('Failed to extract compareSemver function');
-  }
-  eval(`compareSemver = ${funcMatch[0]}`);
-  return compareSemver;
-}
+let lsStore;
+beforeEach(async () => {
+    delete globalThis.CachedFetch;
+    delete globalThis.TripStorage;
+    delete globalThis.FetchAndSwap;
+    delete globalThis.Intercept;
 
-const compareSemver = extractCompareSemver();
+    await new Promise((r) => {
+        const req = indexedDB.deleteDatabase('RoadTripPageCache');
+        req.onsuccess = req.onerror = req.onblocked = () => r();
+    });
 
-/**
- * Helper: Run loader in isolated scope with mocked fetch and alert.
- * The IIFE in loader.js runs immediately on eval, and is async.
- * We return early after the loader starts running.
- */
-async function runLoaderInScope(fetchMock, alertMock) {
-  // Save original globals to restore later
-  const originalFetch = globalThis.fetch;
-  const originalAlert = globalThis.alert;
+    lsStore = new Map();
+    vi.stubGlobal('localStorage', {
+        getItem: (k) => (lsStore.has(k) ? lsStore.get(k) : null),
+        setItem: (k, v) => { lsStore.set(k, String(v)); },
+        removeItem: (k) => { lsStore.delete(k); },
+        clear: () => { lsStore.clear(); },
+    });
 
-  // Install mocks globally
-  globalThis.fetch = fetchMock;
-  globalThis.alert = alertMock;
+    // Document event mocking - prevent postUI.js DOMContentLoaded from crashing
+    const originalDispatchEvent = document.dispatchEvent.bind(document);
+    vi.spyOn(document, 'dispatchEvent').mockImplementation((event) => {
+        if (event.type === 'DOMContentLoaded' || event.type === 'load') {
+            // Don't actually dispatch these events - they trigger postUI.js which crashes on simplified DOM
+            return true;
+        }
+        return originalDispatchEvent(event);
+    });
 
-  try {
-    // Eval the loader - the IIFE runs immediately and schedules async work
-    eval(LOADER_SOURCE);
+    vi.spyOn(window, 'dispatchEvent').mockImplementation(() => true);
 
-    // The bootstrap IIFE is async. We need to wait for:
-    // 1. All Promise microtasks from the async/await chain to queue
-    // 2. IndexedDB operations to complete
-    // 3. DOM mutations to be applied
-    // Use multiple cycles of Promise.resolve() + setTimeout to ensure settle
-    for (let i = 0; i < 3; i++) {
-      await Promise.resolve();
-      await new Promise((r) => setTimeout(r, 10));
+    // Script appendChild stub — jsdom doesn't fire onload for remote scripts.
+    const realAppendChild = Node.prototype.appendChild;
+    vi.spyOn(Node.prototype, 'appendChild').mockImplementation(function (node) {
+        const result = realAppendChild.call(this, node);
+        if (node && node.tagName === 'SCRIPT' && node.getAttribute && node.getAttribute('src')) {
+            setTimeout(() => { if (node.onload) node.onload(); }, 0);
+        }
+        return result;
+    });
+
+    document.head.innerHTML = '<title>shell</title>';
+    document.body.innerHTML = '<div id="bootstrap-progress">Loading…</div>';
+    document.body.classList.remove('platform-ios');
+
+    // Stub fetch BEFORE evaluating bootstrap modules so they use the stubbed version
+    // Default mock returns a rejection so tests that don't set up the mock fail fast
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Mock not configured')));
+
+    // Use eval with proper scope - this ensures all modules see globalThis changes
+    eval(SOURCES.cachedFetch);
+    const tripStorageCode = SOURCES.tripStorage.replace(/^const TripStorage = /m, 'globalThis.TripStorage = ');
+    eval(tripStorageCode);
+    eval(SOURCES.fetchAndSwap);
+    eval(SOURCES.intercept);
+});
+
+afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+    if (typeof CachedFetch !== 'undefined' && CachedFetch._internals && CachedFetch._internals._closeDb) {
+        CachedFetch._internals._closeDb();
     }
-  } finally {
-    // Restore original globals
-    globalThis.fetch = originalFetch;
-    globalThis.alert = originalAlert;
-  }
+});
+
+async function runLoader() {
+    eval(SOURCES.loader);
+    // Let the async IIFE run; flush microtasks.
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
 }
 
-/**
- * Helper: Seed IndexedDB with a cached bundle before test.
- */
-async function seedCache(version, files, clientMinVersion) {
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open('RoadTripBundle', 1);
+describe('boot routing', () => {
+    it('AC2.1: 0 saved trips → fetches /', async () => {
+        // No trips saved — TripStorage.getDefaultTrip() returns null
+        globalThis.fetch = vi.fn().mockImplementation((url) => {
+            return Promise.resolve(
+                new Response('<html><body>home</body></html>', {
+                    status: 200,
+                    headers: { 'Content-Type': 'text/html' }
+                })
+            );
+        });
 
-    req.onerror = () => reject(new Error(`Failed to open DB: ${req.error}`));
+        await runLoader();
 
-    req.onupgradeneeded = (evt) => {
-      const db = evt.target.result;
-      if (!db.objectStoreNames.contains('files')) {
-        db.createObjectStore('files');
-      }
-    };
+        // Should fetch '/' as boot URL
+        expect(globalThis.fetch).toHaveBeenCalled();
+        const firstCall = globalThis.fetch.mock.calls[0];
+        expect(firstCall[0]).toBe('/');
 
-    req.onsuccess = () => {
-      const db = req.result;
-      try {
-        const tx = db.transaction(['files'], 'readwrite');
-        const store = tx.objectStore('files');
-        const putReq = store.put(
-          {
-            version,
-            files,
-            client_min_version: clientMinVersion
-          },
-          'bundle'
+        // platform-ios class should be set
+        expect(document.body.classList.contains('platform-ios')).toBe(true);
+
+        // Page content should be swapped
+        expect(document.body.textContent).toContain('home');
+    });
+
+    it('AC2.2: 1+ trips → fetches default trip postUrl', async () => {
+        // Save a trip
+        TripStorage.saveTrip({
+            name: 'Trip A',
+            postUrl: '/post/aaa',
+            viewUrl: '/trips/aaa',
+            createdAt: new Date().getTime(),
+            lastOpenedAt: new Date().getTime()
+        });
+
+        globalThis.fetch = vi.fn().mockImplementation(() =>
+            Promise.resolve(
+                new Response('<html><body>trip-a</body></html>', {
+                    status: 200,
+                    headers: { 'Content-Type': 'text/html' }
+                })
+            )
         );
 
-        putReq.onerror = () => {
-          db.close();
-          reject(new Error(`Failed to put bundle: ${putReq.error}`));
-        };
+        await runLoader();
 
-        tx.oncomplete = () => {
-          db.close();
-          resolve();
-        };
+        // Should fetch the trip's postUrl
+        expect(globalThis.fetch).toHaveBeenCalled();
+        const firstCall = globalThis.fetch.mock.calls[0];
+        expect(firstCall[0]).toBe('/post/aaa');
 
-        tx.onerror = () => {
-          db.close();
-          reject(new Error(`Transaction failed: ${tx.error}`));
-        };
-      } catch (e) {
-        db.close();
-        reject(e);
-      }
-    };
-  });
-}
-
-/**
- * Helper: Read current cached bundle from IndexedDB.
- */
-async function readCachedBundle() {
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open('RoadTripBundle', 1);
-
-    req.onerror = () => reject(new Error(`Failed to open DB: ${req.error}`));
-
-    req.onupgradeneeded = (evt) => {
-      const db = evt.target.result;
-      if (!db.objectStoreNames.contains('files')) {
-        db.createObjectStore('files');
-      }
-    };
-
-    req.onsuccess = () => {
-      const db = req.result;
-      try {
-        const tx = db.transaction(['files'], 'readonly');
-        const store = tx.objectStore('files');
-        const getReq = store.get('bundle');
-
-        getReq.onerror = () => {
-          db.close();
-          reject(new Error(`Failed to get bundle: ${getReq.error}`));
-        };
-
-        getReq.onsuccess = () => {
-          const result = getReq.result || null;
-          tx.oncomplete = () => {
-            db.close();
-            resolve(result);
-          };
-        };
-      } catch (e) {
-        db.close();
-        reject(e);
-      }
-    };
-  });
-}
-
-/**
- * Helper: Clear the bootstrap cache from IndexedDB (just clear the key, not the whole DB).
- */
-async function clearBootstrapCache() {
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open('RoadTripBundle', 1);
-
-    req.onerror = () => reject(new Error(`Failed to open DB: ${req.error}`));
-
-    req.onupgradeneeded = (evt) => {
-      const db = evt.target.result;
-      if (!db.objectStoreNames.contains('files')) {
-        db.createObjectStore('files');
-      }
-    };
-
-    req.onsuccess = () => {
-      const db = req.result;
-      try {
-        const tx = db.transaction(['files'], 'readwrite');
-        const store = tx.objectStore('files');
-        const delReq = store.delete('bundle');
-
-        delReq.onerror = () => {
-          db.close();
-          reject(new Error(`Failed to delete bundle: ${delReq.error}`));
-        };
-
-        tx.oncomplete = () => {
-          db.close();
-          resolve();
-        };
-
-        tx.onerror = () => {
-          db.close();
-          reject(new Error(`Transaction failed: ${tx.error}`));
-        };
-      } catch (e) {
-        db.close();
-        reject(e);
-      }
-    };
-  });
-}
-
-describe('Bootstrap Loader', () => {
-  beforeEach(async () => {
-    // Clear cached bundle from IndexedDB before each test
-    try {
-      await clearBootstrapCache();
-    } catch (e) {
-      // Ignore errors on first test when DB doesn't exist yet
-    }
-    // Reset document state
-    document.body.innerHTML = '';
-    document.head.innerHTML = '';
-    document.body.innerHTML = '<div id="bootstrap-progress">Loading…</div><div id="app-root"></div>';
-    document.head.innerHTML = '';
-  });
-
-  afterEach(async () => {
-    try {
-      await clearBootstrapCache();
-    } catch (e) {
-      // Ignore errors
-    }
-    vi.clearAllMocks();
-  });
-
-  describe('AC9.1: no cache + fetch OK', () => {
-    it('should fetch manifest and 3 files, populate IndexedDB, inject CSS and JS', async () => {
-      const manifest = {
-        version: '1.0.0',
-        client_min_version: '1.0.0',
-        files: {
-          'app.js': { size: 100, sha256: 'aaa' },
-          'app.css': { size: 200, sha256: 'bbb' },
-          'ios.css': { size: 50, sha256: 'ccc' }
-        }
-      };
-
-      const appJs = '// app.js bundle';
-      const appCss = 'body { color: red; }';
-      const iosCss = 'body { color: blue; }';
-
-      const fetchMock = vi.fn(async (url) => {
-        if (url === 'https://app-roadtripmap-prod.azurewebsites.net/bundle/manifest.json') {
-          return {
-            ok: true,
-            status: 200,
-            json: async () => manifest
-          };
-        }
-        if (url === 'https://app-roadtripmap-prod.azurewebsites.net/bundle/app.js') {
-          return { ok: true, status: 200, text: async () => appJs };
-        }
-        if (url === 'https://app-roadtripmap-prod.azurewebsites.net/bundle/app.css') {
-          return { ok: true, status: 200, text: async () => appCss };
-        }
-        if (url === 'https://app-roadtripmap-prod.azurewebsites.net/bundle/ios.css') {
-          return { ok: true, status: 200, text: async () => iosCss };
-        }
-        throw new Error(`Unexpected fetch: ${url}`);
-      });
-
-      const alertMock = vi.fn();
-
-      // Act
-      await runLoaderInScope(fetchMock, alertMock);
-
-      // Assert: fetch was called for manifest + 3 files (4 total)
-      expect(fetchMock).toHaveBeenCalledTimes(4);
-      expect(fetchMock).toHaveBeenCalledWith(
-        'https://app-roadtripmap-prod.azurewebsites.net/bundle/manifest.json',
-        expect.any(Object)
-      );
-      expect(fetchMock).toHaveBeenCalledWith(
-        'https://app-roadtripmap-prod.azurewebsites.net/bundle/app.js'
-      );
-      expect(fetchMock).toHaveBeenCalledWith(
-        'https://app-roadtripmap-prod.azurewebsites.net/bundle/app.css'
-      );
-      expect(fetchMock).toHaveBeenCalledWith(
-        'https://app-roadtripmap-prod.azurewebsites.net/bundle/ios.css'
-      );
-
-      // Assert: CSS and JS injected into DOM
-      const styles = document.querySelectorAll('style');
-      expect(styles.length).toBeGreaterThan(0);
-      const style = styles[styles.length - 1];
-      expect(style.textContent).toContain('body { color: red; }');
-      expect(style.textContent).toContain('body { color: blue; }');
-
-      const scripts = document.querySelectorAll('script');
-      const loaderScript = Array.from(scripts).find((s) =>
-        s.textContent.includes('// app.js bundle')
-      );
-      expect(loaderScript).toBeTruthy();
-
-      // Assert: bootstrap-progress removed
-      expect(document.getElementById('bootstrap-progress')).toBeNull();
-
-      // Assert: platform-ios class added
-      expect(document.body.classList.contains('platform-ios')).toBe(true);
-
-      // Assert: IndexedDB populated with correct version and files
-      const cached = await readCachedBundle();
-      expect(cached).toBeTruthy();
-      expect(cached.version).toBe('1.0.0');
-      expect(cached.files['app.js']).toBe(appJs);
-      expect(cached.files['app.css']).toBe(appCss);
-      expect(cached.files['ios.css']).toBe(iosCss);
-      expect(cached.client_min_version).toBe('1.0.0');
-
-      // Assert: alert was not called (no version mismatch)
-      expect(alertMock).not.toHaveBeenCalled();
+        // Page content should reflect trip
+        expect(document.body.textContent).toContain('trip-a');
     });
-  });
 
-  describe('AC9.2: cache present + fetch rejects (offline)', () => {
-    it('should inject cached bundle without fetching files', async () => {
-      // Arrange: seed cache with existing bundle
-      const cachedAppJs = '// cached app';
-      const cachedAppCss = '/* cached css */';
-      const cachedIosCss = '/* cached ios */';
-      await seedCache(
-        '1.0.0',
-        {
-          'app.js': cachedAppJs,
-          'app.css': cachedAppCss,
-          'ios.css': cachedIosCss
-        },
-        '1.0.0'
-      );
+    it('AC2.2: most-recently-opened wins with multiple trips', async () => {
+        // Save three trips with different lastOpenedAt
+        const now = Date.now();
+        TripStorage.saveTrip({
+            name: 'Trip A',
+            postUrl: '/post/aaa',
+            viewUrl: '/trips/aaa',
+            createdAt: now - 6000,
+            lastOpenedAt: now - 6000  // Oldest
+        });
+        TripStorage.saveTrip({
+            name: 'Trip B',
+            postUrl: '/post/bbb',
+            viewUrl: '/trips/bbb',
+            createdAt: now - 3000,
+            lastOpenedAt: now - 3000  // Middle
+        });
+        TripStorage.saveTrip({
+            name: 'Trip C',
+            postUrl: '/post/ccc',
+            viewUrl: '/trips/ccc',
+            createdAt: now,
+            lastOpenedAt: now  // Most recent
+        });
 
-      const fetchMock = vi.fn(async (url) => {
-        // Fetch manifest rejects (offline)
-        throw new Error('Network error');
-      });
-
-      const alertMock = vi.fn();
-
-      // Act
-      await runLoaderInScope(fetchMock, alertMock);
-
-      // Assert: fetch called once for manifest only (not for files)
-      expect(fetchMock).toHaveBeenCalledTimes(1);
-      expect(fetchMock).toHaveBeenCalledWith(
-        'https://app-roadtripmap-prod.azurewebsites.net/bundle/manifest.json',
-        expect.any(Object)
-      );
-
-      // Assert: cached bundle injected
-      const styles = document.querySelectorAll('style');
-      expect(styles.length).toBeGreaterThan(0);
-      const style = styles[styles.length - 1];
-      expect(style.textContent).toContain(cachedAppCss);
-      expect(style.textContent).toContain(cachedIosCss);
-
-      // Note: The cached content was injected via a script tag
-      // Just verify DOM mutation happened
-      expect(document.body.innerHTML).toBeTruthy();
-
-      // Assert: bootstrap-progress removed
-      expect(document.getElementById('bootstrap-progress')).toBeNull();
-
-      // Assert: alert not called
-      expect(alertMock).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('AC9.3: cache version differs from manifest version', () => {
-    it('should re-fetch and replace cache with new version', async () => {
-      // Arrange: seed cache with old version
-      await seedCache(
-        '1.0.0',
-        {
-          'app.js': '// old app',
-          'app.css': '/* old css */',
-          'ios.css': '/* old ios */'
-        },
-        '1.0.0'
-      );
-
-      const manifest = {
-        version: '2.0.0',
-        client_min_version: '1.0.0',
-        files: {
-          'app.js': { size: 100, sha256: 'aaa' },
-          'app.css': { size: 200, sha256: 'bbb' },
-          'ios.css': { size: 50, sha256: 'ccc' }
-        }
-      };
-
-      const newAppJs = '// new app bundle';
-      const newAppCss = '/* new css */';
-      const newIosCss = '/* new ios */';
-
-      const fetchMock = vi.fn(async (url) => {
-        if (url === 'https://app-roadtripmap-prod.azurewebsites.net/bundle/manifest.json') {
-          return {
-            ok: true,
-            status: 200,
-            json: async () => manifest
-          };
-        }
-        if (url === 'https://app-roadtripmap-prod.azurewebsites.net/bundle/app.js') {
-          return { ok: true, status: 200, text: async () => newAppJs };
-        }
-        if (url === 'https://app-roadtripmap-prod.azurewebsites.net/bundle/app.css') {
-          return { ok: true, status: 200, text: async () => newAppCss };
-        }
-        if (url === 'https://app-roadtripmap-prod.azurewebsites.net/bundle/ios.css') {
-          return { ok: true, status: 200, text: async () => newIosCss };
-        }
-        throw new Error(`Unexpected fetch: ${url}`);
-      });
-
-      const alertMock = vi.fn();
-
-      // Act
-      await runLoaderInScope(fetchMock, alertMock);
-
-      // Assert: fetch called for manifest + 3 files
-      expect(fetchMock).toHaveBeenCalledTimes(4);
-
-      // Assert: new bundle injected (not old)
-      const styles = document.querySelectorAll('style');
-      const style = styles[styles.length - 1];
-      expect(style.textContent).toContain('/* new css */');
-      expect(style.textContent).not.toContain('old css');
-
-      const scripts = document.querySelectorAll('script');
-      const appScript = Array.from(scripts).find((s) =>
-        s.textContent.includes('// new app bundle')
-      );
-      expect(appScript).toBeTruthy();
-
-      // Assert: cache replaced with new version
-      const cached = await readCachedBundle();
-      expect(cached.version).toBe('2.0.0');
-      expect(cached.files['app.js']).toBe(newAppJs);
-      expect(cached.files['app.css']).toBe(newAppCss);
-      expect(cached.files['ios.css']).toBe(newIosCss);
-
-      // Assert: alert not called (version differs, not client_min_version mismatch)
-      expect(alertMock).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('AC9.4: no cache + fetch rejects', () => {
-    it('should fetch and inject fallback.html', async () => {
-      const fallbackHtml = '<h1>Offline Mode</h1><p>Please connect to the internet.</p>';
-
-      const fetchMock = vi.fn(async (url) => {
-        if (url === 'https://app-roadtripmap-prod.azurewebsites.net/bundle/manifest.json') {
-          const err = new Error('Network error');
-          err.name = 'AbortError'; // Mimic AbortSignal.timeout() error
-          throw err;
-        }
-        if (url === 'fallback.html') {
-          return {
-            ok: true,
-            status: 200,
-            text: async () => fallbackHtml
-          };
-        }
-        throw new Error(`Unexpected fetch: ${url}`);
-      });
-
-      const alertMock = vi.fn();
-
-      // Act
-      await runLoaderInScope(fetchMock, alertMock);
-
-      // Assert: fallback.html was fetched
-      expect(fetchMock).toHaveBeenCalledWith('fallback.html');
-
-      // Assert: fallback content injected into body
-      expect(document.body.innerHTML).toContain('Offline Mode');
-      expect(document.body.innerHTML).toContain('Please connect to the internet.');
-
-      // Assert: alert not called
-      expect(alertMock).not.toHaveBeenCalled();
-
-      // Assert: bootstrap-progress removed by fallback injection
-      expect(document.getElementById('bootstrap-progress')).toBeNull();
-    });
-  });
-
-  describe('AC9.5: manifest.client_min_version > cached.version', () => {
-    it('should alert, re-fetch, and inject new bundle', async () => {
-      // Arrange: seed cache with version 1.0.0
-      await seedCache(
-        '1.0.0',
-        {
-          'app.js': '// old app',
-          'app.css': '/* old css */',
-          'ios.css': '/* old ios */'
-        },
-        '1.0.0'
-      );
-
-      const manifest = {
-        version: '1.0.0', // Same version
-        client_min_version: '2.0.0', // But client_min_version is higher
-        files: {
-          'app.js': { size: 100, sha256: 'aaa' },
-          'app.css': { size: 200, sha256: 'bbb' },
-          'ios.css': { size: 50, sha256: 'ccc' }
-        }
-      };
-
-      const newAppJs = '// new app bundle';
-      const newAppCss = '/* new css */';
-      const newIosCss = '/* new ios */';
-
-      const fetchMock = vi.fn(async (url) => {
-        if (url === 'https://app-roadtripmap-prod.azurewebsites.net/bundle/manifest.json') {
-          return {
-            ok: true,
-            status: 200,
-            json: async () => manifest
-          };
-        }
-        if (url === 'https://app-roadtripmap-prod.azurewebsites.net/bundle/app.js') {
-          return { ok: true, status: 200, text: async () => newAppJs };
-        }
-        if (url === 'https://app-roadtripmap-prod.azurewebsites.net/bundle/app.css') {
-          return { ok: true, status: 200, text: async () => newAppCss };
-        }
-        if (url === 'https://app-roadtripmap-prod.azurewebsites.net/bundle/ios.css') {
-          return { ok: true, status: 200, text: async () => newIosCss };
-        }
-        throw new Error(`Unexpected fetch: ${url}`);
-      });
-
-      const alertMock = vi.fn();
-
-      // Act
-      await runLoaderInScope(fetchMock, alertMock);
-
-      // Assert: alert called once with exact message
-      expect(alertMock).toHaveBeenCalledTimes(1);
-      expect(alertMock).toHaveBeenCalledWith('Site updated — reloading');
-
-      // Assert: re-fetch happened (manifest + 3 files)
-      expect(fetchMock).toHaveBeenCalledTimes(4);
-
-      // Assert: new bundle injected
-      const styles = document.querySelectorAll('style');
-      const style = styles[styles.length - 1];
-      expect(style.textContent).toContain(newAppCss);
-      expect(style.textContent).not.toContain('old css');
-
-      const scripts = document.querySelectorAll('script');
-      const appScript = Array.from(scripts).find((s) =>
-        s.textContent.includes('new app')
-      );
-      expect(appScript).toBeTruthy();
-
-      // Assert: cache updated with new client_min_version
-      const cached = await readCachedBundle();
-      expect(cached.client_min_version).toBe('2.0.0');
-      expect(cached.files['app.js']).toBe(newAppJs);
-    });
-  });
-
-  describe('IDB write error: injects bundle + logs error (writeCache rejection path)', () => {
-    it('should inject bundle even if IndexedDB write fails', async () => {
-      // Arrange: set up AC9.1 preconditions (no pre-seeded cache)
-      const manifest = {
-        version: '1.0.0',
-        client_min_version: '1.0.0',
-        files: {
-          'app.js': { size: 100, sha256: 'aaa' },
-          'app.css': { size: 200, sha256: 'bbb' },
-          'ios.css': { size: 50, sha256: 'ccc' }
-        }
-      };
-
-      const appJs = '// app.js bundle';
-      const appCss = 'body { color: red; }';
-      const iosCss = 'body { color: blue; }';
-
-      const fetchMock = vi.fn(async (url) => {
-        if (url === 'https://app-roadtripmap-prod.azurewebsites.net/bundle/manifest.json') {
-          return {
-            ok: true,
-            status: 200,
-            json: async () => manifest
-          };
-        }
-        if (url === 'https://app-roadtripmap-prod.azurewebsites.net/bundle/app.js') {
-          return { ok: true, status: 200, text: async () => appJs };
-        }
-        if (url === 'https://app-roadtripmap-prod.azurewebsites.net/bundle/app.css') {
-          return { ok: true, status: 200, text: async () => appCss };
-        }
-        if (url === 'https://app-roadtripmap-prod.azurewebsites.net/bundle/ios.css') {
-          return { ok: true, status: 200, text: async () => iosCss };
-        }
-        throw new Error(`Unexpected fetch: ${url}`);
-      });
-
-      const alertMock = vi.fn();
-      const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-
-      // Force openDatabase() to fail on its 2nd call (writeCache's call; the
-      // 1st call is from readCache which must succeed so bootstrap reaches
-      // the write path). Pattern: make the IDBOpenDBRequest reject
-      // asynchronously via onerror. writeCache awaits openDatabase() so it
-      // rejects, the caller's try/catch in the IIFE logs via console.error.
-      const originalOpen = globalThis.indexedDB.open;
-      let openCallCount = 0;
-      globalThis.indexedDB.open = function(...args) {
-        openCallCount++;
-        if (openCallCount >= 2) {
-          // Return a fake IDBOpenDBRequest that fires onerror on next microtask
-          const fakeReq = {
-            result: null,
-            error: new Error('SimulatedQuotaExceededError'),
-            onerror: null,
-            onsuccess: null,
-            onupgradeneeded: null
-          };
-          Promise.resolve().then(() => {
-            if (fakeReq.onerror) fakeReq.onerror({ target: fakeReq });
-          });
-          return fakeReq;
-        }
-        return originalOpen.apply(this, args);
-      };
-
-      try {
-        // Act
-        await runLoaderInScope(fetchMock, alertMock);
-
-        // Assert: CSS and JS still injected (fail-open behavior)
-        const styles = document.querySelectorAll('style');
-        expect(styles.length).toBeGreaterThan(0);
-        const style = styles[styles.length - 1];
-        expect(style.textContent).toContain('body { color: red; }');
-        expect(style.textContent).toContain('body { color: blue; }');
-
-        const scripts = document.querySelectorAll('script');
-        const loaderScript = Array.from(scripts).find((s) =>
-          s.textContent.includes('// app.js bundle')
+        globalThis.fetch = vi.fn().mockImplementation(() =>
+            Promise.resolve(
+                new Response('<html><body>trip-c</body></html>', {
+                    status: 200,
+                    headers: { 'Content-Type': 'text/html' }
+                })
+            )
         );
-        expect(loaderScript).toBeTruthy();
 
-        // Assert: bootstrap-progress removed
+        await runLoader();
+
+        // Should fetch the most recently opened trip
+        expect(globalThis.fetch).toHaveBeenCalled();
+        const firstCall = globalThis.fetch.mock.calls[0];
+        expect(firstCall[0]).toBe('/post/ccc');
+
+        // Page content should reflect that trip
+        expect(document.body.textContent).toContain('trip-c');
+    });
+});
+
+describe('platform-ios + bootstrap-progress', () => {
+    it('after successful boot, platform-ios class is set', async () => {
+        globalThis.fetch = vi.fn().mockImplementation(() =>
+            Promise.resolve(
+                new Response('<html><body>page</body></html>', {
+                    status: 200,
+                    headers: { 'Content-Type': 'text/html' }
+                })
+            )
+        );
+
+        await runLoader();
+
+        expect(document.body.classList.contains('platform-ios')).toBe(true);
+    });
+
+    it('after successful boot, bootstrap-progress is removed', async () => {
+        globalThis.fetch = vi.fn().mockImplementation(() =>
+            Promise.resolve(
+                new Response('<html><body>page</body></html>', {
+                    status: 200,
+                    headers: { 'Content-Type': 'text/html' }
+                })
+            )
+        );
+
+        // Verify the progress element exists before running loader
+        expect(document.getElementById('bootstrap-progress')).not.toBeNull();
+
+        await runLoader();
+
+        // After successful boot, it should be removed
         expect(document.getElementById('bootstrap-progress')).toBeNull();
+    });
+});
 
-        // Assert: alert was not called (no version mismatch, not AC9.5)
-        expect(alertMock).not.toHaveBeenCalled();
-
-        // Assert: the error was logged (not silently swallowed).
-        // Catches regression to writeCache silently resolving on IDB failure.
-        expect(consoleErrorSpy).toHaveBeenCalledWith(
-          expect.stringContaining('failed to cache'),
-          expect.anything()
+describe('ios.css injection', () => {
+    it('after first swap, ios.css link is injected', async () => {
+        globalThis.fetch = vi.fn().mockImplementation(() =>
+            Promise.resolve(
+                new Response('<html><body>page</body></html>', {
+                    status: 200,
+                    headers: { 'Content-Type': 'text/html' }
+                })
+            )
         );
-      } finally {
-        // Restore original indexedDB.open and console.error
-        globalThis.indexedDB.open = originalOpen;
-        consoleErrorSpy.mockRestore();
-      }
-    });
-  });
 
-  describe('compareSemver', () => {
-    it('should return 0 when versions are equal', () => {
-      expect(compareSemver('1.0.0', '1.0.0')).toBe(0);
-      expect(compareSemver('2.3.4', '2.3.4')).toBe(0);
-      expect(compareSemver('0.0.0', '0.0.0')).toBe(0);
+        await runLoader();
+
+        const link = document.head.querySelector('link[data-ios-css]');
+        expect(link).not.toBeNull();
+        expect(link?.getAttribute('href')).toBe('/ios.css');
+        expect(link?.rel).toBe('stylesheet');
     });
 
-    it('should return -1 when first version is less than second', () => {
-      expect(compareSemver('1.0.0', '1.0.1')).toBe(-1);
-      expect(compareSemver('1.0.0', '2.0.0')).toBe(-1);
-      expect(compareSemver('1.9.9', '2.0.0')).toBe(-1);
-      expect(compareSemver('0.0.1', '1.0.0')).toBe(-1);
+    it('after second manual swap, ios.css link still exists', async () => {
+        globalThis.fetch = vi.fn().mockImplementation(() =>
+            Promise.resolve(
+                new Response('<html><body>page</body></html>', {
+                    status: 200,
+                    headers: { 'Content-Type': 'text/html' }
+                })
+            )
+        );
+
+        await runLoader();
+
+        // Verify link exists after first swap
+        let link = document.head.querySelector('link[data-ios-css]');
+        expect(link).not.toBeNull();
+
+        // Perform a second manual swap
+        await FetchAndSwap.fetchAndSwap('/post/abc');
+
+        // Link should still exist (re-injected)
+        link = document.head.querySelector('link[data-ios-css]');
+        expect(link).not.toBeNull();
+        expect(link?.getAttribute('href')).toBe('/ios.css');
     });
 
-    it('should return 1 when first version is greater than second', () => {
-      expect(compareSemver('1.0.1', '1.0.0')).toBe(1);
-      expect(compareSemver('2.0.0', '1.9.9')).toBe(1);
-      expect(compareSemver('2.0.0', '1.0.0')).toBe(1);
-      expect(compareSemver('1.0.0', '0.0.1')).toBe(1);
+    it('ios.css link is not duplicated', async () => {
+        globalThis.fetch = vi.fn().mockImplementation(() =>
+            Promise.resolve(
+                new Response('<html><body>page</body></html>', {
+                    status: 200,
+                    headers: { 'Content-Type': 'text/html' }
+                })
+            )
+        );
+
+        await runLoader();
+
+        // Perform multiple swaps
+        await FetchAndSwap.fetchAndSwap('/post/page1');
+        await FetchAndSwap.fetchAndSwap('/post/page2');
+
+        // Should only have one link
+        const links = document.head.querySelectorAll('link[data-ios-css]');
+        expect(links.length).toBe(1);
+    });
+});
+
+describe('AC3.6: offline + cache miss → fallback.html', () => {
+    it('renders fallback.html when boot fetch fails', async () => {
+        // First fetch (boot) rejects; second fetch (fallback.html) succeeds
+        let callCount = 0;
+        globalThis.fetch = vi.fn().mockImplementation(() => {
+            callCount++;
+            if (callCount === 1) {
+                return Promise.reject(new TypeError('Network request failed'));
+            }
+            return Promise.resolve(
+                new Response('<button id="bootstrap-retry">Retry</button>', {
+                    status: 200,
+                    headers: { 'Content-Type': 'text/html' }
+                })
+            );
+        });
+
+        await runLoader();
+
+        // Fallback content should be rendered
+        const retry = document.body.querySelector('#bootstrap-retry');
+        expect(retry).not.toBeNull();
     });
 
-    it('should handle uneven length version strings', () => {
-      // 1.0 should be treated as 1.0.0
-      expect(compareSemver('1.0', '1.0.0')).toBe(0);
-      expect(compareSemver('1', '1.0.0')).toBe(0);
-      expect(compareSemver('1.0.0', '1')).toBe(0);
-      expect(compareSemver('2.0', '1.9.9')).toBe(1);
+    it('retry button reloads the page', async () => {
+        let callCount = 0;
+        globalThis.fetch = vi.fn().mockImplementation(() => {
+            callCount++;
+            if (callCount === 1) {
+                return Promise.reject(new TypeError('Network request failed'));
+            }
+            return Promise.resolve(
+                new Response('<button id="bootstrap-retry">Retry</button>', {
+                    status: 200,
+                    headers: { 'Content-Type': 'text/html' }
+                })
+            );
+        });
+
+        // Mock location.reload
+        Object.defineProperty(window, 'location', {
+            configurable: true,
+            value: { ...window.location, reload: vi.fn() }
+        });
+
+        await runLoader();
+
+        const retry = document.body.querySelector('#bootstrap-retry');
+        expect(retry).not.toBeNull();
+
+        // Click retry and verify reload is called
+        retry?.click();
+
+        // Need to let the click handler run
+        await new Promise((r) => setTimeout(r, 10));
+
+        expect(window.location.reload).toHaveBeenCalled();
     });
 
-    it('should handle null and undefined by treating as 0.0.0', () => {
-      expect(compareSemver(null, '0.0.0')).toBe(0);
-      expect(compareSemver(undefined, '0.0.0')).toBe(0);
-      expect(compareSemver('0.0.0', null)).toBe(0);
-      expect(compareSemver('1.0.0', null)).toBe(1);
-      expect(compareSemver(null, '1.0.0')).toBe(-1);
+    it('if both fetch calls fail, renders Unable to load fallback', async () => {
+        // Both fetch calls reject
+        globalThis.fetch = vi.fn().mockImplementation(() =>
+            Promise.reject(new TypeError('Network request failed'))
+        );
+
+        await runLoader();
+
+        // Should show generic fallback
+        expect(document.body.innerHTML).toContain('Unable to load');
+    });
+});
+
+describe('Intercept install', () => {
+    it('after successful boot, Intercept.installIntercept is called', async () => {
+        globalThis.fetch = vi.fn().mockImplementation(() =>
+            Promise.resolve(
+                new Response('<html><body>page</body></html>', {
+                    status: 200,
+                    headers: { 'Content-Type': 'text/html' }
+                })
+            )
+        );
+
+        // Spy on Intercept.installIntercept
+        const spy = vi.spyOn(Intercept, 'installIntercept');
+
+        await runLoader();
+
+        expect(spy).toHaveBeenCalledTimes(1);
     });
 
-    it('should handle non-numeric segments by treating as 0', () => {
-      // Segments that parse to NaN are treated as 0
-      // e.g., "1.0.0-rc.1" → [1, 0, 0, NaN] → [1, 0, 0, 0]
-      expect(compareSemver('1.0.0-rc', '1.0.0')).toBe(0);
-      expect(compareSemver('1.0.0-rc', '1.0.1-alpha')).toBe(-1);
-    });
+    it('after failed boot, Intercept.installIntercept is not called', async () => {
+        let callCount = 0;
+        globalThis.fetch = vi.fn().mockImplementation(() => {
+            callCount++;
+            if (callCount === 1) {
+                return Promise.reject(new TypeError('Network request failed'));
+            }
+            return Promise.resolve(
+                new Response('<div>fallback</div>', {
+                    status: 200,
+                    headers: { 'Content-Type': 'text/html' }
+                })
+            );
+        });
 
-    it('should handle extra zero segments in longer versions', () => {
-      // Additional segments beyond the compared versions should be treated as 0
-      expect(compareSemver('1.0.0.0', '1.0.0')).toBe(0);
-      expect(compareSemver('1.0.0', '1.0.0.0')).toBe(0);
-      expect(compareSemver('1.0.0.1', '1.0.0')).toBe(1);
-      expect(compareSemver('1.0.0', '1.0.0.1')).toBe(-1);
+        // Spy on Intercept.installIntercept
+        const spy = vi.spyOn(Intercept, 'installIntercept');
+
+        await runLoader();
+
+        expect(spy).not.toHaveBeenCalled();
     });
-  });
 });
