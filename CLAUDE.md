@@ -1,6 +1,6 @@
 # Road Trip Photo Map
 
-Last verified: 2026-04-18
+Last verified: 2026-04-20
 
 ## Purpose
 
@@ -14,8 +14,8 @@ Mobile-first road trip photo sharing app. Users create a trip, get two secret li
 - SkiaSharp for server-side image processing
 - MapLibre GL JS v5.21.0 for map rendering (vector tiles via MapTiler)
 - Vanilla HTML/JS/CSS frontend (no framework)
-- Capacitor 8 iOS shell (`@capacitor/core`, `@capacitor/cli`, `@capacitor/ios`) with SPM (never CocoaPods). `src/bootstrap/` is the Capacitor `webDir` — loads hybrid bundle at runtime from App Service `/bundle/*`
-- Node tooling (vitest + jsdom + fake-indexeddb for JS tests; `scripts/build-bundle.js` produces the iOS hybrid bundle)
+- Capacitor 8 iOS shell (`@capacitor/core`, `@capacitor/cli`, `@capacitor/ios`) with SPM (never CocoaPods). `src/bootstrap/` is the Capacitor `webDir` — a server-first document-swap shell (iOS Offline Shell, 2026-04-19 branch) that fetches live pages from App Service, caches them in IndexedDB, and swaps the document in-place. Replaces the earlier bundle-injection loader. On-device sign-off (Phase 7 of that plan) is still pending.
+- Node tooling (vitest + jsdom + fake-indexeddb for JS tests; `scripts/build-bundle.js` still produces `/bundle/*` for inspection but the iOS shell no longer consumes it)
 
 ## Commands
 
@@ -24,7 +24,8 @@ Mobile-first road trip photo sharing app. Users create a trip, get two secret li
 - `dotnet run --project src/RoadTripMap` -- Run locally (port 5100)
 - `dotnet run --project src/RoadTripMap.PoiSeeder` -- Seed POI data (flags: `--nps-only`, `--overpass-only`, `--pad-us-only`, `--pad-us-file <path>`, `--boundaries-only`)
 - `npm test` -- Run JS tests (vitest: `tests/js/**`). CI does NOT run these yet; run locally before pushing JS changes.
-- `npm run build:bundle` -- Concat `src/RoadTripMap/wwwroot/js/*.js` + `css/*.css` into `src/RoadTripMap/wwwroot/bundle/{app.js,app.css,ios.css,manifest.json}`. Runs `node --check` against `app.js` and fails on syntax errors (guards against duplicate-const regressions from naive concatenation).
+- `npm run build:bundle` -- Concat `src/RoadTripMap/wwwroot/js/*.js` + `css/*.css` into `src/RoadTripMap/wwwroot/bundle/{app.js,app.css,ios.css,manifest.json}`. Runs `node --check` against `app.js` and fails on syntax errors (guards against duplicate-const regressions from naive concatenation). As of the iOS Offline Shell branch the iOS loader no longer consumes this bundle; it is retained for inspection / potential rollback.
+- `npm run prepare:ios-shell` -- Copies `src/RoadTripMap/wwwroot/js/tripStorage.js` to `src/bootstrap/tripStorage.js`. Must be run whenever `wwwroot/js/tripStorage.js` changes, and before `npx cap sync ios`, so the iOS shell and the web page stay on the same contract.
 
 ## Contracts
 
@@ -37,7 +38,7 @@ Mobile-first road trip photo sharing app. Users create a trip, get two secret li
   - Two-token auth: SecretToken (upload + view), ViewToken (view only) — both GUIDs in URL path, no accounts/cookies
   - All responses include `X-Robots-Tag: noindex, nofollow`
   - All responses include `x-server-version` and `x-client-min-version` headers (resilient-uploads client protocol gate)
-  - `GET /bundle/*` -- App Service serves the iOS hybrid bundle as static files (from `src/RoadTripMap/wwwroot/bundle/`) with CORS policy `IosAppOrigin` (allows `capacitor://localhost`, `ionic://localhost`, `https://localhost`; exposes `x-server-version`, `x-client-min-version`, `x-correlation-id`). `manifest.json` shape: `{ version, client_min_version, files: { "app.js": {size, sha256}, "app.css": {...}, "ios.css": {...} } }`. The Capacitor iOS shell's `src/bootstrap/loader.js` is the sole consumer.
+  - `GET /bundle/*` -- App Service serves the iOS hybrid bundle as static files (from `src/RoadTripMap/wwwroot/bundle/`) with CORS policy `IosAppOrigin` (allows `capacitor://localhost`, `ionic://localhost`, `https://localhost`; exposes `x-server-version`, `x-client-min-version`, `x-correlation-id`). `manifest.json` shape: `{ version, client_min_version, files: { "app.js": {size, sha256}, "app.css": {...}, "ios.css": {...} } }`. No active consumer after the iOS Offline Shell branch landed (2026-04-19); the new document-swap shell fetches live pages instead. Endpoint + CORS + build retained so the prior loader can be restored without infra work if on-device sign-off fails.
   - Geocoding via Nominatim with 1req/sec rate limit and DB cache
   - Upload rate limited to 20/hr per IP (legacy form-POST endpoint `POST /api/trips/{token}/photos`)
   - Resilient upload flow (Phases 1-5 implemented; Phase 5 = client-side image processing, dark-released behind `Upload:ClientSideProcessingEnabled`):
@@ -75,6 +76,7 @@ Mobile-first road trip photo sharing app. Users create a trip, get two secret li
 - **Client-side image processing (Phase 5)**: When `Upload:ClientSideProcessingEnabled=true`, the client compresses oversize images (>14 MB) and generates display (1920px) and thumb (300px) tiers before upload, reducing server CPU. Uses lazy-loaded CDN libs (browser-image-compression, piexifjs, heic2any). Dark-released: `false` in prod appsettings, `true` in dev. Server `CommitAsync` detects missing tier blobs and falls back to server-side generation, so the feature is fully backward-compatible.
 - **Client-provided UploadId as the correlation key**: `RequestUploadResponse.PhotoId` is the same Guid the client sent as `UploadId`. Enables idempotency (duplicate POST returns existing row) and consistent identifiers between request-upload and commit. The EF entity's `int Id` is distinct from this Guid and exposed as `PhotoResponse.id`.
 - **Log sanitization via `LogSanitizer`**: Every logger call touching trip tokens, blob paths, SAS URLs, or GPS coordinates goes through `src/RoadTripMap/Security/LogSanitizer.cs`. Never log raw secret values. Enforced by captured-log assertions in `UploadEndpointHttpTests`.
+- **iOS Offline Shell: document-swap over bundle-injection (2026-04-19 branch, phases 0–6 landed; phase 7 on-device sign-off pending)**: The iOS shell no longer ships a concatenated JS/CSS bundle. It fetches live HTML from App Service, caches it in IndexedDB (`RoadTripPageCache`), and swaps the document in-place using DOMParser + script recreation. Rationale: the bundle-injection approach regenerated duplicate-const conflicts on every `build:bundle` and required a synthetic `DOMContentLoaded`/boot flow that diverged from what the same pages rendered in a normal browser. Document-swap lets one source (the wwwroot page) serve both browsers and the iOS shell, at the cost of a same-origin assumption (APP_BASE baked into `fetchAndSwap.js` / `intercept.js`). The previous bundle plumbing (`scripts/build-bundle.js`, `/bundle/*` endpoint, CORS policy, `x-server-version`/`x-client-min-version` headers) is retained as a rollback lever.
 
 ## Invariants
 
@@ -92,7 +94,7 @@ Mobile-first road trip photo sharing app. Users create a trip, get two secret li
 - `photos.UploadId` is unique (filtered index, `WHERE UploadId IS NOT NULL`); resilient-upload idempotency key
 - All connection strings and API keys resolve through `EndpointRegistry.Resolve()` -- no direct `Environment.GetEnvironmentVariable()` for endpoint keys
 - Raw secret tokens, SAS URLs, blob paths with secret tokens, and GPS coordinates MUST NOT appear in logs (enforced by `LogSanitizer` usage + captured-log assertions)
-- Bootstrap loader cache (iOS shell) lives in IndexedDB `RoadTripBundle` / object store `files` / key `bundle`. Cached record is `{ version, files, client_min_version }`. Loader refreshes when cached version differs from manifest, and force-refreshes (with `alert('Site updated — reloading')`) when `compareSemver(cached.version, manifest.client_min_version) < 0`. Offline with no cache → renders `fallback.html`.
+- iOS Offline Shell page cache lives in IndexedDB `RoadTripPageCache` with two object stores: `pages` (HTML documents) and `api` (JSON payloads, opt-in via `cachedFetch(url, { asJson: true })`). Cached records carry `{ etag, lastModified, cachedAt }` for conditional revalidate. `CachedFetch.cachedFetch` is cache-first: on hit it returns the cached response and fires a background revalidate (fetch with `If-None-Match`/`If-Modified-Since`; 304 keeps stale cache, 200 write-through, network + IDB write errors are swallowed). `/api/poi` and `/api/park-boundaries` are bypassed — `mapCache.js` retains ownership of those and writes to its own `RoadTripMapCache` DB. Offline with a full cache miss → `loader.js` renders `src/bootstrap/fallback.html`. The previous `RoadTripBundle` / `files` / key `bundle` IDB store is no longer read or written by the shipped shell (though legacy rows left in user storage do no harm).
 
 ## Key Files
 
@@ -119,12 +121,18 @@ Mobile-first road trip photo sharing app. Users create a trip, get two secret li
 - `src/RoadTripMap/wwwroot/js/imageProcessor.js` -- Client-side image processing module: oversize compression (>14 MB), HEIC conversion, display/thumb tier generation. Gated by `Upload:ClientSideProcessingEnabled` meta tag. Public API: `ImageProcessor.processForUpload(file)`
 - `src/RoadTripMap/wwwroot/js/uploadQueue.js` -- Client-side upload state machine (resilient upload flow with block uploads, SAS refresh, tier blob uploads, retry logic)
 - `capacitor.config.js` -- Capacitor iOS shell config (`appId: com.psford.roadtripmap`, `webDir: src/bootstrap`)
-- `src/bootstrap/loader.js` -- iOS hybrid bootstrap: fetches `/bundle/manifest.json`, caches bundle in IndexedDB, injects CSS+JS at runtime, falls back to cached bundle when offline, renders `fallback.html` when offline with no cache. Sets `platform-ios` class on `<body>` before paint (AC10.1).
-- `src/bootstrap/index.html`, `src/bootstrap/fallback.html` -- Capacitor `webDir` entry point and offline-no-cache fallback
+- `src/bootstrap/index.html` -- Capacitor `webDir` entry point; loads the five bootstrap modules via `<script defer>` in order: `cachedFetch.js` → `tripStorage.js` → `fetchAndSwap.js` → `intercept.js` → `loader.js`.
+- `src/bootstrap/cachedFetch.js` -- IIFE; exposes `globalThis.CachedFetch = { cachedFetch, isBypassed, _internals }`. Cache-first fetch wrapper backed by `RoadTripPageCache` IDB with fire-and-forget background revalidate. Bypasses `/api/(poi|park-boundaries)` so `mapCache.js` retains ownership of those.
+- `src/bootstrap/tripStorage.js` -- GENERATED COPY of `src/RoadTripMap/wwwroot/js/tripStorage.js`, regenerated by `npm run prepare:ios-shell`. Shipped in the shell because the shell can't fetch from App Service before bootstrapping TripStorage is available.
+- `src/bootstrap/fetchAndSwap.js` -- IIFE; exposes `globalThis.FetchAndSwap = { fetchAndSwap, _swapFromHtml, _APP_BASE }`. DOMParser-based document swap: parses HTML, injects `<base href>` pointing at the App Service origin, strips scripts, swaps `head`/`body` innerHTML, recreates scripts via `createElement` (so they execute), dispatches synthetic `DOMContentLoaded` + `load`, and calls `TripStorage.markOpened`.
+- `src/bootstrap/intercept.js` -- IIFE; exposes `globalThis.Intercept = { installIntercept, _internals, APP_BASE }`. Turbo-style delegated handlers on `click` / `submit` / `popstate`. Passes through (native navigation) for: external URLs, modifier keys, middle-click, `target="_blank"`, `[data-no-shell="true"]`, hash-only changes, exotic form methods.
+- `src/bootstrap/loader.js` -- Rewritten end-to-end for the document-swap shell. Tiny IIFE that wires the four modules together: monkey-patches `FetchAndSwap.fetchAndSwap` to re-inject `<link data-ios-css href="/ios.css">` after every swap, boots by reading `TripStorage.getDefaultTrip()` (or `/` fallback) and swapping to that URL, installs `Intercept` after first swap, catches errors to render `fallback.html`. Still sets `platform-ios` class on `<body>` before paint (AC10.1 carry-over). No longer touches `RoadTripBundle` IDB.
+- `src/bootstrap/fallback.html` -- Offline-no-cache fallback rendered when bootstrap or a cache-miss fetch fails; provides Retry / Back buttons wired by `loader.js`.
 - `ios/App/` -- Xcode + SPM project tree generated by `npx cap add ios` (standard Capacitor layout; no custom native code yet)
 - `scripts/build-bundle.js` -- Node script that concatenates `wwwroot/js/*.js` + `wwwroot/css/*.css` into the `/bundle/*` assets + `manifest.json` (sha256 + size per file). Runs `node --check` on the output and fails the build on syntax errors.
 - `src/RoadTripMap/wwwroot/bundle/` -- Build output served at `/bundle/*`. Regenerated by `npm run build:bundle`; checked in so prod App Service serves it without a JS build step.
-- `tests/js/bootstrap-loader.test.js` -- Bootstrap loader AC9.1–9.5 coverage + IDB write-error scenario + compareSemver unit tests
+- `tests/js/bootstrap-loader.test.js` -- Rewritten for the document-swap loader (bootstrap wiring, boot routing, ios.css re-injection, fallback render, IDB cleanup).
+- `tests/js/cachedFetch.test.js`, `tests/js/fetchAndSwap.test.js`, `tests/js/intercept.test.js`, `tests/js/tripStorage.test.js`, `tests/js/create-flow.test.js` -- iOS Offline Shell unit suites (~149 tests). JS tests do not run in CI — run `npm test` locally before pushing shell changes.
 - `src/RoadTripMap.PoiSeeder/` -- Console app for importing POI data from NPS, Overpass, and PAD-US sources
 - `src/RoadTripMap.PoiSeeder/Importers/PadUsBoundaryImporter.cs` -- Fetches park boundary polygons from PAD-US ArcGIS API with geometry simplification
 - `src/RoadTripMap.PoiSeeder/Geometry/GeoJsonProcessor.cs` -- Geometry utilities for boundary simplification and centroid calculation
@@ -151,6 +159,9 @@ Mobile-first road trip photo sharing app. Users create a trip, get two secret li
 - `src/bootstrap/tripStorage.js` is a **generated copy** of `src/RoadTripMap/wwwroot/js/tripStorage.js`, regenerated by `npm run prepare:ios-shell`. The iOS shell loads it directly because the shell can't fetch from the App Service before bootstrapping. After modifying `wwwroot/js/tripStorage.js`, run the prepare script and commit both files in the same change.
 - `storageAdapter.js` and `uploadTransport.js` expose their public module via `const StorageAdapter = _storageAdapterImpl` (and same pattern for transport). The two-name rename is a Phase 6 swap seam — iOS will replace `_storageAdapterImpl` with a SQLite-backed adapter and `_uploadTransportImpl` with a native `BackgroundUpload.enqueue` adapter. Do NOT collapse the rename back into a single declaration; do NOT introduce a sibling `_platform` variable in either file (an earlier attempt produced a duplicate-const SyntaxError in the concatenated bundle, which the `node --check` step in `build:bundle` now catches).
 - JS tests do not run in CI. Run `npm test` locally before pushing any change to `src/RoadTripMap/wwwroot/js/*`, `src/bootstrap/*`, or `scripts/build-bundle.js`.
+- iOS Offline Shell bakes the prod App Service origin into `src/bootstrap/fetchAndSwap.js` and `src/bootstrap/intercept.js` (`https://app-roadtripmap-prod.azurewebsites.net`). There is no dev/staging variant; the shell is a prod-only target by design.
+- `create.html` prefers `FetchAndSwap.fetchAndSwap(postUrl)` + `history.pushState` over `window.location.href = postUrl` when `FetchAndSwap` is loaded. Keeps the create flow inside the iOS shell without breaking regular-browser behavior; if you refactor the create flow, preserve the fallback branch.
+- Phase 7 on-device verification is NOT complete — the iOS Offline Shell branch is implemented and unit-tested but has not yet been signed off on a real iPhone. Treat prod behavior as unverified until that happens.
 
 ---
 
