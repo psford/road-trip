@@ -151,6 +151,39 @@ function isBypassed(url) {
     return BYPASS_REGEX.test(pathname);
 }
 
+// === Helpers (Task 3) ===
+
+/**
+ * Convert a cached record to a Response object.
+ * Reconstructs headers from etag and lastModified if present.
+ */
+function _toResponse(cached, asJson) {
+    const headers = new Headers();
+    headers.set('Content-Type', asJson ? (cached.contentType || 'application/json') : 'text/html');
+    if (cached.etag) headers.set('ETag', cached.etag);
+    if (cached.lastModified) headers.set('Last-Modified', cached.lastModified);
+    const body = asJson ? cached.body : cached.html;
+    return new Response(body, { status: 200, headers });
+}
+
+/**
+ * Write a network response to the cache after a cache miss.
+ * Extracts body, content-type, etag, and last-modified headers.
+ * Stores as either { html, ... } or { body, contentType, ... } depending on asJson.
+ */
+async function _writeThrough(storeName, url, responseClone, asJson) {
+    const text = await responseClone.text();
+    const etag = responseClone.headers.get('etag') || null;
+    const lastModified = responseClone.headers.get('last-modified') || null;
+    const cachedAt = Date.now();
+    if (asJson) {
+        const contentType = responseClone.headers.get('content-type') || 'application/json';
+        await _putRecord(storeName, url, { body: text, contentType, etag, lastModified, cachedAt });
+    } else {
+        await _putRecord(storeName, url, { html: text, etag, lastModified, cachedAt });
+    }
+}
+
 // === CachedFetch Public API ===
 
 /**
@@ -160,10 +193,37 @@ function isBypassed(url) {
  *   signal: AbortSignal for request cancellation
  * Returns: { response: Response, source: 'cache' | 'network' }
  *
- * Task 1: Stub implementation. Real logic added in Task 3.
+ * Cache-first read: returns immediately from cache if available.
+ * Cache miss: fetches from network and writes successful responses (status 200+) to IDB.
+ * Bypass: /api/poi and /api/park-boundaries pass through network without caching.
  */
-async function cachedFetch(url, opts) {
-    throw new Error('cachedFetch NOT_IMPLEMENTED — see Task 3');
+async function cachedFetch(url, opts = {}) {
+    const { asJson = false, signal } = opts;
+
+    // Bypass: never cache, never read cache. Per AC3.7, mapCache owns these.
+    if (isBypassed(url)) {
+        const response = await fetch(url, { signal });
+        return { response, source: 'network' };
+    }
+
+    const storeName = asJson ? STORE_API : STORE_PAGES;
+    const db = await _getDb();
+
+    // Cache-first read
+    if (db) {
+        const cached = await _getRecord(storeName, url);
+        if (cached) {
+            return { response: _toResponse(cached, asJson), source: 'cache' };
+            // Background revalidate added in Task 5
+        }
+    }
+
+    // Cache miss: fetch from network and write through
+    const response = await fetch(url, { signal });
+    if (response.ok && db) {
+        await _writeThrough(storeName, url, response.clone(), asJson);
+    }
+    return { response, source: 'network' };
 }
 
 // === Module Exposure ===
