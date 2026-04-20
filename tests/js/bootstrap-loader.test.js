@@ -91,10 +91,10 @@ afterEach(() => {
 async function runLoader() {
     eval(SOURCES.loader);
     // Let the async IIFE run; flush microtasks + macrotasks. The boot chain is
-    // deep: wrapper → original fetchAndSwap → cachedFetch → fetch → writeThrough
-    // (IDB + clone text) → response.text() → _swapFromHtml. Enough awaits to
-    // settle all the promises in the chain.
-    for (let i = 0; i < 5; i++) {
+    // deep: wrapper → original fetchAndSwap → cachedFetch (with URL resolution
+    // via new URL()) → fetch → writeThrough (IDB + clone text) → response.text()
+    // → _swapFromHtml. Enough awaits to settle all promises in the chain.
+    for (let i = 0; i < 10; i++) {
         await new Promise((r) => setTimeout(r, 0));
     }
 }
@@ -115,7 +115,9 @@ describe('boot routing', () => {
 
         expect(globalThis.fetch).toHaveBeenCalled();
         const firstCall = globalThis.fetch.mock.calls[0];
-        expect(firstCall[0]).toBe('/');
+        // cachedFetch resolves relative URLs against APP_BASE so the iOS shell
+        // hits App Service, not capacitor://localhost.
+        expect(firstCall[0]).toBe('https://app-roadtripmap-prod.azurewebsites.net/');
         expect(document.body.classList.contains('platform-ios')).toBe(true);
         expect(document.body.textContent).toContain('home');
     });
@@ -137,7 +139,7 @@ describe('boot routing', () => {
 
         expect(globalThis.fetch).toHaveBeenCalled();
         const firstCall = globalThis.fetch.mock.calls[0];
-        expect(firstCall[0]).toBe('/post/aaa');
+        expect(firstCall[0]).toBe('https://app-roadtripmap-prod.azurewebsites.net/post/aaa');
         expect(document.body.textContent).toContain('trip-a');
     });
 
@@ -169,7 +171,7 @@ describe('boot routing', () => {
 
         expect(globalThis.fetch).toHaveBeenCalled();
         const firstCall = globalThis.fetch.mock.calls[0];
-        expect(firstCall[0]).toBe('/post/ccc');
+        expect(firstCall[0]).toBe('https://app-roadtripmap-prod.azurewebsites.net/post/ccc');
         expect(document.body.textContent).toContain('trip-c');
     });
 });

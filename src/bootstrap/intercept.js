@@ -2,6 +2,18 @@
 (function () {
     const APP_BASE = 'https://app-roadtripmap-prod.azurewebsites.net';
 
+    // Resolve a possibly-relative URL to absolute App Service form before fetch().
+    // The iOS shell runs at capacitor://localhost/, so relative URLs would resolve
+    // against that origin — hitting the Capacitor internal server. Used by the
+    // POST form path (cachedFetch handles this internally for the GET + cache path).
+    function _absoluteUrl(url) {
+        try {
+            return new URL(url, APP_BASE).href;
+        } catch {
+            return url;
+        }
+    }
+
     function _isModifiedClick(event) {
         return event.metaKey || event.ctrlKey || event.shiftKey || event.altKey;
     }
@@ -109,7 +121,7 @@
         } else {
             // POST: bypass cache. Raw fetch + _swapFromHtml.
             try {
-                const response = await fetch(result.url, {
+                const response = await fetch(_absoluteUrl(result.url), {
                     method: 'POST',
                     body: new FormData(result.form)
                 });

@@ -150,6 +150,22 @@
     return BYPASS_REGEX.test(pathname);
   }
 
+  /**
+   * Resolve a possibly-relative URL to an absolute App Service URL before fetch().
+   * The iOS shell runs at capacitor://localhost/, so relative URLs like '/' or
+   * '/post/abc' would resolve against that origin — hitting the Capacitor internal
+   * server instead of App Service. This helper forces them against APP_BASE.
+   * Absolute URLs are returned unchanged. IDB keys keep the original (relative) url
+   * so cache hits match across callers.
+   */
+  function _absoluteUrl(url) {
+    try {
+      return new URL(url, APP_BASE).href;
+    } catch {
+      return url;
+    }
+  }
+
   // === Helpers (Task 3) ===
 
   /**
@@ -202,7 +218,7 @@
 
       let response;
       try {
-        response = await fetch(url, { headers });
+        response = await fetch(_absoluteUrl(url), { headers });
       } catch {
         // AC3.5: network error is swallowed silently
         return;
@@ -255,7 +271,7 @@
 
     // Bypass: never cache, never read cache. Per AC3.7, mapCache owns these.
     if (isBypassed(url)) {
-      const response = await fetch(url, { signal });
+      const response = await fetch(_absoluteUrl(url), { signal });
       return { response, source: 'network' };
     }
 
@@ -272,7 +288,7 @@
     }
 
     // Cache miss: fetch from network and write through
-    const response = await fetch(url, { signal });
+    const response = await fetch(_absoluteUrl(url), { signal });
     if (response.ok && db) {
       await _writeThrough(storeName, url, response.clone(), asJson);
     }

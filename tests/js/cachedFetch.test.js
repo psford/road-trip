@@ -236,6 +236,42 @@ describe('cachedFetch (cache-miss + cache-hit, no revalidate yet)', () => {
         expect(typeof record.cachedAt).toBe('number');
     });
 
+    // URL resolution: relative URLs must resolve against APP_BASE so the iOS shell
+    // (running at capacitor://localhost/) fetches from App Service, not the local
+    // webview server. IDB keys stay relative so cache hits match across callers.
+    it('resolves relative URL to absolute App Service URL before fetch, but keeps relative IDB key', async () => {
+        globalThis.fetch = vi.fn().mockResolvedValueOnce(
+            new Response('<html>home</html>', { status: 200 })
+        );
+
+        await globalThis.CachedFetch.cachedFetch('/');
+
+        // fetch was called with the absolute URL.
+        expect(globalThis.fetch).toHaveBeenCalledWith(
+            'https://app-roadtripmap-prod.azurewebsites.net/',
+            expect.anything()
+        );
+
+        // IDB key is the original relative URL (so cache hits match).
+        const { _internals } = globalThis.CachedFetch;
+        const record = await _internals._getRecord(_internals.STORE_PAGES, '/');
+        expect(record).not.toBeNull();
+        expect(record.html).toBe('<html>home</html>');
+    });
+
+    it('passes through absolute URLs unchanged', async () => {
+        globalThis.fetch = vi.fn().mockResolvedValueOnce(
+            new Response('<html>x</html>', { status: 200 })
+        );
+
+        await globalThis.CachedFetch.cachedFetch('https://other.example.com/page');
+
+        expect(globalThis.fetch).toHaveBeenCalledWith(
+            'https://other.example.com/page',
+            expect.anything()
+        );
+    });
+
     // AC3.1 — write-through when response lacks headers
     it('AC3.1: write-through when response lacks ETag/Last-Modified', async () => {
         globalThis.fetch = vi.fn().mockResolvedValueOnce(
@@ -390,7 +426,12 @@ describe('cachedFetch (cache-miss + cache-hit, no revalidate yet)', () => {
 
         await globalThis.CachedFetch.cachedFetch('/post/abc', { signal: ctrl.signal });
 
-        expect(globalThis.fetch).toHaveBeenCalledWith('/post/abc', expect.objectContaining({ signal: ctrl.signal }));
+        // fetch is called with the absolute URL (relative URLs are resolved against APP_BASE
+        // so the iOS shell hits App Service, not capacitor://localhost).
+        expect(globalThis.fetch).toHaveBeenCalledWith(
+            'https://app-roadtripmap-prod.azurewebsites.net/post/abc',
+            expect.objectContaining({ signal: ctrl.signal })
+        );
     });
 
     // IDB unavailable → network passthrough, no caching, no throw
@@ -461,9 +502,9 @@ describe('cachedFetch background revalidate', () => {
         });
         expect(updated.cachedAt).toBeGreaterThan(1);
 
-        // Verify conditional header was sent
+        // Verify conditional header was sent (URL is resolved to absolute App Service).
         expect(globalThis.fetch).toHaveBeenCalledWith(
-            '/post/abc',
+            'https://app-roadtripmap-prod.azurewebsites.net/post/abc',
             expect.objectContaining({
                 headers: expect.objectContaining({
                     'If-None-Match': 'W/"v1"',
@@ -569,7 +610,10 @@ describe('cachedFetch background revalidate', () => {
         await flushPromises();
 
         // Verify fetch was called with empty headers object
-        expect(globalThis.fetch).toHaveBeenCalledWith('/post/abc', { headers: {} });
+        expect(globalThis.fetch).toHaveBeenCalledWith(
+            'https://app-roadtripmap-prod.azurewebsites.net/post/abc',
+            { headers: {} }
+        );
 
         // Verify IDB was updated
         const updated = await _internals._getRecord(_internals.STORE_PAGES, '/post/abc');

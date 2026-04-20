@@ -424,7 +424,12 @@ describe('submit handler', () => {
 
         await new Promise(r => setTimeout(r, 10));
 
-        expect(globalThis.fetch).toHaveBeenCalledWith('/api/something', expect.objectContaining({ method: 'POST' }));
+        // fetch receives the absolute URL (resolved against APP_BASE for iOS shell).
+        // _swapFromHtml receives the relative URL (used as IDB / markOpened key).
+        expect(globalThis.fetch).toHaveBeenCalledWith(
+            'https://app-roadtripmap-prod.azurewebsites.net/api/something',
+            expect.objectContaining({ method: 'POST' })
+        );
         expect(FetchAndSwap._swapFromHtml).toHaveBeenCalledWith('<html><body>posted</body></html>', '/api/something');
         expect(FetchAndSwap.fetchAndSwap).not.toHaveBeenCalled();
     });
