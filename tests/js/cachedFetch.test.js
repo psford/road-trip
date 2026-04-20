@@ -415,3 +415,246 @@ describe('cachedFetch (cache-miss + cache-hit, no revalidate yet)', () => {
         indexedDB.open = originalOpen;
     });
 });
+
+// === Tests for Background Revalidate ===
+
+describe('cachedFetch background revalidate', () => {
+    // Restore mocks after each test
+    afterEach(() => {
+        vi.restoreAllMocks();
+    });
+
+    // AC3.3 — 200 updates IDB, sends If-None-Match
+    it('AC3.3: 200 response updates IDB with conditional If-None-Match header', async () => {
+        const { _internals } = globalThis.CachedFetch;
+
+        // Pre-seed cached record
+        await _internals._putRecord(_internals.STORE_PAGES, '/post/abc', {
+            html: 'old',
+            etag: 'W/"v1"',
+            lastModified: 'Wed, 01 Jan 2026 00:00:00 GMT',
+            cachedAt: 1
+        });
+
+        // Mock fetch to return 200 with updated content
+        globalThis.fetch = vi.fn().mockResolvedValueOnce(
+            new Response('new', {
+                status: 200,
+                headers: { 'ETag': 'W/"v2"' }
+            })
+        );
+
+        // Trigger cache hit
+        const result = await globalThis.CachedFetch.cachedFetch('/post/abc');
+        expect(result.source).toBe('cache');
+        expect(await result.response.text()).toBe('old');  // Caller sees stale per AC3.2
+
+        // Flush background revalidate
+        await flushPromises();
+
+        // Verify IDB was updated
+        const updated = await _internals._getRecord(_internals.STORE_PAGES, '/post/abc');
+        expect(updated).toMatchObject({
+            html: 'new',
+            etag: 'W/"v2"',
+            lastModified: null
+        });
+        expect(updated.cachedAt).toBeGreaterThan(1);
+
+        // Verify conditional header was sent
+        expect(globalThis.fetch).toHaveBeenCalledWith(
+            '/post/abc',
+            expect.objectContaining({
+                headers: expect.objectContaining({
+                    'If-None-Match': 'W/"v1"',
+                    'If-Modified-Since': 'Wed, 01 Jan 2026 00:00:00 GMT'
+                })
+            })
+        );
+    });
+
+    // AC3.3 — 304 no-op
+    it('AC3.3: 304 response keeps stale cache unchanged', async () => {
+        const { _internals } = globalThis.CachedFetch;
+
+        // Pre-seed cached record
+        await _internals._putRecord(_internals.STORE_PAGES, '/post/abc', {
+            html: 'old',
+            etag: 'W/"v1"',
+            lastModified: 'Wed, 01 Jan 2026 00:00:00 GMT',
+            cachedAt: 1
+        });
+
+        // Mock fetch to return 304
+        globalThis.fetch = vi.fn().mockResolvedValueOnce(
+            new Response(null, { status: 304 })
+        );
+
+        // Trigger cache hit
+        const result = await globalThis.CachedFetch.cachedFetch('/post/abc');
+        expect(result.source).toBe('cache');
+
+        // Flush background revalidate
+        await flushPromises();
+
+        // Verify IDB was NOT updated
+        const unchanged = await _internals._getRecord(_internals.STORE_PAGES, '/post/abc');
+        expect(unchanged).toMatchObject({
+            html: 'old',
+            etag: 'W/"v1"',
+            cachedAt: 1
+        });
+    });
+
+    // AC3.5 — network error swallowed
+    it('AC3.5: network error swallowed silently', async () => {
+        const { _internals } = globalThis.CachedFetch;
+
+        // Pre-seed cached record
+        await _internals._putRecord(_internals.STORE_PAGES, '/post/abc', {
+            html: 'cached',
+            etag: 'W/"v1"',
+            lastModified: null,
+            cachedAt: 1
+        });
+
+        // Mock fetch to reject
+        globalThis.fetch = vi.fn().mockRejectedValueOnce(new TypeError('offline'));
+
+        // Set up console.error spy
+        const errSpy = vi.spyOn(console, 'error');
+
+        // Trigger cache hit — should NOT reject
+        const result = await globalThis.CachedFetch.cachedFetch('/post/abc');
+        expect(result.source).toBe('cache');
+        expect(result.response.status).toBe(200);
+
+        // Flush background revalidate
+        await flushPromises();
+
+        // Verify IDB was NOT updated
+        const unchanged = await _internals._getRecord(_internals.STORE_PAGES, '/post/abc');
+        expect(unchanged).toMatchObject({
+            html: 'cached',
+            etag: 'W/"v1"',
+            cachedAt: 1
+        });
+
+        // Verify no console.error was called
+        expect(errSpy).not.toHaveBeenCalled();
+    });
+
+    // AC3.3 — no conditional headers when cached has none
+    it('AC3.3: no conditional headers when cached has none', async () => {
+        const { _internals } = globalThis.CachedFetch;
+
+        // Pre-seed cached record WITHOUT etag/lastModified
+        await _internals._putRecord(_internals.STORE_PAGES, '/post/abc', {
+            html: 'old',
+            etag: null,
+            lastModified: null,
+            cachedAt: 1
+        });
+
+        // Mock fetch to return 200
+        globalThis.fetch = vi.fn().mockResolvedValueOnce(
+            new Response('new', { status: 200 })
+        );
+
+        // Trigger cache hit
+        const result = await globalThis.CachedFetch.cachedFetch('/post/abc');
+        expect(result.source).toBe('cache');
+
+        // Flush background revalidate
+        await flushPromises();
+
+        // Verify fetch was called with empty headers object
+        expect(globalThis.fetch).toHaveBeenCalledWith('/post/abc', { headers: {} });
+
+        // Verify IDB was updated
+        const updated = await _internals._getRecord(_internals.STORE_PAGES, '/post/abc');
+        expect(updated.html).toBe('new');
+    });
+
+    // AC3.3 — asJson path updates api store, not pages
+    it('AC3.3: asJson path updates api store not pages on revalidate', async () => {
+        const { _internals } = globalThis.CachedFetch;
+
+        // Pre-seed api store
+        await _internals._putRecord(_internals.STORE_API, '/api/trips/view/xyz', {
+            body: '{"a":1}',
+            contentType: 'application/json',
+            etag: 'W/"v1"',
+            lastModified: null,
+            cachedAt: 1
+        });
+
+        // Mock fetch to return 200 with updated content
+        globalThis.fetch = vi.fn().mockResolvedValueOnce(
+            new Response('{"a":2}', {
+                status: 200,
+                headers: {
+                    'Content-Type': 'application/json',
+                    'ETag': 'W/"v2"'
+                }
+            })
+        );
+
+        // Trigger cache hit
+        const result = await globalThis.CachedFetch.cachedFetch('/api/trips/view/xyz', { asJson: true });
+        expect(result.source).toBe('cache');
+
+        // Flush background revalidate
+        await flushPromises();
+
+        // Verify api store was updated
+        const updated = await _internals._getRecord(_internals.STORE_API, '/api/trips/view/xyz');
+        expect(updated).toMatchObject({
+            body: '{"a":2}',
+            etag: 'W/"v2"'
+        });
+
+        // Verify pages store was not touched
+        const pagesRecord = await _internals._getRecord(_internals.STORE_PAGES, '/api/trips/view/xyz');
+        expect(pagesRecord).toBeUndefined();
+    });
+
+    // AC3.3 — 5xx response no-op
+    it('AC3.3: 5xx response keeps stale cache, no error thrown', async () => {
+        const { _internals } = globalThis.CachedFetch;
+
+        // Pre-seed cached record
+        await _internals._putRecord(_internals.STORE_PAGES, '/post/abc', {
+            html: 'cached',
+            etag: 'W/"v1"',
+            lastModified: null,
+            cachedAt: 1
+        });
+
+        // Mock fetch to return 500
+        globalThis.fetch = vi.fn().mockResolvedValueOnce(
+            new Response('boom', { status: 500 })
+        );
+
+        // Set up console.error spy
+        const errSpy = vi.spyOn(console, 'error');
+
+        // Trigger cache hit
+        const result = await globalThis.CachedFetch.cachedFetch('/post/abc');
+        expect(result.source).toBe('cache');
+
+        // Flush background revalidate
+        await flushPromises();
+
+        // Verify IDB was NOT updated
+        const unchanged = await _internals._getRecord(_internals.STORE_PAGES, '/post/abc');
+        expect(unchanged).toMatchObject({
+            html: 'cached',
+            etag: 'W/"v1"',
+            cachedAt: 1
+        });
+
+        // Verify no console.error was called
+        expect(errSpy).not.toHaveBeenCalled();
+    });
+});
