@@ -74,10 +74,8 @@ async function _putRecord(storeName, url, value) {
         const req = store.put(value, url);
 
         req.onerror = () => reject(req.error);
-        req.onsuccess = () => {
-            tx.oncomplete = () => resolve();
-        };
 
+        tx.oncomplete = () => resolve();
         tx.onerror = () => reject(tx.error);
     });
 }
@@ -95,12 +93,21 @@ async function _getRecord(storeName, url) {
     }
 
     return new Promise((resolve, reject) => {
-        const tx = db.transaction([storeName], 'readonly');
-        const store = tx.objectStore(storeName);
-        const req = store.get(url);
+        try {
+            const tx = db.transaction([storeName], 'readonly');
+            const store = tx.objectStore(storeName);
+            const req = store.get(url);
 
-        req.onerror = () => reject(req.error);
-        req.onsuccess = () => resolve(req.result);
+            req.onerror = () => reject(req.error);
+
+            tx.oncomplete = () => {
+                resolve(req.result);
+            };
+
+            tx.onerror = () => reject(tx.error);
+        } catch (err) {
+            reject(err);
+        }
     });
 }
 
@@ -161,6 +168,17 @@ async function cachedFetch(url, opts) {
 
 // === Module Exposure ===
 
+/**
+ * Test-only helper to close and reset the database connection.
+ * Used between tests to ensure clean state.
+ */
+function _closeDb() {
+    if (_db) {
+        _db.close();
+        _db = null;
+    }
+}
+
 globalThis.CachedFetch = {
     cachedFetch,
     isBypassed,
@@ -169,6 +187,7 @@ globalThis.CachedFetch = {
         _putRecord,
         _getRecord,
         _deleteRecord,
+        _closeDb,
         DB_NAME,
         DB_VERSION,
         STORE_PAGES,
