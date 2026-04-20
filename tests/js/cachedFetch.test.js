@@ -201,3 +201,217 @@ describe('IDB layer (private)', () => {
         expect(retrieved).toEqual(record);
     });
 });
+
+// === Tests for cachedFetch ===
+
+describe('cachedFetch (cache-miss + cache-hit, no revalidate yet)', () => {
+    // Restore mocks after each test
+    afterEach(() => {
+        vi.restoreAllMocks();
+    });
+
+    // AC3.1 — write-through on first online visit (with headers)
+    it('AC3.1: write-through with ETag and Last-Modified headers', async () => {
+        globalThis.fetch = vi.fn().mockResolvedValueOnce(
+            new Response('<html>x</html>', {
+                status: 200,
+                headers: {
+                    'ETag': 'W/"v1"',
+                    'Last-Modified': 'Wed, 01 Jan 2026 00:00:00 GMT',
+                    'Content-Type': 'text/html'
+                }
+            })
+        );
+
+        const result = await globalThis.CachedFetch.cachedFetch('/post/abc');
+        expect(result.source).toBe('network');
+
+        const { _internals } = globalThis.CachedFetch;
+        const record = await _internals._getRecord(_internals.STORE_PAGES, '/post/abc');
+        expect(record).toMatchObject({
+            html: '<html>x</html>',
+            etag: 'W/"v1"',
+            lastModified: 'Wed, 01 Jan 2026 00:00:00 GMT'
+        });
+        expect(typeof record.cachedAt).toBe('number');
+    });
+
+    // AC3.1 — write-through when response lacks headers
+    it('AC3.1: write-through when response lacks ETag/Last-Modified', async () => {
+        globalThis.fetch = vi.fn().mockResolvedValueOnce(
+            new Response('<html>y</html>', { status: 200 })
+        );
+
+        await globalThis.CachedFetch.cachedFetch('/post/abc');
+
+        const { _internals } = globalThis.CachedFetch;
+        const record = await _internals._getRecord(_internals.STORE_PAGES, '/post/abc');
+        expect(record).toMatchObject({
+            html: '<html>y</html>',
+            etag: null,
+            lastModified: null
+        });
+        expect(typeof record.cachedAt).toBe('number');
+    });
+
+    // AC3.2 — cache-first (forward-compatible: no fetch call-count assertion)
+    it('AC3.2: cache-first returns cached response without network call', async () => {
+        const { _internals } = globalThis.CachedFetch;
+        await _internals._putRecord(_internals.STORE_PAGES, '/post/abc', {
+            html: '<html>cached</html>',
+            etag: 'W/"v1"',
+            lastModified: null,
+            cachedAt: 1
+        });
+
+        globalThis.fetch = vi.fn();
+
+        const result = await globalThis.CachedFetch.cachedFetch('/post/abc');
+        expect(result.source).toBe('cache');
+        expect(await result.response.text()).toBe('<html>cached</html>');
+        expect(result.response.headers.get('Content-Type')).toBe('text/html');
+        expect(result.response.headers.get('ETag')).toBe('W/"v1"');
+        // Forward-compatible: do NOT assert fetch call count (Task 5 adds revalidate)
+    });
+
+    // AC3.7 — bypass passthrough (/api/poi)
+    it('AC3.7: bypass passthrough for /api/poi', async () => {
+        globalThis.fetch = vi.fn().mockResolvedValueOnce(
+            new Response('[]', {
+                status: 200,
+                headers: { 'Content-Type': 'application/json' }
+            })
+        );
+
+        const result = await globalThis.CachedFetch.cachedFetch('/api/poi?minLat=1');
+        expect(result.source).toBe('network');
+
+        const { _internals } = globalThis.CachedFetch;
+        const pagesRecord = await _internals._getRecord(_internals.STORE_PAGES, '/api/poi?minLat=1');
+        const apiRecord = await _internals._getRecord(_internals.STORE_API, '/api/poi?minLat=1');
+        expect(pagesRecord).toBeUndefined();
+        expect(apiRecord).toBeUndefined();
+    });
+
+    // AC3.7 — bypass passthrough (/api/park-boundaries)
+    it('AC3.7: bypass passthrough for /api/park-boundaries', async () => {
+        globalThis.fetch = vi.fn().mockResolvedValueOnce(
+            new Response('{"type":"FeatureCollection"}', {
+                status: 200,
+                headers: { 'Content-Type': 'application/json' }
+            })
+        );
+
+        const result = await globalThis.CachedFetch.cachedFetch('/api/park-boundaries?detail=full');
+        expect(result.source).toBe('network');
+
+        const { _internals } = globalThis.CachedFetch;
+        const pagesRecord = await _internals._getRecord(_internals.STORE_PAGES, '/api/park-boundaries?detail=full');
+        const apiRecord = await _internals._getRecord(_internals.STORE_API, '/api/park-boundaries?detail=full');
+        expect(pagesRecord).toBeUndefined();
+        expect(apiRecord).toBeUndefined();
+    });
+
+    // asJson routing
+    it('asJson: true routes to api store and includes contentType', async () => {
+        globalThis.fetch = vi.fn().mockResolvedValueOnce(
+            new Response('{"x":1}', {
+                status: 200,
+                headers: { 'Content-Type': 'application/json' }
+            })
+        );
+
+        await globalThis.CachedFetch.cachedFetch('/api/trips/view/xyz', { asJson: true });
+
+        const { _internals } = globalThis.CachedFetch;
+        const apiRecord = await _internals._getRecord(_internals.STORE_API, '/api/trips/view/xyz');
+        expect(apiRecord).toMatchObject({
+            body: '{"x":1}',
+            contentType: 'application/json',
+            etag: null,
+            lastModified: null
+        });
+        expect(typeof apiRecord.cachedAt).toBe('number');
+
+        const pagesRecord = await _internals._getRecord(_internals.STORE_PAGES, '/api/trips/view/xyz');
+        expect(pagesRecord).toBeUndefined();
+    });
+
+    // asJson cache-hit
+    it('asJson: true cache-hit returns json from api store', async () => {
+        const { _internals } = globalThis.CachedFetch;
+        await _internals._putRecord(_internals.STORE_API, '/api/trips/view/xyz', {
+            body: '{"a":1}',
+            contentType: 'application/json',
+            etag: null,
+            lastModified: null,
+            cachedAt: 1
+        });
+
+        globalThis.fetch = vi.fn();
+
+        const result = await globalThis.CachedFetch.cachedFetch('/api/trips/view/xyz', { asJson: true });
+        expect(result.source).toBe('cache');
+        expect(await result.response.json()).toEqual({ a: 1 });
+    });
+
+    // Cache miss + network failure rejects
+    it('cache miss + network failure rejects', async () => {
+        globalThis.fetch = vi.fn().mockRejectedValueOnce(new TypeError('Network request failed'));
+
+        await expect(
+            globalThis.CachedFetch.cachedFetch('/post/abc')
+        ).rejects.toThrow('Network request failed');
+
+        const { _internals } = globalThis.CachedFetch;
+        const record = await _internals._getRecord(_internals.STORE_PAGES, '/post/abc');
+        expect(record).toBeUndefined();
+    });
+
+    // Cache miss + non-OK response → no write but resolves
+    it('cache miss + non-OK response does not write to cache', async () => {
+        globalThis.fetch = vi.fn().mockResolvedValueOnce(
+            new Response('not found', { status: 404 })
+        );
+
+        const result = await globalThis.CachedFetch.cachedFetch('/post/abc');
+        expect(result.response.status).toBe(404);
+        expect(result.source).toBe('network');
+
+        const { _internals } = globalThis.CachedFetch;
+        const record = await _internals._getRecord(_internals.STORE_PAGES, '/post/abc');
+        expect(record).toBeUndefined();
+    });
+
+    // signal propagation
+    it('signal is propagated to fetch call', async () => {
+        const ctrl = new AbortController();
+        globalThis.fetch = vi.fn().mockResolvedValueOnce(new Response('x', { status: 200 }));
+
+        await globalThis.CachedFetch.cachedFetch('/post/abc', { signal: ctrl.signal });
+
+        expect(globalThis.fetch).toHaveBeenCalledWith('/post/abc', expect.objectContaining({ signal: ctrl.signal }));
+    });
+
+    // IDB unavailable → network passthrough, no caching, no throw
+    it('IDB unavailable: network passthrough with no caching, no throw', async () => {
+        const originalOpen = indexedDB.open;
+        vi.spyOn(indexedDB, 'open').mockImplementation((name, ver) => {
+            const req = {};
+            // Fire onerror asynchronously to simulate DB failure
+            setTimeout(() => {
+                if (req.onerror) req.onerror({ target: req });
+            }, 0);
+            return req;
+        });
+
+        globalThis.fetch = vi.fn().mockResolvedValueOnce(new Response('ok', { status: 200 }));
+
+        const result = await globalThis.CachedFetch.cachedFetch('/post/abc');
+        expect(result.source).toBe('network');
+        expect(result.response.status).toBe(200);
+
+        // Restore
+        indexedDB.open = originalOpen;
+    });
+});
