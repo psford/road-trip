@@ -54,7 +54,17 @@
         // Task 3: Recreate scripts
         await _recreateScripts(scriptsInOrder, document.body);
 
-        // Task 4 adds: lifecycle dispatch, markOpened hook.
+        // Task 4: Synthetic DOMContentLoaded for handlers attached during script execution.
+        // Scripts that self-init via document.readyState === 'complete' have already run;
+        // this dispatch covers handlers like postUI.js that listen unconditionally.
+        document.dispatchEvent(new Event('DOMContentLoaded', { bubbles: true, cancelable: true }));
+        window.dispatchEvent(new Event('load'));
+
+        // AC2.3: notify TripStorage that a saved-trip URL was opened.
+        // Defensive: TripStorage may not be loaded; markOpened may throw on storage error.
+        if (typeof TripStorage !== 'undefined' && typeof TripStorage.markOpened === 'function') {
+            try { TripStorage.markOpened(url); } catch { /* never block render on storage */ }
+        }
     }
 
     globalThis.FetchAndSwap = { fetchAndSwap, _APP_BASE: APP_BASE };
