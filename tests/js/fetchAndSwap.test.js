@@ -8,7 +8,51 @@ const CACHED_FETCH_SRC = fs.readFileSync(path.resolve(__dirname, '../../src/boot
 const FETCH_AND_SWAP_SRC = fs.readFileSync(path.resolve(__dirname, '../../src/bootstrap/fetchAndSwap.js'), 'utf8');
 const TRIP_STORAGE_SRC = fs.readFileSync(path.resolve(__dirname, '../../src/RoadTripMap/wwwroot/js/tripStorage.js'), 'utf8');
 
-function setupTest() {
+async function setupTest() {
+    // Close any prior cachedFetch IDB handle, then delete the database so each
+    // test starts with empty cache state. Without this, tests reusing the same
+    // URL (/post/abc) hit each other's cached writes and bypass mocked fetch.
+    if (typeof CachedFetch !== 'undefined' && CachedFetch._internals) {
+        CachedFetch._internals._closeDb();
+    }
+    await new Promise((resolve) => {
+        const req = indexedDB.deleteDatabase('RoadTripPageCache');
+        req.onsuccess = () => resolve();
+        req.onerror = () => resolve();
+        req.onblocked = () => resolve();
+    });
+
+    // Spy on dispatchEvent before fetchAndSwap runs. setup.js's beforeAll preloads
+    // postUI.js which registers a global DOMContentLoaded listener that crashes on
+    // the simplified test DOM. Spying replaces the real dispatch so listener
+    // side-effects don't leak into these tests. Verify dispatch via spy assertions.
+    vi.spyOn(document, 'dispatchEvent').mockImplementation(() => true);
+    vi.spyOn(window, 'dispatchEvent').mockImplementation(() => true);
+
+    // Map-backed localStorage so TripStorage.saveTrip/markOpened actually persist.
+    // setup.js's default localStorage is vi.fn() no-ops (no round-trip).
+    const store = new Map();
+    vi.stubGlobal('localStorage', {
+        getItem: (k) => (store.has(k) ? store.get(k) : null),
+        setItem: (k, v) => { store.set(k, String(v)); },
+        removeItem: (k) => { store.delete(k); },
+        clear: () => { store.clear(); },
+    });
+
+    // Stub script appendChild to fire onload immediately. jsdom does not reliably
+    // fetch remote scripts, so fetchAndSwap's `await new Promise(onload/onerror)`
+    // would otherwise hang (timeout) or fire onerror with variable timing. Plan
+    // Task 3 explicitly anticipates this: "stub HTMLScriptElement.prototype so any
+    // appended script's onload is invoked synchronously after a setTimeout(0)."
+    const realAppendChild = Node.prototype.appendChild;
+    vi.spyOn(Node.prototype, 'appendChild').mockImplementation(function (node) {
+        const result = realAppendChild.call(this, node);
+        if (node && node.tagName === 'SCRIPT' && node.getAttribute && node.getAttribute('src')) {
+            setTimeout(() => { if (node.onload) node.onload(); }, 0);
+        }
+        return result;
+    });
+
     // Clean up globals
     delete globalThis.CachedFetch;
     delete globalThis.FetchAndSwap;
@@ -27,6 +71,7 @@ function setupTest() {
 
 function teardownTest() {
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
     if (typeof CachedFetch !== 'undefined' && CachedFetch._internals) {
         CachedFetch._internals._closeDb();
     }
@@ -34,7 +79,7 @@ function teardownTest() {
 
 describe('Task 2: fetchAndSwap skeleton', () => {
     it('injects <base href> when missing', async () => {
-        setupTest();
+        await setupTest();
         try {
             globalThis.fetch = vi.fn().mockResolvedValue(
                 new Response('<html><head><title>T</title></head><body>test</body></html>', {
@@ -54,7 +99,7 @@ describe('Task 2: fetchAndSwap skeleton', () => {
     });
 
     it('preserves existing <base href>', async () => {
-        setupTest();
+        await setupTest();
         try {
             globalThis.fetch = vi.fn().mockResolvedValue(
                 new Response('<html><head><base href="https://custom.com/"><title>T</title></head><body>test</body></html>', {
@@ -74,7 +119,7 @@ describe('Task 2: fetchAndSwap skeleton', () => {
     });
 
     it('swaps document head and body', async () => {
-        setupTest();
+        await setupTest();
         try {
             globalThis.fetch = vi.fn().mockResolvedValue(
                 new Response('<html><head><meta name="test"></head><body><p>new</p></body></html>', {
@@ -98,7 +143,7 @@ describe('Task 2: fetchAndSwap skeleton', () => {
     });
 
     it('rejects on non-OK response', async () => {
-        setupTest();
+        await setupTest();
         try {
             globalThis.fetch = vi.fn().mockResolvedValue(
                 new Response('not found', { status: 404 })
@@ -111,7 +156,7 @@ describe('Task 2: fetchAndSwap skeleton', () => {
     });
 
     it('throws when CachedFetch not loaded', async () => {
-        setupTest();
+        await setupTest();
         delete globalThis.CachedFetch;
         eval(FETCH_AND_SWAP_SRC);
         try {
@@ -124,7 +169,7 @@ describe('Task 2: fetchAndSwap skeleton', () => {
 
 describe('script recreation', () => {
     it('recreates scripts with src attributes', async () => {
-        setupTest();
+        await setupTest();
         try {
             globalThis.fetch = vi.fn().mockResolvedValue(
                 new Response(
@@ -144,7 +189,7 @@ describe('script recreation', () => {
     });
 
     it('recreates inline scripts', async () => {
-        setupTest();
+        await setupTest();
         try {
             globalThis.fetch = vi.fn().mockResolvedValue(
                 new Response(
@@ -164,7 +209,7 @@ describe('script recreation', () => {
     });
 
     it('preserves script order (head before body)', async () => {
-        setupTest();
+        await setupTest();
         try {
             globalThis.fetch = vi.fn().mockResolvedValue(
                 new Response(
@@ -185,7 +230,7 @@ describe('script recreation', () => {
     });
 
     it('handles zero scripts', async () => {
-        setupTest();
+        await setupTest();
         try {
             globalThis.fetch = vi.fn().mockResolvedValue(
                 new Response(
@@ -205,7 +250,7 @@ describe('script recreation', () => {
 
 describe('TripStorage.markOpened', () => {
     it('calls markOpened on saved trip', async () => {
-        setupTest();
+        await setupTest();
         try {
             globalThis.fetch = vi.fn().mockResolvedValue(
                 new Response('<html><head></head><body></body></html>', {
@@ -228,7 +273,7 @@ describe('TripStorage.markOpened', () => {
     });
 
     it('handles markOpened for URL not in storage', async () => {
-        setupTest();
+        await setupTest();
         try {
             globalThis.fetch = vi.fn().mockResolvedValue(
                 new Response('<html><head></head><body></body></html>', {
@@ -245,7 +290,7 @@ describe('TripStorage.markOpened', () => {
     });
 
     it('handles missing TripStorage gracefully', async () => {
-        setupTest();
+        await setupTest();
         delete globalThis.TripStorage;
         try {
             globalThis.fetch = vi.fn().mockResolvedValue(
@@ -262,7 +307,7 @@ describe('TripStorage.markOpened', () => {
     });
 
     it('handles markOpened throwing', async () => {
-        setupTest();
+        await setupTest();
         try {
             globalThis.TripStorage = {
                 markOpened: () => { throw new Error('storage error'); }
@@ -277,6 +322,50 @@ describe('TripStorage.markOpened', () => {
 
             // Should not throw
             await expect(FetchAndSwap.fetchAndSwap('/post/abc')).resolves.toBeUndefined();
+        } finally {
+            teardownTest();
+        }
+    });
+});
+
+describe('lifecycle events', () => {
+    it('dispatches DOMContentLoaded after script recreation', async () => {
+        await setupTest();
+        try {
+            globalThis.fetch = vi.fn().mockResolvedValue(
+                new Response('<html><head></head><body></body></html>', {
+                    status: 200,
+                    headers: { 'Content-Type': 'text/html' }
+                })
+            );
+
+            await FetchAndSwap.fetchAndSwap('/post/abc');
+
+            expect(document.dispatchEvent).toHaveBeenCalledWith(
+                expect.objectContaining({ type: 'DOMContentLoaded' })
+            );
+        } finally {
+            teardownTest();
+        }
+    });
+
+    it('dispatches load on window after DOMContentLoaded on document', async () => {
+        await setupTest();
+        try {
+            globalThis.fetch = vi.fn().mockResolvedValue(
+                new Response('<html><head></head><body></body></html>', {
+                    status: 200,
+                    headers: { 'Content-Type': 'text/html' }
+                })
+            );
+
+            await FetchAndSwap.fetchAndSwap('/post/abc');
+
+            expect(document.dispatchEvent.mock.calls[0][0].type).toBe('DOMContentLoaded');
+            expect(window.dispatchEvent.mock.calls[0][0].type).toBe('load');
+            const docOrder = document.dispatchEvent.mock.invocationCallOrder[0];
+            const winOrder = window.dispatchEvent.mock.invocationCallOrder[0];
+            expect(docOrder).toBeLessThan(winOrder);
         } finally {
             teardownTest();
         }

@@ -658,3 +658,47 @@ describe('cachedFetch background revalidate', () => {
         expect(errSpy).not.toHaveBeenCalled();
     });
 });
+
+describe('AC3.4: background revalidate does not swap live DOM', () => {
+    it('cached page renders via cachedFetch only — live document is untouched', async () => {
+        const { _internals } = globalThis.CachedFetch;
+
+        // Pre-seed cache with old HTML
+        await _internals._putRecord(_internals.STORE_PAGES, '/post/abc', {
+            html: '<html><body>old</body></html>',
+            etag: 'W/"v1"',
+            lastModified: null,
+            cachedAt: 1
+        });
+
+        // Set a recognizable live document state
+        document.head.innerHTML = '<title>shell</title>';
+        document.body.innerHTML = '<div id="bootstrap-progress">Loading…</div>';
+        const headBefore = document.head.innerHTML;
+        const bodyBefore = document.body.innerHTML;
+
+        // Mock fetch so the background revalidate returns NEW content
+        globalThis.fetch = vi.fn().mockResolvedValue(
+            new Response('<html><body>new</body></html>', {
+                status: 200,
+                headers: { 'ETag': 'W/"v2"' }
+            })
+        );
+
+        // Trigger cachedFetch (cache hit triggers fire-and-forget revalidate)
+        const result = await globalThis.CachedFetch.cachedFetch('/post/abc');
+        expect(result.source).toBe('cache');
+
+        // Flush microtasks so the background revalidate completes
+        await new Promise((r) => setTimeout(r, 0));
+        await new Promise((r) => setTimeout(r, 0));
+
+        // The IDB record IS updated (Phase 1 AC3.3 covers this path)
+        const after = await _internals._getRecord(_internals.STORE_PAGES, '/post/abc');
+        expect(after.html).toBe('<html><body>new</body></html>');
+
+        // BUT the live document remains untouched (AC3.4)
+        expect(document.head.innerHTML).toBe(headBefore);
+        expect(document.body.innerHTML).toBe(bodyBefore);
+    });
+});
