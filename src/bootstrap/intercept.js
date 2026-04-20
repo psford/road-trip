@@ -122,7 +122,14 @@
             }
         }
     }
-    function _onPopState(_event) { /* Task 4 */ }
+    function _onPopState(_event) {
+        if (typeof FetchAndSwap === 'undefined' || typeof FetchAndSwap.fetchAndSwap !== 'function') return;
+        const url = window.location.pathname + window.location.search;
+        // Do NOT pushState here — the browser's history already moved.
+        FetchAndSwap.fetchAndSwap(url).catch((err) => {
+            console.error('Intercept: popstate fetchAndSwap failed for', url, err);
+        });
+    }
 
     globalThis.Intercept = {
         installIntercept,

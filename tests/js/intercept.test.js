@@ -472,3 +472,111 @@ describe('submit handler', () => {
         expect(console.error).toHaveBeenCalled();
     });
 });
+
+describe('popstate', () => {
+    beforeEach(() => {
+        globalThis.FetchAndSwap = { fetchAndSwap: vi.fn().mockResolvedValue(undefined) };
+        vi.spyOn(history, 'pushState').mockImplementation(() => {});
+        vi.spyOn(console, 'error').mockImplementation(() => {});
+    });
+
+    it('popstate triggers fetchAndSwap with current URL', async () => {
+        // Set up a location
+        const originalLocation = window.location;
+        Object.defineProperty(window, 'location', {
+            configurable: true,
+            value: {
+                href: 'https://app-roadtripmap-prod.azurewebsites.net/post/abc',
+                pathname: '/post/abc',
+                search: '',
+                hash: ''
+            }
+        });
+
+        Intercept.installIntercept();
+
+        // Dispatch popstate manually
+        const evt = new PopStateEvent('popstate');
+        window.dispatchEvent(evt);
+
+        expect(FetchAndSwap.fetchAndSwap).toHaveBeenCalledWith('/post/abc');
+
+        Object.defineProperty(window, 'location', {
+            configurable: true,
+            value: originalLocation
+        });
+    });
+
+    it('popstate does NOT call pushState', async () => {
+        const originalLocation = window.location;
+        Object.defineProperty(window, 'location', {
+            configurable: true,
+            value: {
+                href: 'https://app-roadtripmap-prod.azurewebsites.net/post/xyz',
+                pathname: '/post/xyz',
+                search: '',
+                hash: ''
+            }
+        });
+
+        Intercept.installIntercept();
+
+        const evt = new PopStateEvent('popstate');
+        window.dispatchEvent(evt);
+
+        expect(history.pushState).not.toHaveBeenCalled();
+
+        Object.defineProperty(window, 'location', {
+            configurable: true,
+            value: originalLocation
+        });
+    });
+
+    it('popstate handles fetchAndSwap rejection silently', async () => {
+        globalThis.FetchAndSwap = { fetchAndSwap: vi.fn().mockRejectedValue(new Error('offline')) };
+
+        const originalLocation = window.location;
+        Object.defineProperty(window, 'location', {
+            configurable: true,
+            value: {
+                href: 'https://app-roadtripmap-prod.azurewebsites.net/post/abc',
+                pathname: '/post/abc',
+                search: '',
+                hash: ''
+            }
+        });
+
+        Intercept.installIntercept();
+
+        const evt = new PopStateEvent('popstate');
+        window.dispatchEvent(evt);
+
+        // Await microtask
+        await new Promise(r => setTimeout(r, 10));
+
+        expect(console.error).toHaveBeenCalled();
+
+        Object.defineProperty(window, 'location', {
+            configurable: true,
+            value: originalLocation
+        });
+    });
+
+    it('installIntercept idempotency confirmed end-to-end', () => {
+        const docSpy = vi.spyOn(document, 'addEventListener');
+        const winSpy = vi.spyOn(window, 'addEventListener');
+
+        Intercept.installIntercept();
+        Intercept.installIntercept();
+        Intercept.installIntercept();
+
+        // Each listener type should be registered exactly once
+        const clickCalls = docSpy.mock.calls.filter(c => c[0] === 'click');
+        const submitCalls = docSpy.mock.calls.filter(c => c[0] === 'submit');
+        const popstateCalls = winSpy.mock.calls.filter(c => c[0] === 'popstate');
+
+        expect(clickCalls.length).toBe(1);
+        expect(submitCalls.length).toBe(1);
+        expect(popstateCalls.length).toBe(1);
+    });
+});
