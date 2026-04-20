@@ -49,7 +49,6 @@ describe('Task 2: fetchAndSwap skeleton', () => {
             expect(baseEl).not.toBeNull();
             expect(baseEl.getAttribute('href')).toBe('https://app-roadtripmap-prod.azurewebsites.net/');
         } finally {
-            teardownTest();
         }
     });
 
@@ -69,7 +68,6 @@ describe('Task 2: fetchAndSwap skeleton', () => {
             expect(baseEl).not.toBeNull();
             expect(baseEl.getAttribute('href')).toBe('https://custom.com/');
         } finally {
-            teardownTest();
         }
     });
 
@@ -93,7 +91,6 @@ describe('Task 2: fetchAndSwap skeleton', () => {
             expect(document.body.querySelector('p')).not.toBeNull();
             expect(document.head.querySelector('meta')).not.toBeNull();
         } finally {
-            teardownTest();
         }
     });
 
@@ -106,7 +103,6 @@ describe('Task 2: fetchAndSwap skeleton', () => {
 
             await expect(FetchAndSwap.fetchAndSwap('/post/abc')).rejects.toThrow(/HTTP 404/);
         } finally {
-            teardownTest();
         }
     });
 
@@ -117,7 +113,6 @@ describe('Task 2: fetchAndSwap skeleton', () => {
         try {
             await expect(FetchAndSwap.fetchAndSwap('/post/abc')).rejects.toThrow(/CachedFetch is not loaded/);
         } finally {
-            teardownTest();
         }
     });
 });
@@ -139,7 +134,6 @@ describe('script recreation', () => {
             expect(scripts.length).toBe(1);
             expect(scripts[0].getAttribute('src')).toBe('/api.js');
         } finally {
-            teardownTest();
         }
     });
 
@@ -159,7 +153,6 @@ describe('script recreation', () => {
             expect(scripts.length).toBe(1);
             expect(scripts[0].textContent).toBe('window.x=1;');
         } finally {
-            teardownTest();
         }
     });
 
@@ -180,7 +173,6 @@ describe('script recreation', () => {
             expect(scripts[0].getAttribute('src')).toBe('/a.js');
             expect(scripts[1].getAttribute('src')).toBe('/b.js');
         } finally {
-            teardownTest();
         }
     });
 
@@ -198,7 +190,6 @@ describe('script recreation', () => {
 
             expect(document.querySelectorAll('script').length).toBe(0);
         } finally {
-            teardownTest();
         }
     });
 });
@@ -223,7 +214,6 @@ describe('TripStorage.markOpened', () => {
             expect(after).not.toEqual(before);
             expect(typeof after).toBe('number');
         } finally {
-            teardownTest();
         }
     });
 
@@ -240,7 +230,6 @@ describe('TripStorage.markOpened', () => {
             // URL not saved - markOpened returns false but doesn't throw
             await expect(FetchAndSwap.fetchAndSwap('/post/unknown')).resolves.toBeUndefined();
         } finally {
-            teardownTest();
         }
     });
 
@@ -257,7 +246,6 @@ describe('TripStorage.markOpened', () => {
 
             await expect(FetchAndSwap.fetchAndSwap('/post/abc')).resolves.toBeUndefined();
         } finally {
-            teardownTest();
         }
     });
 
@@ -278,7 +266,6 @@ describe('TripStorage.markOpened', () => {
             // Should not throw
             await expect(FetchAndSwap.fetchAndSwap('/post/abc')).resolves.toBeUndefined();
         } finally {
-            teardownTest();
         }
     });
 });
