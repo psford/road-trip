@@ -69,5 +69,24 @@ const TripStorage = {
     removeTrip(postUrl) {
         const trips = this.getTrips().filter(t => t.postUrl !== postUrl);
         localStorage.setItem(this.STORAGE_KEY, JSON.stringify(trips));
+    },
+
+    /**
+     * Mark a trip as opened, updating lastOpenedAt to current timestamp.
+     * Matches by postUrl or viewUrl.
+     * @param {string} url - The URL to match against (postUrl or viewUrl)
+     * @returns {boolean} True if a match was found and updated, false otherwise
+     */
+    markOpened(url) {
+        const trips = this.getTrips();
+        const idx = trips.findIndex(t => t.postUrl === url || t.viewUrl === url);
+        if (idx < 0) return false;
+        trips[idx] = { ...trips[idx], lastOpenedAt: Date.now() };
+        try {
+            localStorage.setItem(this.STORAGE_KEY, JSON.stringify(trips));
+        } catch {
+            // localStorage unavailable — silent fail, matches saveTrip convention
+        }
+        return true;
     }
 };

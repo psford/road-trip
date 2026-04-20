@@ -244,4 +244,52 @@ describe('TripStorage', () => {
             expect(TripStorage.getTrips()).toHaveLength(0);
         });
     });
+
+    describe('markOpened', () => {
+        it('AC2.3: sets lastOpenedAt to Date.now() on the matching postUrl record', () => {
+            TripStorage.saveTrip('Trip A', '/post/abc', '/trips/aaa');
+            const before = Date.now();
+            const matched = TripStorage.markOpened('/post/abc');
+            const after = Date.now();
+            expect(matched).toBe(true);
+            const trip = TripStorage.getTrips()[0];
+            expect(trip.lastOpenedAt).toBeGreaterThanOrEqual(before);
+            expect(trip.lastOpenedAt).toBeLessThanOrEqual(after);
+        });
+
+        it('matches by viewUrl as well as postUrl', () => {
+            TripStorage.saveTrip('Trip A', '/post/abc', '/trips/aaa');
+            const matched = TripStorage.markOpened('/trips/aaa');
+            expect(matched).toBe(true);
+            expect(typeof TripStorage.getTrips()[0].lastOpenedAt).toBe('number');
+        });
+
+        it('returns false and does not modify storage when no record matches', () => {
+            TripStorage.saveTrip('Trip A', '/post/abc', '/trips/aaa');
+            const before = JSON.stringify(TripStorage.getTrips());
+            const matched = TripStorage.markOpened('/post/never-saved');
+            expect(matched).toBe(false);
+            expect(JSON.stringify(TripStorage.getTrips())).toBe(before);
+        });
+
+        it('only updates the matched record, not siblings', () => {
+            TripStorage.saveTrip('Trip A', '/post/abc', '/trips/aaa');
+            TripStorage.saveTrip('Trip B', '/post/def', '/trips/bbb');
+            TripStorage.markOpened('/post/abc');
+            const tripsByPost = Object.fromEntries(TripStorage.getTrips().map(t => [t.postUrl, t]));
+            expect(typeof tripsByPost['/post/abc'].lastOpenedAt).toBe('number');
+            expect(tripsByPost['/post/def'].lastOpenedAt).toBeUndefined();
+        });
+
+        it('AC2.6: existing fields preserved after markOpened', () => {
+            TripStorage.saveTrip('Trip A', '/post/abc', '/trips/aaa');
+            const before = TripStorage.getTrips()[0];
+            TripStorage.markOpened('/post/abc');
+            const after = TripStorage.getTrips()[0];
+            expect(after.name).toBe(before.name);
+            expect(after.postUrl).toBe(before.postUrl);
+            expect(after.viewUrl).toBe(before.viewUrl);
+            expect(after.savedAt).toBe(before.savedAt);
+        });
+    });
 });
