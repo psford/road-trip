@@ -24,16 +24,21 @@
             throw new Error('Bootstrap: TripStorage is not loaded');
         }
 
+        // Install delegated nav BEFORE the first swap. The <base href> injected by
+        // fetchAndSwap makes every internal anchor resolve to a cross-origin URL
+        // (capacitor://localhost → https://app-roadtripmap-prod.azurewebsites.net/...).
+        // If the user taps an anchor before intercept is attached, native WKWebView
+        // navigation fires and Capacitor's default policy kicks the user out to
+        // Safari. Intercept is document-level delegation, idempotent, and guards
+        // against FetchAndSwap being undefined — safe to install now.
+        if (Intercept && typeof Intercept.installIntercept === 'function') {
+            Intercept.installIntercept();
+        }
+
         // Boot routing (AC2.1, AC2.2)
         const defaultTrip = TripStorage.getDefaultTrip();
         const bootUrl = defaultTrip ? defaultTrip.postUrl : '/';
         await FetchAndSwap.fetchAndSwap(bootUrl);
-
-        // Install delegated nav AFTER first swap (the swapped page is what carries
-        // the trip / home links; intercept fires on user clicks from now on).
-        if (Intercept && typeof Intercept.installIntercept === 'function') {
-            Intercept.installIntercept();
-        }
 
         // Remove the bootstrap-progress shim now that the real page has rendered.
         const progress = document.getElementById('bootstrap-progress');

@@ -369,26 +369,32 @@ describe('Intercept install', () => {
         expect(spy).toHaveBeenCalledTimes(1);
     });
 
-    it('after failed boot, Intercept.installIntercept is not called', async () => {
-        let callCount = 0;
-        globalThis.fetch = vi.fn().mockImplementation(() => {
-            callCount++;
-            if (callCount === 1) {
-                return Promise.reject(new TypeError('Network request failed'));
-            }
-            return Promise.resolve(
-                new Response('<div>fallback</div>', {
+    it('Intercept.installIntercept is called BEFORE the first swap (closes on-device race)', async () => {
+        // Regression: on a real iPhone, tapping a link before installIntercept
+        // runs triggered native WKWebView navigation to the <base href>-resolved
+        // cross-origin URL, and Capacitor kicked the user to Safari. intercept
+        // must be installed before fetchAndSwap resolves so the listener is
+        // attached the moment the swapped page paints.
+        const fetchSpy = vi.fn().mockImplementation(() =>
+            Promise.resolve(
+                new Response('<html><body>home</body></html>', {
                     status: 200,
                     headers: { 'Content-Type': 'text/html' }
                 })
-            );
-        });
+            )
+        );
+        globalThis.fetch = fetchSpy;
 
-        // Spy on Intercept.installIntercept
-        const spy = vi.spyOn(Intercept, 'installIntercept');
+        const installSpy = vi.spyOn(Intercept, 'installIntercept');
 
         await runLoader();
 
-        expect(spy).not.toHaveBeenCalled();
+        // Install must have happened AT LEAST once; call order proves it preceded
+        // the first network fetch (installIntercept returns synchronously, whereas
+        // fetch is awaited inside fetchAndSwap → cachedFetch).
+        expect(installSpy).toHaveBeenCalledTimes(1);
+        const installOrder = installSpy.mock.invocationCallOrder[0];
+        const fetchOrder = fetchSpy.mock.invocationCallOrder[0];
+        expect(installOrder).toBeLessThan(fetchOrder);
     });
 });
