@@ -71,8 +71,15 @@
 
     async function _renderFallback(_originalError) {
         // AC3.6: offline + cache miss → fallback.html with retry.
+        // Resolve explicitly against window.location.origin so the fetch hits the
+        // Capacitor local webview (where fallback.html is bundled), not App Service.
+        // A <base href="APP_BASE"> is in the document once a swap has happened, and
+        // a naked `fetch('fallback.html')` would resolve against that base — trying
+        // to load a remote file that doesn't exist on App Service anyway, and failing
+        // outright when offline, which is exactly when we need the fallback.
         try {
-            const res = await fetch('fallback.html');
+            const fallbackUrl = window.location.origin + '/fallback.html';
+            const res = await fetch(fallbackUrl);
             const html = await res.text();
             document.body.innerHTML = html;
             const retry = document.getElementById('bootstrap-retry');
