@@ -70,7 +70,7 @@
     }
 
     async function _renderFallback(_originalError) {
-        // AC3.6: offline + cache miss → fallback.html with retry.
+        // AC3.6: offline + cache miss → fallback.html with retry + back.
         // Resolve explicitly against window.location.origin so the fetch hits the
         // Capacitor local webview (where fallback.html is bundled), not App Service.
         // A <base href="APP_BASE"> is in the document once a swap has happened, and
@@ -82,8 +82,13 @@
             const res = await fetch(fallbackUrl);
             const html = await res.text();
             document.body.innerHTML = html;
+            // Wire BOTH buttons here. Inline <script> in fallback.html does not
+            // execute when the HTML is inserted via innerHTML (browser spec); the
+            // buttons need handlers attached after the DOM change.
             const retry = document.getElementById('bootstrap-retry');
             if (retry) retry.addEventListener('click', () => location.reload());
+            const back = document.getElementById('bootstrap-back');
+            if (back) back.addEventListener('click', () => history.back());
         } catch {
             document.body.innerHTML =
                 '<div style="padding:2rem;font-family:system-ui">' +

@@ -4,10 +4,7 @@
   <button id="bootstrap-retry" style="margin:0.5rem;padding:0.75rem 1.5rem;font-size:1rem">Retry</button>
   <button id="bootstrap-back" style="margin:0.5rem;padding:0.75rem 1.5rem;font-size:1rem">Back</button>
 </div>
-<script>
-  (function () {
-    var back = document.getElementById('bootstrap-back');
-    if (back) back.addEventListener('click', function () { history.back(); });
-    // bootstrap-retry is wired by loader.js (calls location.reload).
-  })();
-</script>
+<!-- Button handlers are attached by loader.js after innerHTML insertion.
+     Inline <script> tags don't execute when HTML is inserted via innerHTML,
+     so wiring MUST live in the calling code. -->
+
