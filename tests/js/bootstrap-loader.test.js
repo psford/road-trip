@@ -143,6 +143,43 @@ describe('boot routing', () => {
         expect(document.body.textContent).toContain('trip-a');
     });
 
+    it('AC2.2: initial boot pushes history so window.location.pathname matches content', async () => {
+        // Regression: without pushState before the first swap, scripts in the
+        // fetched page (e.g. postUI.js) see the shell's original pathname ('/')
+        // instead of the routed-to postUrl, and route-parsing fails with
+        // "Invalid trip URL".
+        TripStorage.saveTrip('Trip A', '/post/aaa', '/trips/aaa');
+
+        // Reset URL to the shell's initial state — jsdom carries window.location
+        // across tests, so a previous test's pushState can leave /post/aaa here
+        // and make the loader's idempotency check skip the pushState we want to
+        // observe. On a real device the shell always boots at '/'.
+        history.replaceState({}, '', '/');
+
+        const pushStateSpy = vi.spyOn(history, 'pushState');
+
+        globalThis.fetch = vi.fn().mockImplementation(() =>
+            Promise.resolve(
+                new Response('<html><body>trip-a</body></html>', {
+                    status: 200,
+                    headers: { 'Content-Type': 'text/html' }
+                })
+            )
+        );
+
+        await runLoader();
+
+        // pushState must have been called with the bootUrl before the swap.
+        // Before fetchAndSwap runs, document has no <base href>, so the URL
+        // passed straight through — no resolution gymnastics needed.
+        expect(pushStateSpy).toHaveBeenCalledWith({}, '', '/post/aaa');
+        // And it happened before the fetch (ensuring scripts in the fetched
+        // page see the right pathname when DOMContentLoaded dispatches).
+        const pushOrder = pushStateSpy.mock.invocationCallOrder[0];
+        const fetchOrder = globalThis.fetch.mock.invocationCallOrder[0];
+        expect(pushOrder).toBeLessThan(fetchOrder);
+    });
+
     it('AC2.2: most-recently-opened wins with multiple trips', async () => {
         // Save three trips, then markOpened them with deterministic timestamps via Date.now spy.
         TripStorage.saveTrip('Trip A', '/post/aaa', '/trips/aaa');

@@ -38,6 +38,17 @@
         // Boot routing (AC2.1, AC2.2)
         const defaultTrip = TripStorage.getDefaultTrip();
         const bootUrl = defaultTrip ? defaultTrip.postUrl : '/';
+        // Update history BEFORE the swap so window.location.pathname matches the
+        // content being rendered. Scripts in the fetched page (e.g. postUI.js)
+        // read pathname during DOMContentLoaded to extract route params like the
+        // trip's secret token. Without this pushState, the shell's original URL
+        // (capacitor://localhost/) leaks through and route-parsing fails.
+        // Same-origin resolution is safe here: no <base href> has been injected
+        // yet (fetchAndSwap does that inside the parsed document), so the shell's
+        // capacitor://localhost/ origin is used to resolve the relative bootUrl.
+        if (bootUrl !== window.location.pathname + window.location.search) {
+            history.pushState({}, '', bootUrl);
+        }
         await FetchAndSwap.fetchAndSwap(bootUrl);
 
         // Remove the bootstrap-progress shim now that the real page has rendered.
