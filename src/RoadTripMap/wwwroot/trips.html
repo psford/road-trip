@@ -34,8 +34,10 @@
     <script src="/js/photoCarousel.js"></script>
     <script src="/js/mapUI.js"></script>
     <script>
-        const viewToken = window.location.pathname.split('/').filter(Boolean).pop();
-        MapUI.init(viewToken);
+        (function () {
+            const viewToken = window.location.pathname.split('/').filter(Boolean).pop();
+            MapUI.init(viewToken);
+        })();
     </script>
 </body>
 </html>
