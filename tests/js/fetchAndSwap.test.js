@@ -293,6 +293,156 @@ describe('script recreation', () => {
     });
 });
 
+describe('script-src deduplication', () => {
+    it('post → create → post navigation: Set contains each src exactly once, createElement called 3 times total', async () => {
+        await setupTest();
+        try {
+            // The appendChild spy is already installed by setupTest; count via its invocations
+            const appendChildSpy = vi.spyOn(Node.prototype, 'appendChild');
+
+            // HTML for post page with one shared script
+            const postHtml = '<html><head><script src="/js/shared.js"></script></head><body></body></html>';
+            // HTML for create page with same shared script + one unique script
+            const createHtml = '<html><head><script src="/js/shared.js"></script><script src="/js/only-create.js"></script></head><body></body></html>';
+
+            // Three sequential swaps: post, create, post
+            await FetchAndSwap._swapFromHtml(postHtml, 'https://app-roadtripmap-prod.azurewebsites.net/post/abc');
+            await FetchAndSwap._swapFromHtml(createHtml, 'https://app-roadtripmap-prod.azurewebsites.net/create');
+            await FetchAndSwap._swapFromHtml(postHtml, 'https://app-roadtripmap-prod.azurewebsites.net/post/abc');
+
+            // Verify Set contains exactly 2 distinct srcs
+            expect(FetchAndSwap._executedScriptSrcs.size).toBe(2);
+            expect(FetchAndSwap._executedScriptSrcs.has('https://app-roadtripmap-prod.azurewebsites.net/js/shared.js')).toBe(true);
+            expect(FetchAndSwap._executedScriptSrcs.has('https://app-roadtripmap-prod.azurewebsites.net/js/only-create.js')).toBe(true);
+
+            // Count script appendChild calls
+            const scriptAppends = appendChildSpy.mock.calls.filter(call => {
+                const node = call[0];
+                return node && node.tagName === 'SCRIPT' && node.getAttribute && node.getAttribute('src');
+            }).length;
+            // swap 1 (post): shared.js (1 append)
+            // swap 2 (create): shared.js skipped (already in Set), only-create.js (1 append)
+            // swap 3 (post): shared.js skipped (already in Set) (0 appends)
+            // Total: 2 script elements appended (dedup prevented the second shared.js and third swap's shared.js)
+            expect(scriptAppends).toBe(2);
+        } finally {
+            teardownTest();
+        }
+    });
+
+    it('inline scripts re-execute on every swap, not tracked in Set', async () => {
+        await setupTest();
+        try {
+            const appendChildSpy = vi.spyOn(Node.prototype, 'appendChild');
+
+            // Initialize counter in globalThis (survives swaps)
+            globalThis.inlineCount = 0;
+            const inlineScriptCode = 'globalThis.inlineCount = (globalThis.inlineCount || 0) + 1;';
+            const html = `<html><head></head><body><script>${inlineScriptCode}</script></body></html>`;
+
+            // Perform 3 swaps with the same inline script
+            await FetchAndSwap._swapFromHtml(html, 'https://app-roadtripmap-prod.azurewebsites.net/');
+            await FetchAndSwap._swapFromHtml(html, 'https://app-roadtripmap-prod.azurewebsites.net/');
+            await FetchAndSwap._swapFromHtml(html, 'https://app-roadtripmap-prod.azurewebsites.net/');
+
+            // Verify 3 inline script elements were appended (one per swap)
+            const inlineScriptAppends = appendChildSpy.mock.calls.filter(call => {
+                const node = call[0];
+                return node && node.tagName === 'SCRIPT' && !node.getAttribute('src');
+            }).length;
+            expect(inlineScriptAppends).toBe(3);
+
+            // Set size remains 0 (inline scripts not tracked)
+            expect(FetchAndSwap._executedScriptSrcs.size).toBe(0);
+        } finally {
+            teardownTest();
+        }
+    });
+
+    it('cache-busting query-strings produce distinct Set entries', async () => {
+        await setupTest();
+        try {
+            const page1Html = '<html><head><script src="/js/a.js?v=1"></script></head><body></body></html>';
+            const page2Html = '<html><head><script src="/js/a.js?v=2"></script></head><body></body></html>';
+
+            await FetchAndSwap._swapFromHtml(page1Html, 'https://app-roadtripmap-prod.azurewebsites.net/page1');
+            await FetchAndSwap._swapFromHtml(page2Html, 'https://app-roadtripmap-prod.azurewebsites.net/page2');
+
+            // Both query-string variants should be in the Set
+            expect(FetchAndSwap._executedScriptSrcs.size).toBe(2);
+            expect(FetchAndSwap._executedScriptSrcs.has('https://app-roadtripmap-prod.azurewebsites.net/js/a.js?v=1')).toBe(true);
+            expect(FetchAndSwap._executedScriptSrcs.has('https://app-roadtripmap-prod.azurewebsites.net/js/a.js?v=2')).toBe(true);
+        } finally {
+            teardownTest();
+        }
+    });
+
+    it('same src twice in one page is idempotent: Set size 1, only one script appended', async () => {
+        await setupTest();
+        try {
+            const appendChildSpy = vi.spyOn(Node.prototype, 'appendChild');
+            const html = '<html><head><script src="/js/dup.js"></script><script src="/js/dup.js"></script></head><body></body></html>';
+
+            await FetchAndSwap._swapFromHtml(html, 'https://app-roadtripmap-prod.azurewebsites.net/');
+
+            // Set contains the src exactly once
+            expect(FetchAndSwap._executedScriptSrcs.has('https://app-roadtripmap-prod.azurewebsites.net/js/dup.js')).toBe(true);
+            expect(FetchAndSwap._executedScriptSrcs.size).toBe(1);
+
+            // Only one script with src="/js/dup.js" was appended (second was skipped)
+            const dupScriptAppends = appendChildSpy.mock.calls.filter(call => {
+                const node = call[0];
+                return node && node.tagName === 'SCRIPT' && node.getAttribute && node.getAttribute('src') === '/js/dup.js';
+            }).length;
+            expect(dupScriptAppends).toBe(1);
+
+            // Verify exactly one <script src="/js/dup.js"> in DOM
+            const dupScripts = Array.from(document.querySelectorAll('script[src="/js/dup.js"]'));
+            expect(dupScripts.length).toBe(1);
+        } finally {
+            teardownTest();
+        }
+    });
+
+    it('does not add to _executedScriptSrcs on onerror', async () => {
+        await setupTest();
+        try {
+            // Restore appendChild stub and replace with one that fires onerror (not onload)
+            Node.prototype.appendChild.mockRestore();
+            const realAppendChild = Node.prototype.appendChild;
+            vi.spyOn(Node.prototype, 'appendChild').mockImplementation(function (node) {
+                const result = realAppendChild.call(this, node);
+                if (node && node.tagName === 'SCRIPT' && node.getAttribute && node.getAttribute('src')) {
+                    // Fire onerror instead of onload
+                    setTimeout(() => { if (node.onerror) node.onerror(); }, 0);
+                }
+                return result;
+            });
+
+            const html = '<html><head><base href="https://app-roadtripmap-prod.azurewebsites.net/"></head><body><script src="/js/fail.js"></script></body></html>';
+            await FetchAndSwap._swapFromHtml(html, 'https://app-roadtripmap-prod.azurewebsites.net/');
+
+            // On onerror, src should NOT be in the Set
+            expect(FetchAndSwap._executedScriptSrcs.has(
+                'https://app-roadtripmap-prod.azurewebsites.net/js/fail.js'
+            )).toBe(false);
+
+            // Second swap of the same HTML — should re-inject because src not in Set (retry)
+            const appendChildSpy = vi.spyOn(Node.prototype, 'appendChild');
+            await FetchAndSwap._swapFromHtml(html, 'https://app-roadtripmap-prod.azurewebsites.net/');
+
+            // Verify the script with /js/fail.js was appended again (not skipped)
+            const failScriptAppends = appendChildSpy.mock.calls.filter(call => {
+                const node = call[0];
+                return node && node.tagName === 'SCRIPT' && node.getAttribute && node.getAttribute('src') === '/js/fail.js';
+            }).length;
+            expect(failScriptAppends).toBeGreaterThan(0);
+        } finally {
+            teardownTest();
+        }
+    });
+});
+
 describe('TripStorage.markOpened', () => {
     it('calls markOpened on saved trip', async () => {
         await setupTest();
