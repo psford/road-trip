@@ -1,3 +1,4 @@
+// pattern: Imperative Shell
 /**
  * OfflineError — classify network failures and produce friendly copy.
  *

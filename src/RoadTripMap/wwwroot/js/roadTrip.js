@@ -1,3 +1,4 @@
+// pattern: Imperative Shell
 /**
  * RoadTrip — unified shell-aware lifecycle + origin helper.
  *

@@ -87,6 +87,10 @@ beforeAll(() => {
     loadGlobal('tripStorage.js');
     loadGlobal('uploadTelemetry.js');
     loadGlobal('uploadTransport.js');
+    // NOTE: versionProtocol and postUI register persistent `app:page-load` listeners
+    // that survive the entire vitest run (deferred to Phase 3 for structural fix via
+    // script-src dedup). Safe for now: VersionProtocol.init() and PostUI.init() return
+    // early if preconditions absent (meta[name=client-version], valid token).
     loadGlobal('versionProtocol.js');
     loadGlobal('imageProcessor.js');
     loadGlobal('uploadQueue.js');
