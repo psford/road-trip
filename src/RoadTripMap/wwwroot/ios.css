@@ -47,6 +47,13 @@
     padding: 12px 16px;
 }
 
+.platform-ios .upload-panel__body {
+    /* iOS momentum scrolling — makes the list feel native. Baseline in
+       styles.css already has `overflow-y: auto` and `max-height: 300px`,
+       so this property alone does the work. */
+    -webkit-overflow-scrolling: touch;
+}
+
 /* ---- System font stack ---- */
 .platform-ios {
   font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif;
