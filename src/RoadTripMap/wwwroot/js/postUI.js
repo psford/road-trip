@@ -1268,8 +1268,9 @@ const PostUI = {
     }
 };
 
-// Initialize when page loads
-document.addEventListener('DOMContentLoaded', () => {
+// Initialize when page loads (iOS shell dispatches app:page-load after swap;
+// regular browsers fire it via RoadTrip's DOMContentLoaded bridge).
+RoadTrip.onPageLoad('post', () => {
     // Extract secret token from URL
     const pathParts = window.location.pathname.split('/');
     const secretToken = pathParts[pathParts.length - 1];

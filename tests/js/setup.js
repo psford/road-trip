@@ -76,6 +76,8 @@ beforeAll(() => {
     };
 
     // Load modules
+    loadGlobal('roadTrip.js');
+    loadGlobal('offlineError.js');
     loadGlobal('featureFlags.js');
     loadGlobal('api.js');
     loadGlobal('mapCache.js');
@@ -108,4 +110,6 @@ afterEach(() => {
     // Clear DOM modifications made during test
     document.body.innerHTML = '';
     document.head.innerHTML = '';
+    // Reset body with minimal data-page for next test
+    document.body.dataset.page = 'home';
 });
