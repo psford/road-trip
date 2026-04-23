@@ -256,6 +256,19 @@ describe('getTripPhotos offline caching', () => {
             globalThis.API.getTripPhotos('xyz')
         ).rejects.toThrow('Failed to load photos');
     });
+
+    it('iOS shell path: non-OK response throws legacy error', async () => {
+        // CachedFetch is present (installed by beforeEach)
+        // IDB has no cached record (default beforeEach state)
+
+        globalThis.fetch = vi.fn().mockResolvedValue(
+            new Response('', { status: 500, headers: { 'Content-Type': 'application/json' } })
+        );
+
+        await expect(
+            globalThis.API.getTripPhotos('some-token')
+        ).rejects.toThrow('Failed to load photos');
+    });
 });
 
 describe('postUI photo-fetch catch copy', () => {
