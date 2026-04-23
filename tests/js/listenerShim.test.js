@@ -17,6 +17,15 @@ beforeEach(() => {
   document.removeEventListener = JSDOM_REMOVE;
   // Clean up any previous ListenerShim state
   delete globalThis.ListenerShim;
+  // Set up minimal DOM for postUI (loaded globally by setup.js) so it doesn't error
+  if (!document.head) document.head = document.createElement('head');
+  if (!document.body) document.body = document.createElement('body');
+  if (!document.getElementById('errorMessage')) {
+    const div = document.createElement('div');
+    div.id = 'errorMessage';
+    div.classList.add('hidden');
+    document.body.appendChild(div);
+  }
 });
 
 afterEach(() => {
@@ -107,7 +116,7 @@ describe('AC2.shim.2 — clearPageLifecycleListeners() removes every tracked han
   it('removes all tracked DOMContentLoaded and load handlers', () => {
     eval(SOURCE);
 
-    // Register multiple handlers
+    // Register multiple handlers with spies so we can detect if they fire
     const handler1 = vi.fn();
     const handler2 = vi.fn();
     const handler3 = vi.fn();
@@ -127,16 +136,22 @@ describe('AC2.shim.2 — clearPageLifecycleListeners() removes every tracked han
     // Clear the tracked handlers
     ListenerShim.clearPageLifecycleListeners();
 
-    // Verify handlers were removed from the real DOM by spying on removeEventListener
+    // Verify the tracking maps are now empty
+    expect(ListenerShim._internals._tracked.get('DOMContentLoaded').size).toBe(0);
+    expect(ListenerShim._internals._tracked.get('load').size).toBe(0);
+
+    // Dispatch real events to verify handlers were actually removed from the real DOM
+    // (setup.js loads postUI which registers its own DOMContentLoaded handler, so we
+    // only assert that OUR handlers were not called, not that no handler fired at all)
+    document.dispatchEvent(new Event('DOMContentLoaded'));
+    document.dispatchEvent(new Event('load'));
+
+    // Assert the real handlers were NOT called — proof they were unregistered
     expect(handler1).not.toHaveBeenCalled();
     expect(handler2).not.toHaveBeenCalled();
     expect(handler3).not.toHaveBeenCalled();
     expect(handler4).not.toHaveBeenCalled();
     expect(handler5).not.toHaveBeenCalled();
-
-    // The key test: verify the tracking maps are now empty
-    expect(ListenerShim._internals._tracked.get('DOMContentLoaded').size).toBe(0);
-    expect(ListenerShim._internals._tracked.get('load').size).toBe(0);
   });
 
   it('clears the internal tracking maps', () => {
@@ -162,11 +177,8 @@ describe('AC2.shim.2 — clearPageLifecycleListeners() removes every tracked han
 });
 
 describe('AC2.shim.3 — Non-lifecycle events pass through untracked', () => {
-  it('registers non-lifecycle handlers without tracking them', () => {
+  it('non-lifecycle handlers fire on real events and are not tracked', () => {
     eval(SOURCE);
-
-    // Mock dispatchEvent to safely test handler registration
-    vi.spyOn(document, 'dispatchEvent').mockImplementation(() => true);
 
     const clickHandler = vi.fn();
     const submitHandler = vi.fn();
@@ -178,6 +190,18 @@ describe('AC2.shim.3 — Non-lifecycle events pass through untracked', () => {
     document.addEventListener('change', changeHandler);
     document.addEventListener('keydown', keydownHandler);
 
+    // Dispatch real events to verify handlers fire (proves delegation to _originalAdd worked)
+    document.dispatchEvent(new Event('click'));
+    document.dispatchEvent(new Event('submit'));
+    document.dispatchEvent(new Event('change'));
+    document.dispatchEvent(new Event('keydown'));
+
+    // All handlers should have fired exactly once
+    expect(clickHandler).toHaveBeenCalledTimes(1);
+    expect(submitHandler).toHaveBeenCalledTimes(1);
+    expect(changeHandler).toHaveBeenCalledTimes(1);
+    expect(keydownHandler).toHaveBeenCalledTimes(1);
+
     // These events are not tracked
     expect(ListenerShim._internals._tracked.has('click')).toBe(false);
     expect(ListenerShim._internals._tracked.has('submit')).toBe(false);
@@ -185,11 +209,8 @@ describe('AC2.shim.3 — Non-lifecycle events pass through untracked', () => {
     expect(ListenerShim._internals._tracked.has('keydown')).toBe(false);
   });
 
-  it('non-lifecycle handlers survive clearPageLifecycleListeners()', () => {
+  it('non-lifecycle handlers survive clearPageLifecycleListeners() and continue to fire', () => {
     eval(SOURCE);
-
-    // Mock dispatchEvent to safely test handler removal behavior
-    vi.spyOn(document, 'dispatchEvent').mockImplementation(() => true);
 
     const clickHandler = vi.fn();
     const submitHandler = vi.fn();
@@ -197,20 +218,27 @@ describe('AC2.shim.3 — Non-lifecycle events pass through untracked', () => {
     document.addEventListener('click', clickHandler);
     document.addEventListener('submit', submitHandler);
 
+    // Dispatch first time to verify handlers fire
+    document.dispatchEvent(new Event('click'));
+    document.dispatchEvent(new Event('submit'));
+    expect(clickHandler).toHaveBeenCalledTimes(1);
+    expect(submitHandler).toHaveBeenCalledTimes(1);
+
     // Clear lifecycle listeners (should not affect non-lifecycle)
     ListenerShim.clearPageLifecycleListeners();
 
-    // Verify that non-lifecycle handlers still exist in the real DOM
-    // (they were not removed by clearPageLifecycleListeners)
-    // Since we can't directly test that they fire without dispatching,
-    // we verify indirectly: the shim's _tracked doesn't have them
-    expect(ListenerShim._internals._tracked.has('click')).toBe(false);
-    expect(ListenerShim._internals._tracked.has('submit')).toBe(false);
+    // Dispatch again to verify non-lifecycle handlers still fire
+    document.dispatchEvent(new Event('click'));
+    document.dispatchEvent(new Event('submit'));
+
+    // Handlers should have fired twice now (once before clear, once after)
+    expect(clickHandler).toHaveBeenCalledTimes(2);
+    expect(submitHandler).toHaveBeenCalledTimes(2);
   });
 });
 
 describe('AC2.shim.4 — Listeners on targets other than document are not tracked', () => {
-  it('does not track handlers registered on window', () => {
+  it('does not track handlers registered on window and they fire after clear', () => {
     eval(SOURCE);
 
     const handler1 = vi.fn();
@@ -227,14 +255,16 @@ describe('AC2.shim.4 — Listeners on targets other than document are not tracke
     // Clear lifecycle listeners (should have no effect on window handlers)
     ListenerShim.clearPageLifecycleListeners();
 
-    // Verify that window still has the handlers registered
-    // (they were not touched by the shim because they were on window, not document)
-    // The real test is that clearPageLifecycleListeners doesn't throw
-    expect(handler1).not.toHaveBeenCalled();
-    expect(handler2).not.toHaveBeenCalled();
+    // Dispatch events on window to verify handlers still fire (were not removed by clear)
+    window.dispatchEvent(new Event('DOMContentLoaded'));
+    window.dispatchEvent(new Event('load'));
+
+    // Both handlers should have fired — proof they survived the clear
+    expect(handler1).toHaveBeenCalledTimes(1);
+    expect(handler2).toHaveBeenCalledTimes(1);
   });
 
-  it('does not track handlers registered on Elements', () => {
+  it('does not track handlers registered on Elements and they fire after clear', () => {
     eval(SOURCE);
 
     const div = document.createElement('div');
@@ -249,8 +279,10 @@ describe('AC2.shim.4 — Listeners on targets other than document are not tracke
     // Clear lifecycle listeners (should have no effect on element handlers)
     ListenerShim.clearPageLifecycleListeners();
 
-    // Verify that the element listener was not removed
-    // The real test is that clearPageLifecycleListeners doesn't throw
-    expect(handler).not.toHaveBeenCalled();
+    // Dispatch the event on the element to verify it still fires (was not removed by clear)
+    div.dispatchEvent(new Event('DOMContentLoaded'));
+
+    // Handler should have fired — proof it survived the clear
+    expect(handler).toHaveBeenCalledTimes(1);
   });
 });

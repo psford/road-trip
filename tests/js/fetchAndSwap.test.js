@@ -54,7 +54,7 @@ async function setupTest() {
         return result;
     });
 
-    // Clean up globals
+    // Delete module globals first so the IIFE's auto-install() runs fresh on eval (install() is idempotent-by-flag, not re-wrap-safe)
     delete globalThis.CachedFetch;
     delete globalThis.FetchAndSwap;
     delete globalThis.TripStorage;
