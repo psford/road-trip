@@ -938,7 +938,7 @@ const PostUI = {
             });
         } catch (err) {
             console.error('Error loading photos:', err);
-            this.showToast('Failed to load photos', 'error');
+            this.showToast(OfflineError.friendlyMessage(err, 'photos'), 'error');
         }
     },
 
