@@ -89,7 +89,7 @@
                     window.location.href = result.postUrl;
                 }
             } catch (error) {
-                errorEl.textContent = error.message || 'Failed to create trip';
+                errorEl.textContent = OfflineError.friendlyMessage(error, 'create');
                 errorEl.classList.remove('hidden');
                 const btn = document.getElementById('createButton');
                 btn.disabled = false;
