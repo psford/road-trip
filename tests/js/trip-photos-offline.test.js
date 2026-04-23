@@ -257,3 +257,97 @@ describe('getTripPhotos offline caching', () => {
         ).rejects.toThrow('Failed to load photos');
     });
 });
+
+describe('postUI photo-fetch catch copy', () => {
+    const OFFLINE_ERROR_SRC = fs.readFileSync(
+        path.resolve(__dirname, '../../src/RoadTripMap/wwwroot/js/offlineError.js'),
+        'utf8'
+    );
+
+    beforeEach(async () => {
+        // Ensure OfflineError is available
+        eval(OFFLINE_ERROR_SRC);
+
+        // Stub PostService with listPhotos method
+        globalThis.PostService = {
+            listPhotos: vi.fn().mockResolvedValue([])
+        };
+
+        // Reset postUI's showToast to a spy
+        globalThis.PostUI.showToast = vi.fn();
+
+        // Set a valid secret token
+        globalThis.PostUI.secretToken = 'test-token';
+
+        // Navigator.onLine should default to true
+        Object.defineProperty(navigator, 'onLine', {
+            configurable: true,
+            writable: false,
+            value: true
+        });
+    });
+
+    afterEach(() => {
+        // Restore navigator.onLine
+        Object.defineProperty(navigator, 'onLine', {
+            configurable: true,
+            writable: true,
+            value: true
+        });
+
+        vi.clearAllMocks();
+    });
+
+    it('AC5.3 (offline: TypeError path) — toast shows friendly photo copy', async () => {
+        // Arrange: PostService.listPhotos rejects with TypeError (network error)
+        globalThis.PostService.listPhotos = vi.fn().mockRejectedValue(new TypeError('Load failed'));
+
+        // Act: call loadPhotoList
+        await globalThis.PostUI.loadPhotoList();
+
+        // Assert: showToast called exactly once with the friendly offline message
+        expect(globalThis.PostUI.showToast).toHaveBeenCalledTimes(1);
+        expect(globalThis.PostUI.showToast).toHaveBeenCalledWith(
+            'Photos unavailable offline. Reconnect to see the latest.',
+            'error'
+        );
+    });
+
+    it('AC5.3 (navigator.onLine=false path) — same copy even with a non-TypeError', async () => {
+        // Arrange: simulate offline
+        Object.defineProperty(navigator, 'onLine', {
+            configurable: true,
+            get: () => false
+        });
+
+        // PostService.listPhotos rejects with non-TypeError (e.g., "unknown" error)
+        globalThis.PostService.listPhotos = vi.fn().mockRejectedValue(new Error('unknown'));
+
+        // Act: call loadPhotoList
+        await globalThis.PostUI.loadPhotoList();
+
+        // Assert: toast shows the friendly offline copy (because navigator.onLine === false)
+        expect(globalThis.PostUI.showToast).toHaveBeenCalledTimes(1);
+        expect(globalThis.PostUI.showToast).toHaveBeenCalledWith(
+            'Photos unavailable offline. Reconnect to see the latest.',
+            'error'
+        );
+    });
+
+    it('Regression — non-offline error preserves its message', async () => {
+        // Arrange: navigator.onLine === true, error is not offline-related
+        globalThis.PostService.listPhotos = vi.fn().mockRejectedValue(
+            new Error('Server exploded')
+        );
+
+        // Act: call loadPhotoList
+        await globalThis.PostUI.loadPhotoList();
+
+        // Assert: toast shows the original error message (non-offline path)
+        expect(globalThis.PostUI.showToast).toHaveBeenCalledTimes(1);
+        expect(globalThis.PostUI.showToast).toHaveBeenCalledWith(
+            'Server exploded',
+            'error'
+        );
+    });
+});
