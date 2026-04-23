@@ -229,7 +229,7 @@ const PostUI = {
             // Show view link for sharing
             if (trip.viewUrl) {
                 const section = document.getElementById('viewLinkSection');
-                const origin = window.location.origin;
+                const origin = RoadTrip.appOrigin();
                 document.getElementById('viewUrlValue').textContent = origin + trip.viewUrl;
                 section.style.display = '';
                 document.getElementById('copyViewLink').addEventListener('click', () => {
