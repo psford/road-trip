@@ -23,9 +23,16 @@
 
 /* ---- Tap target minimums (Apple HIG: 44x44 pt) ---- */
 .platform-ios .upload-panel__retry,
+.platform-ios .upload-panel__pin-drop,
 .platform-ios .upload-panel__discard,
+.platform-ios .upload-panel__toggle,
 .platform-ios .resume-banner button,
 .platform-ios .photo-carousel__control,
+.platform-ios .carousel-action-btn,
+.platform-ios .photo-popup-delete,
+.platform-ios .copy-button,
+.platform-ios .map-back,
+.platform-ios .poi-action-btn,
 .platform-ios button {
   min-height: 44px;
   min-width: 44px;
