@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CACHED_FETCH_SRC = fs.readFileSync(path.resolve(__dirname, '../../src/bootstrap/cachedFetch.js'), 'utf8');
+const LISTENER_SHIM_SRC = fs.readFileSync(path.resolve(__dirname, '../../src/bootstrap/listenerShim.js'), 'utf8');
 const FETCH_AND_SWAP_SRC = fs.readFileSync(path.resolve(__dirname, '../../src/bootstrap/fetchAndSwap.js'), 'utf8');
 const TRIP_STORAGE_SRC = fs.readFileSync(path.resolve(__dirname, '../../src/RoadTripMap/wwwroot/js/tripStorage.js'), 'utf8');
 
@@ -57,6 +58,7 @@ async function setupTest() {
     delete globalThis.CachedFetch;
     delete globalThis.FetchAndSwap;
     delete globalThis.TripStorage;
+    delete globalThis.ListenerShim;
 
     // Reset document
     if (document.head) document.head.innerHTML = '<title>shell</title>';
@@ -64,6 +66,7 @@ async function setupTest() {
 
     // Load modules
     eval(CACHED_FETCH_SRC);
+    eval(LISTENER_SHIM_SRC);
     const tripStorageCode = TRIP_STORAGE_SRC.replace(/^const TripStorage = /m, 'globalThis.TripStorage = ');
     eval(tripStorageCode);
     eval(FETCH_AND_SWAP_SRC);
@@ -75,6 +78,7 @@ function teardownTest() {
     if (typeof CachedFetch !== 'undefined' && CachedFetch._internals) {
         CachedFetch._internals._closeDb();
     }
+    delete globalThis.ListenerShim;
 }
 
 describe('Task 2: fetchAndSwap skeleton', () => {
@@ -370,7 +374,7 @@ describe('TripStorage.markOpened', () => {
 });
 
 describe('lifecycle events', () => {
-    it('dispatches DOMContentLoaded after script recreation', async () => {
+    it('dispatches app:page-load on document after a swap', async () => {
         await setupTest();
         try {
             globalThis.fetch = vi.fn().mockResolvedValue(
@@ -383,14 +387,14 @@ describe('lifecycle events', () => {
             await FetchAndSwap.fetchAndSwap('/post/abc');
 
             expect(document.dispatchEvent).toHaveBeenCalledWith(
-                expect.objectContaining({ type: 'DOMContentLoaded' })
+                expect.objectContaining({ type: 'app:page-load' })
             );
         } finally {
             teardownTest();
         }
     });
 
-    it('dispatches load on window after DOMContentLoaded on document', async () => {
+    it('does not dispatch synthetic DOMContentLoaded or window.load', async () => {
         await setupTest();
         try {
             globalThis.fetch = vi.fn().mockResolvedValue(
@@ -402,11 +406,69 @@ describe('lifecycle events', () => {
 
             await FetchAndSwap.fetchAndSwap('/post/abc');
 
-            expect(document.dispatchEvent.mock.calls[0][0].type).toBe('DOMContentLoaded');
-            expect(window.dispatchEvent.mock.calls[0][0].type).toBe('load');
-            const docOrder = document.dispatchEvent.mock.invocationCallOrder[0];
-            const winOrder = window.dispatchEvent.mock.invocationCallOrder[0];
-            expect(docOrder).toBeLessThan(winOrder);
+            // Check that DOMContentLoaded was NOT dispatched on document
+            const docCalls = document.dispatchEvent.mock.calls;
+            const hasDOMContentLoaded = docCalls.some(call => call[0].type === 'DOMContentLoaded');
+            expect(hasDOMContentLoaded).toBe(false);
+
+            // Check that window.dispatchEvent was NOT called at all
+            expect(window.dispatchEvent.mock.calls.length).toBe(0);
+        } finally {
+            teardownTest();
+        }
+    });
+
+    it('calls clearPageLifecycleListeners before app:page-load is dispatched', async () => {
+        await setupTest();
+        try {
+            globalThis.fetch = vi.fn().mockResolvedValue(
+                new Response('<html><head></head><body></body></html>', {
+                    status: 200,
+                    headers: { 'Content-Type': 'text/html' }
+                })
+            );
+
+            // Spy on ListenerShim.clearPageLifecycleListeners before the swap
+            vi.spyOn(globalThis.ListenerShim, 'clearPageLifecycleListeners');
+
+            await FetchAndSwap.fetchAndSwap('/post/abc');
+
+            // Verify both were called
+            expect(globalThis.ListenerShim.clearPageLifecycleListeners).toHaveBeenCalled();
+            expect(document.dispatchEvent).toHaveBeenCalledWith(
+                expect.objectContaining({ type: 'app:page-load' })
+            );
+
+            // Verify clear was called BEFORE dispatch
+            const clearOrder = globalThis.ListenerShim.clearPageLifecycleListeners.mock.invocationCallOrder[0];
+            const dispatchOrder = document.dispatchEvent.mock.invocationCallOrder.find(
+                order => document.dispatchEvent.mock.calls[
+                    document.dispatchEvent.mock.invocationCallOrder.indexOf(order)
+                ][0].type === 'app:page-load'
+            );
+            expect(clearOrder).toBeLessThan(dispatchOrder);
+        } finally {
+            teardownTest();
+        }
+    });
+
+    it('dispatches app:page-load when ListenerShim is absent', async () => {
+        await setupTest();
+        delete globalThis.ListenerShim;
+        try {
+            globalThis.fetch = vi.fn().mockResolvedValue(
+                new Response('<html><head></head><body></body></html>', {
+                    status: 200,
+                    headers: { 'Content-Type': 'text/html' }
+                })
+            );
+
+            // Should not throw and should still dispatch app:page-load
+            await expect(FetchAndSwap.fetchAndSwap('/post/abc')).resolves.toBeUndefined();
+
+            expect(document.dispatchEvent).toHaveBeenCalledWith(
+                expect.objectContaining({ type: 'app:page-load' })
+            );
         } finally {
             teardownTest();
         }
