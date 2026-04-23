@@ -8,6 +8,7 @@ const CACHED_FETCH_SRC = fs.readFileSync(path.resolve(__dirname, '../../src/boot
 const LISTENER_SHIM_SRC = fs.readFileSync(path.resolve(__dirname, '../../src/bootstrap/listenerShim.js'), 'utf8');
 const FETCH_AND_SWAP_SRC = fs.readFileSync(path.resolve(__dirname, '../../src/bootstrap/fetchAndSwap.js'), 'utf8');
 const TRIP_STORAGE_SRC = fs.readFileSync(path.resolve(__dirname, '../../src/RoadTripMap/wwwroot/js/tripStorage.js'), 'utf8');
+const ROAD_TRIP_SRC = fs.readFileSync(path.resolve(__dirname, '../../src/RoadTripMap/wwwroot/js/roadTrip.js'), 'utf8');
 
 async function setupTest() {
     // Close any prior cachedFetch IDB handle, then delete the database so each
@@ -60,9 +61,13 @@ async function setupTest() {
     delete globalThis.TripStorage;
     delete globalThis.ListenerShim;
 
-    // Reset document
+    // Reset document (including body attributes so stale data-page from a prior
+    // test does not leak — the iOS shell's real boot starts with a bare <body>).
     if (document.head) document.head.innerHTML = '<title>shell</title>';
-    if (document.body) document.body.innerHTML = '<div id="bootstrap-progress">Loading…</div>';
+    if (document.body) {
+        Array.from(document.body.attributes).forEach((a) => document.body.removeAttribute(a.name));
+        document.body.innerHTML = '<div id="bootstrap-progress">Loading…</div>';
+    }
 
     // Load modules
     eval(CACHED_FETCH_SRC);
@@ -637,6 +642,116 @@ describe('_swapFromHtml', () => {
             expect(baseEl).not.toBeNull();
         } finally {
             teardownTest();
+        }
+    });
+});
+
+describe('body attribute preservation', () => {
+    // Phase 2's RoadTrip.onPageLoad reads document.body.dataset.page to route
+    // lifecycle handlers. The iOS shell's <body> has no data-page; every page's
+    // data-page attribute must flow through _swapFromHtml onto the live body.
+    it('copies data-page from parsed body onto document.body', async () => {
+        await setupTest();
+        try {
+            const html = '<html><head></head><body data-page="post">content</body></html>';
+            await FetchAndSwap._swapFromHtml(html, 'https://app-roadtripmap-prod.azurewebsites.net/post/abc');
+            expect(document.body.dataset.page).toBe('post');
+        } finally {
+            teardownTest();
+        }
+    });
+
+    it('copies parsed body class list and preserves platform-ios shell class', async () => {
+        await setupTest();
+        try {
+            // loader.js:5 adds platform-ios to document.body at shell boot; tests
+            // simulate that precondition so we can verify the swap preserves it.
+            document.body.classList.add('platform-ios');
+            const html = '<html><head></head><body class="map-page" data-page="view">m</body></html>';
+            await FetchAndSwap._swapFromHtml(html, 'https://app-roadtripmap-prod.azurewebsites.net/trips/abc');
+            expect(document.body.classList.contains('map-page')).toBe(true);
+            expect(document.body.classList.contains('platform-ios')).toBe(true);
+            expect(document.body.dataset.page).toBe('view');
+        } finally {
+            teardownTest();
+        }
+    });
+
+    it('overwrites stale data-page on subsequent swap (no leak from previous page)', async () => {
+        await setupTest();
+        try {
+            await FetchAndSwap._swapFromHtml(
+                '<html><head></head><body data-page="post">p</body></html>',
+                'https://app-roadtripmap-prod.azurewebsites.net/post/abc'
+            );
+            expect(document.body.dataset.page).toBe('post');
+            await FetchAndSwap._swapFromHtml(
+                '<html><head></head><body data-page="create">c</body></html>',
+                'https://app-roadtripmap-prod.azurewebsites.net/create'
+            );
+            expect(document.body.dataset.page).toBe('create');
+        } finally {
+            teardownTest();
+        }
+    });
+});
+
+describe('RoadTrip.onPageLoad integration with _swapFromHtml', () => {
+    // End-to-end wiring test that unit tests missed: does
+    // RoadTrip.onPageLoad('post', fn) actually fire after fetchAndSwap swaps
+    // to a body with data-page="post"? Requires body attribute copying to work.
+    it('fires onPageLoad("post", fn) after swap to a post page', async () => {
+        await setupTest();
+        try {
+            // Unmock dispatchEvent so real listeners receive app:page-load.
+            if (document.dispatchEvent.mockRestore) document.dispatchEvent.mockRestore();
+
+            // Simulate the iOS shell runtime: Capacitor.isNativePlatform()===true.
+            // Without this, roadTrip.js's browser-mode DOMContentLoaded bridge
+            // would synthesize an extra app:page-load from queueMicrotask, which
+            // the iOS shell does not do (fetchAndSwap owns dispatch there).
+            globalThis.Capacitor = { isNativePlatform: () => true };
+            delete globalThis.RoadTrip;
+            eval(ROAD_TRIP_SRC);
+
+            const fn = vi.fn();
+            RoadTrip.onPageLoad('post', fn);
+
+            await FetchAndSwap._swapFromHtml(
+                '<html><head></head><body data-page="post">x</body></html>',
+                'https://app-roadtripmap-prod.azurewebsites.net/post/abc'
+            );
+
+            expect(fn).toHaveBeenCalledTimes(1);
+        } finally {
+            teardownTest();
+            delete globalThis.RoadTrip;
+            delete globalThis.Capacitor;
+        }
+    });
+
+    it('does not fire onPageLoad("post", fn) after swap to a create page', async () => {
+        await setupTest();
+        try {
+            if (document.dispatchEvent.mockRestore) document.dispatchEvent.mockRestore();
+
+            globalThis.Capacitor = { isNativePlatform: () => true };
+            delete globalThis.RoadTrip;
+            eval(ROAD_TRIP_SRC);
+
+            const fn = vi.fn();
+            RoadTrip.onPageLoad('post', fn);
+
+            await FetchAndSwap._swapFromHtml(
+                '<html><head></head><body data-page="create">x</body></html>',
+                'https://app-roadtripmap-prod.azurewebsites.net/create'
+            );
+
+            expect(fn).not.toHaveBeenCalled();
+        } finally {
+            teardownTest();
+            delete globalThis.RoadTrip;
+            delete globalThis.Capacitor;
         }
     });
 });

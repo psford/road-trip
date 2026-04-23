@@ -76,6 +76,22 @@
         document.head.innerHTML = parsed.head.innerHTML;
         document.body.innerHTML = parsed.body.innerHTML;
 
+        // Also swap body ATTRIBUTES (data-page, class, etc.). The shell's
+        // <body> in src/bootstrap/index.html starts bare, and setting only
+        // innerHTML leaves body.dataset.page permanently undefined — which
+        // would silently break RoadTrip.onPageLoad(pageName, fn) scope
+        // filtering for every non-wildcard page script. Clear stale attrs
+        // from a prior swap first, then copy parsed body's attrs, then
+        // re-add the shell-owned `platform-ios` class (loader.js:5 sets it
+        // once at boot but a class replacement here would strip it).
+        Array.from(document.body.attributes).forEach((attr) => {
+            document.body.removeAttribute(attr.name);
+        });
+        for (const attr of parsed.body.attributes) {
+            document.body.setAttribute(attr.name, attr.value);
+        }
+        document.body.classList.add('platform-ios');
+
         // Task 3: Recreate scripts. All scripts are appended to document.body
         // regardless of their original parent. Browsers execute scripts synchronously
         // on append in source order, so execution semantics are preserved. The DOM
