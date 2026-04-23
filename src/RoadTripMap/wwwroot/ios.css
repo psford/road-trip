@@ -62,3 +62,56 @@
     font-size: 1.2em;
     vertical-align: middle;
 }
+
+/*
+ * Phase 6: safe-area insets for notched iPhones / home indicators.
+ * All rules are scoped under .platform-ios so regular-browser users see no change.
+ * env(safe-area-inset-*) returns 0 on non-notched devices; rules remain benign.
+ */
+
+/* Top-inset: elements pinned (or close) to the top of the viewport. */
+
+.platform-ios .map-header {
+    /* Fixed header at top: 0. Push content down by the status-bar height. */
+    padding-top: env(safe-area-inset-top);
+}
+
+.platform-ios .page-header {
+    /* Non-fixed header; additive to the existing padding in styles.css. */
+    padding-top: calc(var(--space-xs) + env(safe-area-inset-top));
+}
+
+.platform-ios .hero {
+    /* Non-fixed hero; additive to the existing padding in styles.css. */
+    padding-top: calc(var(--space-xl) + env(safe-area-inset-top));
+}
+
+.platform-ios .resume-banner {
+    /* Sticky at top: 0. Push banner body below the status bar. */
+    padding-top: calc(var(--space-sm) + env(safe-area-inset-top));
+}
+
+/* Bottom-inset: elements pinned to the bottom of the viewport. */
+
+.platform-ios .toast-container {
+    /* Fixed, bottom: var(--space-md). Lift above the home indicator. */
+    bottom: calc(var(--space-md) + env(safe-area-inset-bottom));
+}
+
+.platform-ios .view-carousel-container {
+    /* Fixed, bottom: 0; existing padding top/bottom is var(--space-xs). Additive. */
+    padding-bottom: calc(var(--space-xs) + env(safe-area-inset-bottom));
+}
+
+.platform-ios .map-control {
+    /* Fixed at bottom: 30px (hardcoded). Lift above the home indicator. */
+    bottom: calc(30px + env(safe-area-inset-bottom));
+}
+
+/* Both top and bottom: fullscreen modal overlays. */
+
+.platform-ios .homescreen-modal-overlay {
+    /* inset: 0 fullscreen; pad the inner viewport to avoid notch + home indicator overlap. */
+    padding-top: calc(var(--space-md) + env(safe-area-inset-top));
+    padding-bottom: calc(var(--space-md) + env(safe-area-inset-bottom));
+}
