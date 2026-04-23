@@ -1,4 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const TRIP_STORAGE_SRC_PATH = path.resolve(__dirname, '../../src/RoadTripMap/wwwroot/js/tripStorage.js');
+const TRIP_STORAGE_SRC = fs.readFileSync(TRIP_STORAGE_SRC_PATH, 'utf8');
 
 describe('TripStorage', () => {
     let store;
@@ -376,6 +383,45 @@ describe('TripStorage', () => {
             const defaultTrip = TripStorage.getDefaultTrip();
             defaultTrip.name = 'Mutated';
             expect(TripStorage.getTrips()[0].name).toBe('Trip A');
+        });
+    });
+
+    describe('idempotent re-injection (iOS shell contract)', () => {
+        // The iOS shell loads src/bootstrap/tripStorage.js at boot (generated
+        // copy), then fetchAndSwap._recreateScripts injects the wwwroot page's
+        // <script src="/js/tripStorage.js"> on every first-swap. A top-level
+        // `const TripStorage = ...` in the same realm throws SyntaxError:
+        // "Can't create duplicate variable" on the second injection. The
+        // module must therefore be idempotently installable.
+
+        it('source installs on globalThis with a ??= guard', () => {
+            // Two behaviors must be verified at the source level: the install
+            // goes through globalThis (so two injections in the same realm see
+            // the same object), and top-level `const TripStorage =` is gone
+            // (that declaration form throws on re-injection).
+            expect(TRIP_STORAGE_SRC).toMatch(/globalThis\.TripStorage\s*\?\?=\s*/);
+            expect(TRIP_STORAGE_SRC).not.toMatch(/^const\s+TripStorage\s*=/m);
+        });
+
+        it('re-executing the source against globalThis does not throw', () => {
+            // Indirect eval runs `code` in the realm's global scope (not the
+            // caller's eval scope). Two indirect-eval invocations share that
+            // scope, so a post-fix script must either install on globalThis
+            // or short-circuit on the second pass — the test enforces both.
+            const indirectEval = (0, eval);
+            const saved = globalThis.TripStorage;
+            delete globalThis.TripStorage;
+            try {
+                indirectEval(TRIP_STORAGE_SRC);
+                expect(globalThis.TripStorage).toBeDefined();
+                expect(typeof globalThis.TripStorage.getTrips).toBe('function');
+
+                // Second run — simulates shell-first-swap re-injection.
+                expect(() => indirectEval(TRIP_STORAGE_SRC)).not.toThrow();
+                expect(typeof globalThis.TripStorage.getTrips).toBe('function');
+            } finally {
+                globalThis.TripStorage = saved;
+            }
         });
     });
 });
