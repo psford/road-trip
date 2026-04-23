@@ -55,11 +55,16 @@
         // (postUI.js, mapUI.js) which do not query `head > script`.
         await _recreateScripts(scriptsInOrder, document.body);
 
-        // Task 4: Synthetic DOMContentLoaded for handlers attached during script execution.
-        // Scripts that self-init via document.readyState === 'complete' have already run;
-        // this dispatch covers handlers like postUI.js that listen unconditionally.
-        document.dispatchEvent(new Event('DOMContentLoaded', { bubbles: true, cancelable: true }));
-        window.dispatchEvent(new Event('load'));
+        // Clear lifecycle handlers accumulated from prior swaps BEFORE dispatching the
+        // new page-load event, so a stale handler does not fire on the new page body.
+        // ListenerShim is loaded earlier in src/bootstrap/index.html.
+        if (globalThis.ListenerShim && typeof globalThis.ListenerShim.clearPageLifecycleListeners === 'function') {
+            globalThis.ListenerShim.clearPageLifecycleListeners();
+        }
+
+        // Custom page-load event (replaces synthetic DOMContentLoaded + window.load).
+        // Page scripts register via RoadTrip.onPageLoad(...) in Phase 2.
+        document.dispatchEvent(new Event('app:page-load', { bubbles: true, cancelable: true }));
 
         // AC2.3: notify TripStorage that a saved-trip URL was opened.
         // Defensive: TripStorage may not be loaded; markOpened may throw on storage error.
