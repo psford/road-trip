@@ -5,26 +5,55 @@
     // Module contract). Exposed as _APP_BASE for test inspection, not configuration.
     const APP_BASE = 'https://app-roadtripmap-prod.azurewebsites.net/';
 
+    // Module-scoped registry of external script srcs that have been injected
+    // into this JS realm. Phase 3 (ios-shell-hardening.AC1) — prevents duplicate-
+    // const cascade when a cross-page swap tries to re-inject an already-executed
+    // script. Inline scripts are NOT tracked here (by design — they can be page-
+    // local and have no identity to dedup against).
+    const _executedScriptSrcs = new Set();
+
+    function _absolutizeSrc(src) {
+        try { return new URL(src, APP_BASE).href; } catch { return src; }
+    }
+
     async function _recreateScripts(scriptsInOrder, parentNode) {
         for (const oldScript of scriptsInOrder) {
+            const rawSrc = oldScript.getAttribute('src');
+
+            // External script path (has a non-empty src attribute)
+            if (rawSrc) {
+                const absoluteSrc = _absolutizeSrc(rawSrc);
+                if (_executedScriptSrcs.has(absoluteSrc)) {
+                    // Already executed in this realm (previous page, or earlier in this page).
+                    // Skip recreation to avoid the duplicate-const cascade.
+                    continue;
+                }
+                const fresh = document.createElement('script');
+                for (const attr of oldScript.attributes) {
+                    fresh.setAttribute(attr.name, attr.value);
+                }
+                await new Promise((resolve) => {
+                    fresh.onload = () => {
+                        // Only add on successful load. onerror does not guarantee the
+                        // script's top-level declarations executed, so we allow retry.
+                        _executedScriptSrcs.add(absoluteSrc);
+                        resolve();
+                    };
+                    fresh.onerror = () => resolve();
+                    parentNode.appendChild(fresh);
+                });
+                continue;
+            }
+
+            // Inline script path (no src). Re-executes on every swap by design —
+            // wwwroot pages must avoid top-level const/let in inline <script> (see
+            // Subcomponent B in this phase for the two pages we fixed up-front).
             const fresh = document.createElement('script');
             for (const attr of oldScript.attributes) {
                 fresh.setAttribute(attr.name, attr.value);
             }
-            if (oldScript.src) {
-                // External script: await load or error before continuing (sequential).
-                // jsdom won't fetch remote URLs, so onerror fires; that's fine for unit tests.
-                // Real execution is verified by Task 1's spike + Phase 7's on-device matrix.
-                await new Promise((resolve) => {
-                    fresh.onload = () => resolve();
-                    fresh.onerror = () => resolve();
-                    parentNode.appendChild(fresh);
-                });
-            } else {
-                // Inline script: textContent set, append. Browsers execute synchronously on append.
-                fresh.textContent = oldScript.textContent;
-                parentNode.appendChild(fresh);
-            }
+            fresh.textContent = oldScript.textContent;
+            parentNode.appendChild(fresh);
         }
     }
 
@@ -85,5 +114,5 @@
         await _swapFromHtml(html, url);
     }
 
-    globalThis.FetchAndSwap = { fetchAndSwap, _swapFromHtml, _APP_BASE: APP_BASE };
+    globalThis.FetchAndSwap = { fetchAndSwap, _swapFromHtml, _APP_BASE: APP_BASE, _executedScriptSrcs };
 })();
