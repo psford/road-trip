@@ -2,12 +2,14 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <meta name="robots" content="noindex, nofollow">
+    <script src="/js/roadTrip.js"></script>
+    <script src="/js/offlineError.js"></script>
     <title>Create a Road Trip - Road Trip Map</title>
     <link rel="stylesheet" href="/css/styles.css?v=4">
 </head>
-<body>
+<body data-page="create">
     <div class="container">
         <div class="page-header">
             <nav class="nav">
@@ -31,6 +33,7 @@
                         placeholder="e.g., Cross Country 2026"
                         required
                         autocomplete="off"
+                        autocapitalize="words"
                     >
                 </div>
 
@@ -40,6 +43,7 @@
                         id="tripDescription"
                         name="description"
                         placeholder="e.g., A summer road trip across the USA"
+                        autocapitalize="sentences"
                     ></textarea>
                 </div>
 
@@ -76,9 +80,18 @@
                 TripStorage.saveTrip(name, result.postUrl, result.viewUrl || '');
 
                 // Redirect straight to the post page
-                window.location.href = result.postUrl;
+                if (typeof FetchAndSwap !== 'undefined' && typeof FetchAndSwap.fetchAndSwap === 'function') {
+                    // pushState resolves against document.baseURI (APP_BASE via <base href>).
+                    // In the iOS shell at capacitor://localhost/ that's cross-origin and
+                    // SecurityErrors. Resolve against window.location.href to stay same-origin.
+                    const pushUrl = new URL(result.postUrl, window.location.href).href;
+                    history.pushState({}, '', pushUrl);
+                    FetchAndSwap.fetchAndSwap(result.postUrl);
+                } else {
+                    window.location.href = result.postUrl;
+                }
             } catch (error) {
-                errorEl.textContent = error.message || 'Failed to create trip';
+                errorEl.textContent = OfflineError.friendlyMessage(error, 'create');
                 errorEl.classList.remove('hidden');
                 const btn = document.getElementById('createButton');
                 btn.disabled = false;

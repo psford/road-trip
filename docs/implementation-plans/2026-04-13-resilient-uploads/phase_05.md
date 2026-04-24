@@ -1,3 +1,20 @@
+> ## ⚠️ SUPERSEDED — bootstrap-loader work
+>
+> The iOS bootstrap-loader work that was Tasks 10–11 of this phase has been **superseded** by [docs/design-plans/2026-04-19-ios-offline-shell.md](../../design-plans/2026-04-19-ios-offline-shell.md) and its implementation plan at [docs/implementation-plans/2026-04-19-ios-offline-shell/](../2026-04-19-ios-offline-shell/).
+>
+> **Why superseded:** The original architecture injected a pre-built JavaScript bundle into a bare-HTML shell (`src/bootstrap/index.html` + `loader.js`). On real iOS WKWebView this hit two architectural blockers:
+>
+> 1. Page scripts expected server-rendered DOM elements that didn't exist in the bare shell (the bundle's app.js called `document.getElementById('addPhotoButton')` etc., and got `null`).
+> 2. Page-script `DOMContentLoaded` listeners attached AFTER the event had already fired in the shell, so they never received it and failed to initialize.
+>
+> See `memory: project_road_trip_phase5_paused.md` for context.
+>
+> **Status of this phase:**
+> - **Tasks 1–9 + Task 12** (WSL-side bundle build, manifest format, CORS policy, automated tests, `npm run build:bundle`) remain valid. The `/bundle/*` server route stays live as a no-op for now (out of scope to remove).
+> - **Tasks 10–11** (TestFlight build + on-device device-smoke matrix for AC9.* / AC10.*) are **NOT executed** under this plan. Their replacements live in the iOS Offline Shell plan: Phase 5 Task 6 (local smoke) + Phase 7 (on-device device-smoke matrix against the new `ios-offline-shell.AC1.*–AC4.*`).
+>
+> ---
+
 # Resilient Photo Uploads — Phase 5: Capacitor Shell, Bundled Bootstrap, Azure-Hosted Bundle
 
 > ⚠️ **Mid-phase resume point.** Tasks 0, 1, 2, 3, 4, and 8 completed 2026-04-18 (commits `48e3954`…`cb5c245`). Remaining container-side tasks: **5, 6, 7, 9, 12**. Tasks 10–11 are Mac-only and stay deferred. **Read [`RESUME.md`](./RESUME.md) before dispatching any subagent.**

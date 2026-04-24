@@ -1,3 +1,7 @@
+## macOS
+.DS_Store
+**/.DS_Store
+
 ## .NET
 bin/
 obj/
@@ -36,3 +40,5 @@ test-output.log
 src/RoadTripMap/wwwroot/bundle/*.js
 src/RoadTripMap/wwwroot/bundle/*.css
 src/RoadTripMap/wwwroot/bundle/manifest.json
+ios/App/App.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/configuration/
+ios/App/App.xcodeproj/xcuserdata/

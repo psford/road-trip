@@ -76,14 +76,21 @@ beforeAll(() => {
     };
 
     // Load modules
+    loadGlobal('roadTrip.js');
+    loadGlobal('offlineError.js');
     loadGlobal('featureFlags.js');
     loadGlobal('api.js');
     loadGlobal('mapCache.js');
     loadGlobal('uploadUtils.js');
     loadGlobal('uploadSemaphore.js');
     loadGlobal('storageAdapter.js');
+    loadGlobal('tripStorage.js');
     loadGlobal('uploadTelemetry.js');
     loadGlobal('uploadTransport.js');
+    // NOTE: versionProtocol and postUI register persistent `app:page-load` listeners
+    // that survive the entire vitest run (deferred to Phase 3 for structural fix via
+    // script-src dedup). Safe for now: VersionProtocol.init() and PostUI.init() return
+    // early if preconditions absent (meta[name=client-version], valid token).
     loadGlobal('versionProtocol.js');
     loadGlobal('imageProcessor.js');
     loadGlobal('uploadQueue.js');
@@ -107,4 +114,6 @@ afterEach(() => {
     // Clear DOM modifications made during test
     document.body.innerHTML = '';
     document.head.innerHTML = '';
+    // Reset body with minimal data-page for next test
+    document.body.dataset.page = 'home';
 });

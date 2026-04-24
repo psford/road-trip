@@ -187,7 +187,7 @@ const MapUI = {
 
     async sharePhoto(url, title) {
         try {
-            const fullUrl = window.location.origin + url;
+            const fullUrl = RoadTrip.appOrigin() + url;
             await navigator.share({ title: title || 'Photo', url: fullUrl });
         } catch (err) {
             if (err.name !== 'AbortError') console.warn('Share failed:', err);
