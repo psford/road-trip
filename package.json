@@ -10,7 +10,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
-    "build:bundle": "node scripts/build-bundle.js"
+    "build:bundle": "node scripts/build-bundle.js",
+    "prepare:ios-shell": "cp src/RoadTripMap/wwwroot/js/tripStorage.js src/bootstrap/tripStorage.js"
   },
   "keywords": [],
   "author": "",

@@ -23,12 +23,35 @@
 
 /* ---- Tap target minimums (Apple HIG: 44x44 pt) ---- */
 .platform-ios .upload-panel__retry,
+.platform-ios .upload-panel__pin-drop,
 .platform-ios .upload-panel__discard,
+.platform-ios .upload-panel__toggle,
 .platform-ios .resume-banner button,
 .platform-ios .photo-carousel__control,
+.platform-ios .carousel-action-btn,
+.platform-ios .photo-popup-delete,
+.platform-ios .copy-button,
+.platform-ios .map-back,
+.platform-ios .poi-action-btn,
 .platform-ios button {
   min-height: 44px;
   min-width: 44px;
+}
+
+.platform-ios .upload-panel__retry,
+.platform-ios .upload-panel__pin-drop,
+.platform-ios .upload-panel__discard {
+    /* Baseline in styles.css is `padding: 4px 8px`, which leaves the visible
+       button ~14×20 inside a 44×44 hit zone (Task 1). Widen padding so the
+       button's visual bounds match the tap zone on iOS. */
+    padding: 12px 16px;
+}
+
+.platform-ios .upload-panel__body {
+    /* iOS momentum scrolling — makes the list feel native. Baseline in
+       styles.css already has `overflow-y: auto` and `max-height: 300px`,
+       so this property alone does the work. */
+    -webkit-overflow-scrolling: touch;
 }
 
 /* ---- System font stack ---- */
@@ -53,4 +76,65 @@
 /* WebKit auto-scales font sizes on rotate/zoom; opt out for consistent layout. */
 .platform-ios body {
   -webkit-text-size-adjust: 100%;
+}
+
+/* AC2.4: glasses indicator for view-only saved trips on iOS shell. */
+.platform-ios .my-trip-card[data-role="viewer"]::before {
+    content: '👓';
+    margin-right: 0.5em;
+    font-size: 1.2em;
+    vertical-align: middle;
+}
+
+/*
+ * Phase 6: safe-area insets for notched iPhones / home indicators.
+ * All rules are scoped under .platform-ios so regular-browser users see no change.
+ * env(safe-area-inset-*) returns 0 on non-notched devices; rules remain benign.
+ */
+
+/* Top-inset: elements pinned (or close) to the top of the viewport. */
+
+.platform-ios .map-header {
+    /* Fixed header at top: 0. Push content down by the status-bar height. */
+    padding-top: env(safe-area-inset-top);
+}
+
+.platform-ios .page-header {
+    /* Non-fixed header; additive to the existing padding in styles.css. */
+    padding-top: calc(var(--space-xs) + env(safe-area-inset-top));
+}
+
+.platform-ios .hero {
+    /* Non-fixed hero; additive to the existing padding in styles.css. */
+    padding-top: calc(var(--space-xl) + env(safe-area-inset-top));
+}
+
+.platform-ios .resume-banner {
+    /* Sticky at top: 0. Push banner body below the status bar. */
+    padding-top: calc(var(--space-sm) + env(safe-area-inset-top));
+}
+
+/* Bottom-inset: elements pinned to the bottom of the viewport. */
+
+.platform-ios .toast-container {
+    /* Fixed, bottom: var(--space-md). Lift above the home indicator. */
+    bottom: calc(var(--space-md) + env(safe-area-inset-bottom));
+}
+
+.platform-ios .view-carousel-container {
+    /* Fixed, bottom: 0; existing padding top/bottom is var(--space-xs). Additive. */
+    padding-bottom: calc(var(--space-xs) + env(safe-area-inset-bottom));
+}
+
+.platform-ios .map-control {
+    /* Fixed at bottom: 30px (hardcoded). Lift above the home indicator. */
+    bottom: calc(30px + env(safe-area-inset-bottom));
+}
+
+/* Both top and bottom: fullscreen modal overlays. */
+
+.platform-ios .homescreen-modal-overlay {
+    /* inset: 0 fullscreen; pad the inner viewport to avoid notch + home indicator overlap. */
+    padding-top: calc(var(--space-md) + env(safe-area-inset-top));
+    padding-bottom: calc(var(--space-md) + env(safe-area-inset-bottom));
 }

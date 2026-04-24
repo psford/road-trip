@@ -141,7 +141,19 @@ const API = {
      * @returns {Promise<PhotoResponse[]>}
      */
     async getTripPhotos(viewToken) {
-        const response = await fetch(`${this.baseUrl}/trips/view/${viewToken}/photos`);
+        const url = `${this.baseUrl}/trips/view/${viewToken}/photos`;
+
+        // iOS shell path: route through CachedFetch for cache-first + bg revalidate.
+        // Bypass list never includes /api/trips/view — but check defensively so any
+        // future bypass-regex change doesn't silently skip caching here.
+        if (globalThis.CachedFetch && !globalThis.CachedFetch.isBypassed(url)) {
+            const { response } = await globalThis.CachedFetch.cachedFetch(url, { asJson: true });
+            if (!response.ok) throw new Error('Failed to load photos');
+            return response.json();
+        }
+
+        // Regular-browser path: CachedFetch is iOS-shell-only. Fall back to raw fetch.
+        const response = await fetch(url);
         if (!response.ok) throw new Error('Failed to load photos');
         return response.json();
     },

@@ -120,12 +120,8 @@ const VersionProtocol = {
     }
 };
 
-// Auto-initialize on page load
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => {
-        VersionProtocol.init();
-    });
-} else {
-    // Already loaded
+// Auto-initialize on every page load (cross-cutting). RoadTrip.onPageLoad
+// handles the already-loaded case via a microtask catch-up on late registration.
+RoadTrip.onPageLoad('*', () => {
     VersionProtocol.init();
-}
+});

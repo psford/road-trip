@@ -229,7 +229,7 @@ const PostUI = {
             // Show view link for sharing
             if (trip.viewUrl) {
                 const section = document.getElementById('viewLinkSection');
-                const origin = window.location.origin;
+                const origin = RoadTrip.appOrigin();
                 document.getElementById('viewUrlValue').textContent = origin + trip.viewUrl;
                 section.style.display = '';
                 document.getElementById('copyViewLink').addEventListener('click', () => {
@@ -938,7 +938,7 @@ const PostUI = {
             });
         } catch (err) {
             console.error('Error loading photos:', err);
-            this.showToast('Failed to load photos', 'error');
+            this.showToast(OfflineError.friendlyMessage(err, 'photos'), 'error');
         }
     },
 
@@ -1268,8 +1268,9 @@ const PostUI = {
     }
 };
 
-// Initialize when page loads
-document.addEventListener('DOMContentLoaded', () => {
+// Initialize when page loads (iOS shell dispatches app:page-load after swap;
+// regular browsers fire it via RoadTrip's DOMContentLoaded bridge).
+RoadTrip.onPageLoad('post', () => {
     // Extract secret token from URL
     const pathParts = window.location.pathname.split('/');
     const secretToken = pathParts[pathParts.length - 1];
