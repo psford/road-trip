@@ -13,11 +13,9 @@ Deploy triggers [.github/workflows/deploy.yml](../../../.github/workflows/deploy
 
 ## Step 1: capture the current tag (before deploy)
 
-Do this right before you click "Run workflow" so you have a verified good tag to go back to.
+Done on 2026-04-23 before the iOS-shell-hardening deploy.
 
 ```bash
-az login   # if the session has expired
-
 az webapp config show \
   --name app-roadtripmap-prod \
   --resource-group rg-roadtripmap-prod \
@@ -25,13 +23,15 @@ az webapp config show \
   -o tsv
 ```
 
-Expected output:
+Output:
 
 ```
-DOCKER|acrstockanalyzerer34ug.azurecr.io/roadtripmap:prod-<N>
+DOCKER|acrstockanalyzerer34ug.azurecr.io/roadtripmap:prod-47
 ```
 
-Write down the `prod-<N>` tag. That's the rollback target.
+**Rollback target: `prod-47`.** If the upcoming deploy breaks the web app, Step 3 swaps the live image back to this tag.
+
+Re-run this command before any future deploy to capture a fresh target.
 
 ## Step 2: deploy
 
@@ -51,11 +51,10 @@ The workflow's built-in smoke tests ([deploy.yml:219-252](../../../.github/workf
 Swap the live image back to the previous tag. App Service reuses the registry credentials from the prior deploy, so no password is needed.
 
 ```bash
-# Replace <PREVIOUS_TAG> with the tag you captured in Step 1.
 az webapp config container set \
   --name app-roadtripmap-prod \
   --resource-group rg-roadtripmap-prod \
-  --container-image-name acrstockanalyzerer34ug.azurecr.io/roadtripmap:<PREVIOUS_TAG>
+  --container-image-name acrstockanalyzerer34ug.azurecr.io/roadtripmap:prod-47
 
 az webapp restart \
   --name app-roadtripmap-prod \
@@ -93,7 +92,7 @@ ACR_PASSWORD=$(az acr credential show \
 az webapp config container set \
   --name app-roadtripmap-prod \
   --resource-group rg-roadtripmap-prod \
-  --container-image-name acrstockanalyzerer34ug.azurecr.io/roadtripmap:<PREVIOUS_TAG> \
+  --container-image-name acrstockanalyzerer34ug.azurecr.io/roadtripmap:prod-47 \
   --container-registry-url https://acrstockanalyzerer34ug.azurecr.io \
   --container-registry-user acrstockanalyzerer34ug \
   --container-registry-password "$ACR_PASSWORD"
