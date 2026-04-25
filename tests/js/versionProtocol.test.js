@@ -4,6 +4,30 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const VERSION_PROTOCOL_SRC = fs.readFileSync(
+    path.resolve(__dirname, '../../src/RoadTripMap/wwwroot/js/versionProtocol.js'),
+    'utf8'
+);
+
+// Eval the module into globalThis and run init(). Phase 2 migrated the
+// module-bottom auto-init from a raw `DOMContentLoaded` listener onto
+// `RoadTrip.onPageLoad('*', ...)`, so RoadTrip must be stubbed before the
+// module's own bottom call runs, and init() must be called manually because
+// the onPageLoad handler doesn't fire on its own in this test harness.
+function loadAndInit() {
+    delete globalThis.VersionProtocol;
+    if (!globalThis.RoadTrip) {
+        globalThis.RoadTrip = { onPageLoad: vi.fn() };
+    }
+    const evalable = VERSION_PROTOCOL_SRC.replace(/^const VersionProtocol = /m, 'globalThis.VersionProtocol = ');
+    eval(evalable);
+    globalThis.VersionProtocol.init();
+}
 
 describe('VersionProtocol', () => {
     let reloadRequiredFired;
@@ -14,6 +38,7 @@ describe('VersionProtocol', () => {
     beforeEach(() => {
         // Reset module state by removing it from globalThis
         delete globalThis.VersionProtocol;
+        delete globalThis.RoadTrip;
 
         // Clear any listeners
         reloadRequiredFired = false;
@@ -49,13 +74,11 @@ describe('VersionProtocol', () => {
 
         // Clean up
         delete globalThis.VersionProtocol;
+        delete globalThis.RoadTrip;
     });
 
     it('reads client version from meta tag on load', () => {
-        // Load the module
-        const code = require('fs').readFileSync(require('path').resolve('/workspaces/road-trip/src/RoadTripMap/wwwroot/js/versionProtocol.js'), 'utf-8');
-        let modifiedCode = code.replace(/^const (\w+) = /gm, 'globalThis.$1 = ');
-        eval(modifiedCode);
+        loadAndInit();
 
         expect(globalThis.VersionProtocol).toBeDefined();
         expect(globalThis.VersionProtocol.currentClientVersion).toBe('1.0.0');
@@ -70,9 +93,7 @@ describe('VersionProtocol', () => {
             json: async () => ({})
         }));
 
-        const code = require('fs').readFileSync(require('path').resolve('/workspaces/road-trip/src/RoadTripMap/wwwroot/js/versionProtocol.js'), 'utf-8');
-        let modifiedCode = code.replace(/^const (\w+) = /gm, 'globalThis.$1 = ');
-        eval(modifiedCode);
+        loadAndInit();
 
         // Make a fetch call
         await fetch('/api/test');
@@ -93,9 +114,7 @@ describe('VersionProtocol', () => {
             json: async () => ({})
         }));
 
-        const code = require('fs').readFileSync(require('path').resolve('/workspaces/road-trip/src/RoadTripMap/wwwroot/js/versionProtocol.js'), 'utf-8');
-        let modifiedCode = code.replace(/^const (\w+) = /gm, 'globalThis.$1 = ');
-        eval(modifiedCode);
+        loadAndInit();
 
         // Make a fetch call
         await fetch('/api/test');
@@ -120,9 +139,7 @@ describe('VersionProtocol', () => {
             json: async () => ({})
         }));
 
-        const code = require('fs').readFileSync(require('path').resolve('/workspaces/road-trip/src/RoadTripMap/wwwroot/js/versionProtocol.js'), 'utf-8');
-        let modifiedCode = code.replace(/^const (\w+) = /gm, 'globalThis.$1 = ');
-        eval(modifiedCode);
+        loadAndInit();
 
         // Make a fetch call
         await fetch('/api/test');
@@ -153,9 +170,7 @@ describe('VersionProtocol', () => {
             json: async () => ({})
         }));
 
-        const code = require('fs').readFileSync(require('path').resolve('/workspaces/road-trip/src/RoadTripMap/wwwroot/js/versionProtocol.js'), 'utf-8');
-        let modifiedCode = code.replace(/^const (\w+) = /gm, 'globalThis.$1 = ');
-        eval(modifiedCode);
+        loadAndInit();
 
         // Make multiple fetch calls
         await fetch('/api/test1');
@@ -178,9 +193,7 @@ describe('VersionProtocol', () => {
             json: async () => ({})
         }));
 
-        const code = require('fs').readFileSync(require('path').resolve('/workspaces/road-trip/src/RoadTripMap/wwwroot/js/versionProtocol.js'), 'utf-8');
-        let modifiedCode = code.replace(/^const (\w+) = /gm, 'globalThis.$1 = ');
-        eval(modifiedCode);
+        loadAndInit();
 
         // Make a fetch call
         await fetch('/api/test');
@@ -193,9 +206,7 @@ describe('VersionProtocol', () => {
         // Mock querySelector to return null (no meta tag)
         document.querySelector.mockReturnValue(null);
 
-        const code = require('fs').readFileSync(require('path').resolve('/workspaces/road-trip/src/RoadTripMap/wwwroot/js/versionProtocol.js'), 'utf-8');
-        let modifiedCode = code.replace(/^const (\w+) = /gm, 'globalThis.$1 = ');
-        eval(modifiedCode);
+        loadAndInit();
 
         // Module should load without error
         expect(globalThis.VersionProtocol).toBeDefined();
@@ -204,9 +215,7 @@ describe('VersionProtocol', () => {
     });
 
     it('compareSemver returns correct values', () => {
-        const code = require('fs').readFileSync(require('path').resolve('/workspaces/road-trip/src/RoadTripMap/wwwroot/js/versionProtocol.js'), 'utf-8');
-        let modifiedCode = code.replace(/^const (\w+) = /gm, 'globalThis.$1 = ');
-        eval(modifiedCode);
+        loadAndInit();
 
         // Test compareSemver
         expect(globalThis.VersionProtocol.compareSemver('1.0.0', '1.0.0')).toBe(0);
