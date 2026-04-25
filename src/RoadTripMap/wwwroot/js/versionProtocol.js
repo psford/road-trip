@@ -68,9 +68,21 @@ const VersionProtocol = {
     },
 
     /**
-     * Wrap fetch to inspect response headers
+     * Wrap fetch to inspect response headers.
+     *
+     * Idempotent: Phase 2 routes init() through RoadTrip.onPageLoad('*', ...),
+     * so it re-fires on every cross-page swap. Without this guard, each call
+     * captures the current (already-wrapped) globalThis.fetch as "originalFetch"
+     * and then points its replacement at that wrapper — so the new wrapper's
+     * `this.originalFetch.apply(...)` eventually invokes itself. A few swaps
+     * later any fetch call throws "Maximum call stack size exceeded" from
+     * deep in the wrapper chain (seen on device via postUI.loadTripInfo →
+     * cachedFetch._writeThrough → wrapped fetch → wrapped fetch → ...).
      */
     wrapFetch() {
+        if (this._fetchWrapped) return;
+        this._fetchWrapped = true;
+
         this.originalFetch = globalThis.fetch;
 
         globalThis.fetch = async (...args) => {
