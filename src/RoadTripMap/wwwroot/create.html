@@ -119,6 +119,9 @@
                     window.location.href = result.postUrl;
                 }
             } catch (error) {
+                // Surface the full error (with stack) to the Web Inspector.
+                // The banner shows the friendly copy; the console shows why.
+                console.error('[create-flow] submit failed:', error);
                 errorEl.textContent = OfflineError.friendlyMessage(error, 'create');
                 errorEl.classList.remove('hidden');
                 const btn = document.getElementById('createButton');
