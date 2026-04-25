@@ -212,7 +212,30 @@ app.Use(async (context, next) =>
 app.UseDefaultFiles();
 var contentTypeProvider = new Microsoft.AspNetCore.StaticFiles.FileExtensionContentTypeProvider();
 contentTypeProvider.Mappings[".geojson"] = "application/geo+json";
-app.UseStaticFiles(new StaticFileOptions { ContentTypeProvider = contentTypeProvider });
+app.UseStaticFiles(new StaticFileOptions
+{
+    ContentTypeProvider = contentTypeProvider,
+    OnPrepareResponse = ctx =>
+    {
+        // Force WKWebView (and any other client) to revalidate /js/* and /css/*
+        // on every request so on-device deploys actually reach users. Without
+        // this, NSURLCache holds JS files between deploys per its own heuristic
+        // freshness rules (no Cache-Control header → "fresh enough" indefinitely),
+        // which is how stale `versionProtocol.js` survived the prior deploy and
+        // forced an uninstall/reinstall to clear. `no-cache` keeps the body
+        // cached but requires conditional GET (If-None-Match against the ETag
+        // ASP.NET Core static-files middleware already emits): cheap 304s on
+        // unchanged files, fresh 200s on the next deploy. HTML pages are not
+        // included here — they go through the iOS shell's IDB CachedFetch layer,
+        // which has its own background-revalidate flow.
+        var path = ctx.Context.Request.Path.Value ?? "";
+        if (path.StartsWith("/js/", StringComparison.OrdinalIgnoreCase)
+            || path.StartsWith("/css/", StringComparison.OrdinalIgnoreCase))
+        {
+            ctx.Context.Response.Headers["Cache-Control"] = "no-cache";
+        }
+    }
+});
 
 // Middleware to inject feature flags into post.html before returning it.
 // Only intercepts exact /post/{token} page requests (not /api/post/* routes).
