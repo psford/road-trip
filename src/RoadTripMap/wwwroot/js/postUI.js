@@ -29,11 +29,16 @@ const PostUI = {
 
         // Wire up event listeners
         document.getElementById('addPhotoButton').addEventListener('click', () => {
+            console.log('[postUI] addPhotoButton clicked → opening file input');
             document.getElementById('fileInput').click();
         });
 
         document.getElementById('fileInput').addEventListener('change', (e) => {
             const files = e.target.files;
+            console.log('[postUI] fileInput change fired', {
+                numFiles: files ? files.length : 'undefined',
+                firstName: files && files[0] ? files[0].name : null
+            });
             if (files.length === 0) return;
             if (files.length === 1) {
                 this.onFileSelected(files[0]);
@@ -307,14 +312,25 @@ const PostUI = {
     },
 
     async onFileSelected(file) {
+        console.log('[postUI] onFileSelected entry', {
+            name: file && file.name,
+            size: file && file.size,
+            type: file && file.type
+        });
         try {
             // Extract metadata (EXIF + geocoding)
+            console.log('[postUI] calling extractPhotoMetadata...');
             const metadata = await PostService.extractPhotoMetadata(file);
+            console.log('[postUI] extractPhotoMetadata returned', {
+                hasGps: !!metadata.gps,
+                hasTimestamp: !!metadata.timestamp,
+                placeName: metadata.placeName
+            });
             this.currentFile = file;
             this.currentMetadata = metadata;
 
             if (this.pendingPoiLocation) {
-                // User selected a POI location before choosing a photo — use it
+                console.log('[postUI] branch: pendingPoiLocation → showPreview');
                 const { lat, lng, name } = this.pendingPoiLocation;
                 this.pendingPoiLocation = null;
                 this.currentLat = lat;
@@ -323,21 +339,21 @@ const PostUI = {
                 metadata.placeName = name;
                 this.showPreview(file, metadata);
             } else if (metadata.gps) {
-                // Has GPS data - show preview directly
+                console.log('[postUI] branch: hasGps → showPreview');
                 this.currentLat = metadata.gps.latitude;
                 this.currentLng = metadata.gps.longitude;
                 this.showPreview(file, metadata);
             } else if (this.isFreshCameraCapture(file)) {
-                // Fresh camera capture with no EXIF GPS (iOS strips it)
-                // Prompt user to use device location — must be a direct user gesture
+                console.log('[postUI] branch: freshCameraCapture → showLocationPrompt');
                 this.showLocationPrompt(file, metadata);
                 return;
             } else {
-                // Library photo with no GPS - show pin-drop map
+                console.log('[postUI] branch: noGps + library → showPinDropMap');
                 this.showPinDropMap(file, metadata);
             }
+            console.log('[postUI] onFileSelected branch returned');
         } catch (err) {
-            console.error('Error selecting photo:', err);
+            console.error('[postUI] onFileSelected threw:', err);
             this.showToast('Error processing photo: ' + err.message, 'error');
         }
     },
