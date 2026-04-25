@@ -79,15 +79,43 @@
                 // Save trip to localStorage for My Trips
                 TripStorage.saveTrip(name, result.postUrl, result.viewUrl || '');
 
-                // Redirect straight to the post page
-                if (typeof FetchAndSwap !== 'undefined' && typeof FetchAndSwap.fetchAndSwap === 'function') {
-                    // pushState resolves against document.baseURI (APP_BASE via <base href>).
-                    // In the iOS shell at capacitor://localhost/ that's cross-origin and
-                    // SecurityErrors. Resolve against window.location.href to stay same-origin.
+                // Redirect straight to the post page.
+                //
+                // In the Capacitor shell, window.location.href is a cross-origin
+                // navigation (shell origin is capacitor://localhost, App Service
+                // origin is https://app-roadtripmap-prod.azurewebsites.net) and
+                // WKWebView hands the URL off to Safari. That "kick to external
+                // browser" is the bug we explicitly defend against here.
+                const hasFetchAndSwap = typeof FetchAndSwap !== 'undefined'
+                    && typeof FetchAndSwap.fetchAndSwap === 'function';
+                const inShell = typeof RoadTrip !== 'undefined'
+                    && typeof RoadTrip.isNativePlatform === 'function'
+                    && RoadTrip.isNativePlatform();
+
+                if (hasFetchAndSwap) {
+                    // pushState resolves against document.baseURI (APP_BASE via
+                    // <base href>). In the shell at capacitor://localhost/ that's
+                    // cross-origin and pushState SecurityErrors. Resolve against
+                    // window.location.href to stay same-origin.
+                    const prevUrl = window.location.href;
                     const pushUrl = new URL(result.postUrl, window.location.href).href;
                     history.pushState({}, '', pushUrl);
-                    FetchAndSwap.fetchAndSwap(result.postUrl);
+                    try {
+                        await FetchAndSwap.fetchAndSwap(result.postUrl);
+                    } catch (navErr) {
+                        // Swap failed — roll history back so the user isn't left
+                        // on a URL that never rendered. Re-throw so the outer
+                        // catch surfaces a friendly error and re-enables the button.
+                        history.replaceState({}, '', prevUrl);
+                        throw navErr;
+                    }
+                } else if (inShell) {
+                    // In the shell without FetchAndSwap, window.location.href
+                    // would kick the user to Safari. Fail closed with an
+                    // actionable error instead.
+                    throw new Error('Navigation unavailable in shell. Please reopen the app and try again.');
                 } else {
+                    // Regular browser: a full-document navigation stays same-origin.
                     window.location.href = result.postUrl;
                 }
             } catch (error) {

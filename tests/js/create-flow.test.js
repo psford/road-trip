@@ -293,4 +293,130 @@ describe('create-flow', () => {
             expect(errorEl.textContent).toBe('Trip name required');
         });
     });
+
+    describe('in-shell navigation hardening', () => {
+        // If FetchAndSwap.fetchAndSwap rejects mid-swap, or if the shell is
+        // active but FetchAndSwap somehow isn't loaded, the old handler fell
+        // through to `window.location.href = postUrl` — a cross-origin
+        // navigation in the Capacitor shell that kicks the user to Safari.
+        beforeEach(() => setupOfflineTests());
+
+        it('rejected FetchAndSwap.fetchAndSwap shows friendly error, re-enables button, never sets window.location.href, and rolls back history', async () => {
+            globalThis.API = {
+                createTrip: vi.fn().mockResolvedValue({
+                    postUrl: '/post/test-token',
+                    viewUrl: '/trips/view-token'
+                })
+            };
+            globalThis.TripStorage = {
+                saveTrip: vi.fn().mockResolvedValue(undefined)
+            };
+
+            // In-shell: FetchAndSwap exists but rejects (e.g., server 500 mid-swap).
+            globalThis.FetchAndSwap = {
+                fetchAndSwap: vi.fn().mockRejectedValue(new Error('Server exploded'))
+            };
+
+            // Shell detection: RoadTrip.isNativePlatform() returns true.
+            globalThis.RoadTrip = { isNativePlatform: () => true };
+
+            // Detect any window.location.href assignment (that's what kicks to Safari).
+            let hrefSetValue = null;
+            const originalLocation = Object.getOwnPropertyDescriptor(window, 'location');
+            Object.defineProperty(window, 'location', {
+                configurable: true,
+                value: {
+                    _href: 'capacitor://localhost/create',
+                    get href() { return this._href; },
+                    set href(v) { hrefSetValue = v; }
+                }
+            });
+
+            // Spy on history so we can assert pushState + rollback via replaceState.
+            const pushSpy = vi.spyOn(history, 'pushState').mockImplementation(() => {});
+            const replaceSpy = vi.spyOn(history, 'replaceState').mockImplementation(() => {});
+
+            eval(INLINE_SCRIPT);
+
+            document.getElementById('createTripForm').dispatchEvent(
+                new SubmitEvent('submit', { bubbles: true, cancelable: true })
+            );
+            await new Promise((r) => setTimeout(r, 20));
+
+            // Window.location.href must never be set (would kick to Safari).
+            expect(hrefSetValue).toBeNull();
+
+            // Error shown to user.
+            const errorEl = document.getElementById('errorMessage');
+            expect(errorEl.classList.contains('hidden')).toBe(false);
+            expect(errorEl.textContent).toBe('Server exploded');
+
+            // Button re-enabled.
+            const btn = document.getElementById('createButton');
+            expect(btn.disabled).toBe(false);
+            expect(btn.textContent).toBe('Create Trip');
+
+            // History rolled back so the user isn't stranded on a URL that never rendered.
+            expect(pushSpy).toHaveBeenCalledWith({}, '', expect.stringMatching(/\/post\/test-token$/));
+            expect(replaceSpy).toHaveBeenCalledWith({}, '', 'capacitor://localhost/create');
+
+            // Cleanup
+            Object.defineProperty(window, 'location', {
+                configurable: true,
+                value: originalLocation.value
+            });
+        });
+
+        it('shell without FetchAndSwap fails closed — never sets window.location.href (which would kick to Safari)', async () => {
+            globalThis.API = {
+                createTrip: vi.fn().mockResolvedValue({
+                    postUrl: '/post/test-token',
+                    viewUrl: '/trips/view-token'
+                })
+            };
+            globalThis.TripStorage = {
+                saveTrip: vi.fn().mockResolvedValue(undefined)
+            };
+
+            // FetchAndSwap is absent AND we're in the shell (isNativePlatform true).
+            delete globalThis.FetchAndSwap;
+            globalThis.RoadTrip = { isNativePlatform: () => true };
+
+            let hrefSetValue = null;
+            const originalLocation = Object.getOwnPropertyDescriptor(window, 'location');
+            Object.defineProperty(window, 'location', {
+                configurable: true,
+                value: {
+                    _href: 'capacitor://localhost/create',
+                    get href() { return this._href; },
+                    set href(v) { hrefSetValue = v; }
+                }
+            });
+
+            eval(INLINE_SCRIPT);
+
+            document.getElementById('createTripForm').dispatchEvent(
+                new SubmitEvent('submit', { bubbles: true, cancelable: true })
+            );
+            await new Promise((r) => setTimeout(r, 20));
+
+            // Critical invariant: window.location.href NEVER assigned in shell context.
+            expect(hrefSetValue).toBeNull();
+
+            // User sees actionable error.
+            const errorEl = document.getElementById('errorMessage');
+            expect(errorEl.classList.contains('hidden')).toBe(false);
+            expect(errorEl.textContent).toMatch(/shell/i);
+
+            // Button is back to an actionable state.
+            const btn = document.getElementById('createButton');
+            expect(btn.disabled).toBe(false);
+
+            // Cleanup
+            Object.defineProperty(window, 'location', {
+                configurable: true,
+                value: originalLocation.value
+            });
+        });
+    });
 });
