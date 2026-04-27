@@ -1,6 +1,6 @@
 # iOS Shell Hardening — On-device Smoke Checklist
 
-Run on an iPhone 12 or newer with a notch and home indicator. Best to run with the Xcode device console attached so you can observe console output. Test both Wi-Fi and airplane-mode flows. The branch under test is `ios-offline-shell` after Phases 1–7 have landed.
+Run on an iPhone 12 or newer with a notch *or* Dynamic Island and a home indicator. The safe-area CSS uses `env(safe-area-inset-top)`/`env(safe-area-inset-bottom)`, which both notched and Dynamic Island devices populate the same way — either is a valid target for the visual checks in Section 5. Best to run with the Xcode device console attached so you can observe console output. Test both Wi-Fi and airplane-mode flows. The branch under test is `ios-offline-shell` after Phases 1–7 have landed.
 
 ## Signoff metadata
 
@@ -32,6 +32,8 @@ Run on an iPhone 12 or newer with a notch and home indicator. Best to run with t
 - [ ] Turn on airplane mode.
 - [ ] Fill out a trip name + description. Submit.
 - [ ] The form displays `"Can't create a trip while offline. Try again when you're back online."` in the error area. The button is re-enabled. No raw `"Load failed"` or other internal error string is visible.
+
+> **Known styling gap when navigating offline:** if you reload or navigate to `/create` *while already offline*, the page may render unstyled (CSS missing, `<a>` links blue, default browser button). The text content of AC4.3 is still what's under test — confirm the exact friendly copy renders even if the page looks bare. Root cause: `Cache-Control: no-cache` on `/css/*` forces revalidation, which fails offline; CSS bytes are on disk in NSURLCache but the cache spec forbids the WebView from serving them without contacting the origin. Fix is a separate offline-shell pre-caching design (out of scope for this plan).
 
 ## Section 4 — Offline trip-page photos (AC5.2, AC5.3, post-page toast)
 
