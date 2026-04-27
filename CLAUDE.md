@@ -1,6 +1,6 @@
 # Road Trip Photo Map
 
-Last verified: 2026-04-22
+Last verified: 2026-04-26
 
 ## Purpose
 
@@ -207,6 +207,22 @@ develop (work here) → PR → main (production)
 
 If main and develop diverge, merge develop into main via PR — never the reverse.
 
+### Who can do what (Claude vs Patrick)
+
+The rules differ depending on whether the change is going **to develop** or **to main**.
+
+| Action | Claude (after asking) | Patrick (final approval) |
+|--------|-----------------------|--------------------------|
+| Direct commit to develop (small fixes) | ✓ Ask first, then commit | — |
+| Open feature branch + PR → develop | ✓ Ask first, then `gh pr create` | — |
+| Merge a feature-branch PR into develop | ✓ Ask first, then `gh pr merge` | — |
+| Open develop → main PR | ✓ Ask first, then `gh pr create` | — |
+| Merge develop → main | ✗ Never | ✓ Patrick merges manually via GitHub web UI |
+| Run `deploy.yml` workflow | ✗ Never | ✓ Patrick triggers, then runs cap sync as needed |
+| Run `npx cap sync ios` / Xcode build | ✗ Never | ✓ Patrick runs locally |
+
+The "ask first" rule for develop-targeted actions still applies — Claude should describe what's about to happen and wait for explicit approval before any commit or merge. The point is to remove the busy-work of Patrick re-doing every develop merge through the GitHub UI, not to remove the human-in-the-loop check.
+
 ### PR Rules
 
 **Before Pushing:**
@@ -214,10 +230,15 @@ If main and develop diverge, merge develop into main via PR — never the revers
 2. Verify your branch against main (if using a feature branch)
 3. Test locally: `dotnet build RoadTripMap.sln --configuration Release && dotnet test RoadTripMap.sln --configuration Release --no-build`
 
-**After Creating a PR:**
+**After Creating a PR targeting `develop`:**
 1. Wait for CI to pass (roadtrip-ci.yml)
-2. Patrick reviews and merges via GitHub web interface
-3. Never use `gh pr merge` — Patrick merges only
+2. Claude may merge via `gh pr merge` after asking for approval
+3. Prefer `--squash` for feature branches with intermediate commits; `--merge` is fine for clean histories
+
+**After Creating a PR targeting `main`:**
+1. Wait for CI to pass (roadtrip-ci.yml)
+2. Patrick approves manually by merging through the GitHub web UI
+3. Claude must NEVER use `gh pr merge` against main
 
 **Merged PRs:** Once closed, a PR is DEAD. After any merge:
 1. Check: `gh pr list --head develop --base main --state open`
