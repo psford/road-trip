@@ -24,6 +24,10 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>Road Trip needs camera access so you can take photos directly into your trip map.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Road Trip uses your location to tag a photo when its EXIF data doesn't include GPS.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Road Trip needs access to Photos to attach images to your trip map.</string>
 	<key>UILaunchStoryboardName</key>
