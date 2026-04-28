@@ -4,9 +4,10 @@
 
 (function() {
   const DB_NAME = 'RoadTripPageCache';
-  const DB_VERSION = 1;
+  const DB_VERSION = 2;
   const STORE_PAGES = 'pages';
   const STORE_API = 'api';
+  const STORE_ASSETS = 'assets';
   const BYPASS_REGEX = /^\/api\/(poi|park-boundaries)(?:[/?]|$)/;
   const APP_BASE = 'https://app-roadtripmap-prod.azurewebsites.net';
 
@@ -45,6 +46,9 @@
           }
           if (!db.objectStoreNames.contains(STORE_API)) {
             db.createObjectStore(STORE_API);
+          }
+          if (!db.objectStoreNames.contains(STORE_ASSETS)) {
+            db.createObjectStore(STORE_ASSETS);
           }
         };
       });
@@ -320,7 +324,8 @@
       DB_NAME,
       DB_VERSION,
       STORE_PAGES,
-      STORE_API
+      STORE_API,
+      STORE_ASSETS
     }
   };
 })();

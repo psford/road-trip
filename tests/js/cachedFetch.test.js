@@ -746,3 +746,34 @@ describe('AC3.4: background revalidate does not swap live DOM', () => {
         expect(document.body.innerHTML).toBe(bodyBefore);
     });
 });
+
+describe('RoadTripPageCache version 1 → 2 upgrade (assets store)', () => {
+  it('opens the database at version 2', async () => {
+    const db = await globalThis.CachedFetch._internals._getDb();
+    expect(db).not.toBeNull();
+    expect(db.version).toBe(2);
+  });
+
+  it('creates the assets object store on upgrade', async () => {
+    const db = await globalThis.CachedFetch._internals._getDb();
+    expect(db.objectStoreNames.contains('assets')).toBe(true);
+  });
+
+  it('preserves the pages object store across the upgrade', async () => {
+    const db = await globalThis.CachedFetch._internals._getDb();
+    expect(db.objectStoreNames.contains('pages')).toBe(true);
+  });
+
+  it('preserves the api object store across the upgrade', async () => {
+    const db = await globalThis.CachedFetch._internals._getDb();
+    expect(db.objectStoreNames.contains('api')).toBe(true);
+  });
+
+  it('exposes STORE_ASSETS in _internals', () => {
+    expect(globalThis.CachedFetch._internals.STORE_ASSETS).toBe('assets');
+  });
+
+  it('reports DB_VERSION === 2 in _internals', () => {
+    expect(globalThis.CachedFetch._internals.DB_VERSION).toBe(2);
+  });
+});
