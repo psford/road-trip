@@ -196,9 +196,13 @@
 
   // === Manifest pre-cache helpers ===
 
-  // Pure (no I/O) — given a parsed manifest and a Map of cached summaries,
-  // returns the URL sets that need download or deletion. Easy to unit-test
-  // in isolation; no IDB / network coupling.
+  // ===== Functional Core (within Imperative Shell module) =====
+  // _diffManifest is a pure function over (manifest, cachedSummaries).
+  // No I/O, no side effects, no globals. Trivially unit-testable in isolation
+  // (see tests/js/assetCache.test.js — _diffManifest pure tests).
+  // Kept inline because bootstrap-module convention is one IIFE per file;
+  // a separate file would require a new <script> tag and break that pattern.
+  // ===== End Functional Core =====
   function _diffManifest(manifest, cachedSummaries) {
     const toDownload = [];
     const manifestUrls = new Set();

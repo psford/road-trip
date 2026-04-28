@@ -304,7 +304,7 @@ describe('AssetCache.precacheFromManifest() — happy path (AC1.2)', () => {
                 return Promise.resolve({
                     ok: true,
                     status: 200,
-                    headers: new Map([['Content-Type', 'text/css']]),
+                    headers: new Headers({ 'Content-Type': 'text/css' }),
                     arrayBuffer: () => Promise.resolve(new TextEncoder().encode('body{}').buffer)
                 });
             }
@@ -312,7 +312,7 @@ describe('AssetCache.precacheFromManifest() — happy path (AC1.2)', () => {
                 return Promise.resolve({
                     ok: true,
                     status: 200,
-                    headers: new Map([['Content-Type', 'application/javascript']]),
+                    headers: new Headers({ 'Content-Type': 'application/javascript' }),
                     arrayBuffer: () => Promise.resolve(new TextEncoder().encode('console.log()').buffer)
                 });
             }
@@ -414,7 +414,7 @@ describe('AssetCache.precacheFromManifest() — happy path (AC1.2)', () => {
                 return Promise.resolve({
                     ok: true,
                     status: 200,
-                    headers: new Map([['Content-Type', 'text/css']]),
+                    headers: new Headers({ 'Content-Type': 'text/css' }),
                     arrayBuffer: () => Promise.resolve(new TextEncoder().encode('new').buffer)
                 });
             }
@@ -651,7 +651,7 @@ describe('AssetCache.precacheFromManifest() — failure modes (AC1.4)', () => {
                 return Promise.resolve({
                     ok: true,
                     status: 200,
-                    headers: new Map([['Content-Type', 'text/css']]),
+                    headers: new Headers({ 'Content-Type': 'text/css' }),
                     arrayBuffer: () => Promise.resolve(new TextEncoder().encode('b-content').buffer)
                 });
             }
@@ -677,7 +677,7 @@ describe('AssetCache.precacheFromManifest() — failure modes (AC1.4)', () => {
 // === Tests for non-blocking semantics ===
 
 describe('AssetCache.precacheFromManifest() — non-blocking semantics (AC4.5 module half)', () => {
-    it('returns a Promise', () => {
+    it('returns a Promise instance', () => {
         vi.stubGlobal('fetch', vi.fn(() => {
             return Promise.resolve({
                 ok: true,
@@ -687,17 +687,51 @@ describe('AssetCache.precacheFromManifest() — non-blocking semantics (AC4.5 mo
         }));
 
         const result = globalThis.AssetCache.precacheFromManifest();
-        expect(typeof result.then).toBe('function');
+        expect(result).toBeInstanceOf(Promise);
     });
 
-    it('does not throw synchronously when fired-and-forgotten with `void`', () => {
-        vi.stubGlobal('fetch', vi.fn(() => {
-            return Promise.reject(new Error('Async error'));
+    it('fire-and-forget produces real I/O: writes asset record asynchronously without awaiting', async () => {
+        const manifest = {
+            version: '1.0.0',
+            files: [
+                { url: '/css/test.css', sha256: 'ABCD' }
+            ]
+        };
+
+        vi.stubGlobal('fetch', vi.fn((url) => {
+            if (url.includes('/asset-manifest.json')) {
+                return Promise.resolve({
+                    ok: true,
+                    status: 200,
+                    json: () => Promise.resolve(manifest)
+                });
+            }
+            if (url.includes('/css/test.css')) {
+                return Promise.resolve({
+                    ok: true,
+                    status: 200,
+                    headers: new Headers({ 'Content-Type': 'text/css' }),
+                    arrayBuffer: () => Promise.resolve(new TextEncoder().encode('test').buffer)
+                });
+            }
+            return Promise.reject(new Error('Unexpected URL: ' + url));
         }));
 
-        expect(() => {
-            void globalThis.AssetCache.precacheFromManifest();
-        }).not.toThrow();
+        // Fire-and-forget the call without awaiting it
+        void globalThis.AssetCache.precacheFromManifest();
+
+        // Verify synchronously that no record exists yet (fire-and-forget was not awaited)
+        let record = await globalThis.AssetCache._internals._getAsset('/css/test.css');
+        expect(record).toBeNull();
+
+        // Flush microtask queue to let the promise chain resolve
+        await flushPromises();
+
+        // Now verify the record was written asynchronously
+        record = await globalThis.AssetCache._internals._getAsset('/css/test.css');
+        expect(record).not.toBeNull();
+        expect(record.sha256).toBe('ABCD');
+        expect(new TextDecoder().decode(record.bytes)).toBe('test');
     });
 });
 
