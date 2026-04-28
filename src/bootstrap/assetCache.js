@@ -22,6 +22,7 @@
   // Task 1 of phase_02 for the matching cachedFetch.js change.
 
   let _db = null;
+  const _pendingBlobUrls = new Set();
 
   async function _getDb() {
     if (_db) {
@@ -191,7 +192,36 @@
     const blob = new Blob([record.bytes], {
       type: record.contentType || 'application/octet-stream',
     });
-    return URL.createObjectURL(blob);
+    const url = URL.createObjectURL(blob);
+    _pendingBlobUrls.add(url);
+    return url;
+  }
+
+  function _revokePendingBlobUrls() {
+    for (const url of _pendingBlobUrls) {
+      try { URL.revokeObjectURL(url); } catch (err) { /* swallow */ }
+    }
+    _pendingBlobUrls.clear();
+  }
+
+  // Strip query string + normalize to pathname so /css/styles.css?v=4
+  // and /css/styles.css both look up the same IDB entry.
+  function _normalizeAssetUrl(href) {
+    try {
+      return new URL(href, APP_BASE).pathname;
+    } catch {
+      return typeof href === 'string' ? href : '';
+    }
+  }
+
+  // The strict allow-list: /css/*.css, /js/*.js, /ios.css. Anything else
+  // (CDN URLs, /lib/*, /api/*) MUST pass through unchanged — AC2.5.
+  function _isCacheableAssetUrl(pathname) {
+    if (typeof pathname !== 'string') return false;
+    if (pathname === '/ios.css') return true;
+    if (pathname.startsWith('/css/') && pathname.endsWith('.css')) return true;
+    if (pathname.startsWith('/js/') && pathname.endsWith('.js')) return true;
+    return false;
   }
 
   // === Manifest pre-cache helpers ===
@@ -308,12 +338,74 @@
     await Promise.allSettled(toDelete.map((u) => _deleteAsset(u)));
   }
 
+  // Walks the parsed document and substitutes cached assets:
+  //   <link rel="stylesheet" href="/css/X"> → <style>{cached bytes as text}</style>
+  //   <script src="/js/X"> → src=blob: with cached bytes; dataset.assetCacheOrigin
+  //                                 holds the canonical path for _recreateScripts dedup.
+  // Cache misses leave the original tag untouched (AC2.4). Non-allow-list URLs are
+  // never rewritten, regardless of cache state (AC2.5).
+  async function rewriteAssetTags(parsedDoc) {
+    if (!parsedDoc || !parsedDoc.head) {
+      return;
+    }
+
+    // CSS: walk parsed.head only (stylesheet links live in <head>).
+    const linkEls = Array.from(parsedDoc.head.querySelectorAll('link[rel="stylesheet"]'));
+    for (const link of linkEls) {
+      const href = link.getAttribute('href');
+      if (!href) continue;
+      const pathname = _normalizeAssetUrl(href);
+      if (!_isCacheableAssetUrl(pathname)) continue;
+      let text;
+      try {
+        text = await getCachedText(pathname);
+      } catch {
+        text = null;
+      }
+      if (text === null) continue; // cache miss → leave the <link> alone (AC2.4)
+
+      const style = parsedDoc.createElement('style');
+      // Preserve any data-* attributes from the original (e.g., data-ios-css).
+      for (const attr of Array.from(link.attributes)) {
+        if (attr.name === 'href' || attr.name === 'rel' || attr.name === 'integrity' || attr.name === 'crossorigin') {
+          continue;
+        }
+        style.setAttribute(attr.name, attr.value);
+      }
+      style.textContent = text;
+      link.replaceWith(style);
+    }
+
+    // JS: walk the entire parsed document — wwwroot pages put scripts in <head>,
+    // but inline scripts and shell-injected scripts may live in <body>.
+    const scriptEls = Array.from(parsedDoc.querySelectorAll('script[src]'));
+    for (const script of scriptEls) {
+      const src = script.getAttribute('src');
+      if (!src) continue;
+      const pathname = _normalizeAssetUrl(src);
+      if (!_isCacheableAssetUrl(pathname)) continue;
+      let blobUrl;
+      try {
+        blobUrl = await getCachedBlobUrl(pathname);
+      } catch {
+        blobUrl = null;
+      }
+      if (blobUrl === null) continue; // cache miss → leave alone (AC2.4)
+
+      // Annotate before mutating src so _recreateScripts can dedup against the
+      // canonical path even after src has been rewritten to a unique blob URL.
+      script.dataset.assetCacheOrigin = pathname;
+      script.setAttribute('src', blobUrl);
+    }
+  }
+
   // === Module export ===
 
   globalThis.AssetCache = {
     precacheFromManifest,
     getCachedText,
     getCachedBlobUrl,
+    rewriteAssetTags,
     _internals: {
       _getDb,
       _closeDb,
@@ -326,6 +418,10 @@
       _diffManifest,
       _downloadAsset,
       _guessContentType,
+      _normalizeAssetUrl,
+      _isCacheableAssetUrl,
+      _revokePendingBlobUrls,
+      _pendingBlobUrls,
       DB_NAME,
       DB_VERSION,
       STORE_ASSETS,
