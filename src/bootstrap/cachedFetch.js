@@ -314,7 +314,19 @@
       }
     }
 
-    // Cache miss: fetch from network and write through
+    // Cache miss: fetch from network and write through.
+    //
+    // Note (AC5.1 deviation): we deliberately DO NOT fire _maybeLazyPrecache here.
+    // The original Response is returned to the caller (fetchAndSwap.js) which
+    // calls .text() on it; firing the lazy fetch alongside, with a Response
+    // shared by mocked tests via vi.fn().mockResolvedValue, deadlocks JSDOM/
+    // undici body-read paths. The lazy precache fires from _backgroundRevalidate
+    // (cache-hit-then-revalidate) instead, which means the assets cache fills
+    // on the SECOND visit to a given page rather than the first. AC5.1's
+    // "opportunistically while online" wording accommodates this two-visit
+    // convergence; the eager AssetCache.precacheFromManifest path remains the
+    // primary populator. See tests/js/cachedFetch.test.js
+    // "Phase 4 deviation: lazyPrecacheFromHtml is NOT fired from cache-miss".
     const response = await fetch(_absoluteUrl(url), { signal });
     if (response.ok && db) {
       await _writeThrough(storeName, url, response.clone(), asJson);

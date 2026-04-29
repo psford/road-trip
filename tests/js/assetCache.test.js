@@ -1376,9 +1376,9 @@ describe('AssetCache.lazyPrecacheFromHtml', () => {
     });
 
     it('swallows individual fetch failures (best-effort)', async () => {
-        const html = '<html><head><script src="/js/a.js"></script><script src="/js/b.js"></script></head></html>';
+        const html = '<html><head><script src="/js/lazy-fail-a.js"></script><script src="/js/lazy-fail-b.js"></script></head></html>';
         vi.stubGlobal('fetch', vi.fn((url) => {
-            if (url.includes('/js/a.js')) {
+            if (url.includes('/js/lazy-fail-a.js')) {
                 return Promise.reject(new TypeError('Failed to fetch'));
             }
             return Promise.resolve(new Response(new TextEncoder().encode('//').buffer, {
@@ -1389,8 +1389,8 @@ describe('AssetCache.lazyPrecacheFromHtml', () => {
 
         await expect(globalThis.AssetCache.lazyPrecacheFromHtml(html)).resolves.toBeUndefined();
 
-        expect(await globalThis.AssetCache._internals._getAsset('/js/a.js')).toBeNull();
-        expect(await globalThis.AssetCache._internals._getAsset('/js/b.js')).not.toBeNull();
+        expect(await globalThis.AssetCache._internals._getAsset('/js/lazy-fail-a.js')).toBeNull();
+        expect(await globalThis.AssetCache._internals._getAsset('/js/lazy-fail-b.js')).not.toBeNull();
     });
 
     it('handles HTML with no cacheable URLs gracefully', async () => {
