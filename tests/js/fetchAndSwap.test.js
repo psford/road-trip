@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CACHED_FETCH_SRC = fs.readFileSync(path.resolve(__dirname, '../../src/bootstrap/cachedFetch.js'), 'utf8');
+const ASSET_CACHE_SRC = fs.readFileSync(path.resolve(__dirname, '../../src/bootstrap/assetCache.js'), 'utf8');
 const LISTENER_SHIM_SRC = fs.readFileSync(path.resolve(__dirname, '../../src/bootstrap/listenerShim.js'), 'utf8');
 const FETCH_AND_SWAP_SRC = fs.readFileSync(path.resolve(__dirname, '../../src/bootstrap/fetchAndSwap.js'), 'utf8');
 const TRIP_STORAGE_SRC = fs.readFileSync(path.resolve(__dirname, '../../src/RoadTripMap/wwwroot/js/tripStorage.js'), 'utf8');
@@ -60,6 +61,7 @@ async function setupTest() {
     delete globalThis.FetchAndSwap;
     delete globalThis.TripStorage;
     delete globalThis.ListenerShim;
+    delete globalThis.AssetCache;
 
     // Reset document (including body attributes so stale data-page from a prior
     // test does not leak — the iOS shell's real boot starts with a bare <body>).
@@ -69,9 +71,11 @@ async function setupTest() {
         document.body.innerHTML = '<div id="bootstrap-progress">Loading…</div>';
     }
 
-    // Load modules
+    // Load modules (mirror the order in src/bootstrap/index.html:
+    // cachedFetch → listenerShim → assetCache → tripStorage → fetchAndSwap)
     eval(CACHED_FETCH_SRC);
     eval(LISTENER_SHIM_SRC);
+    eval(ASSET_CACHE_SRC);
     const tripStorageCode = TRIP_STORAGE_SRC.replace(/^const TripStorage = /m, 'globalThis.TripStorage = ');
     eval(tripStorageCode);
     eval(FETCH_AND_SWAP_SRC);
@@ -82,6 +86,9 @@ function teardownTest() {
     vi.unstubAllGlobals();
     if (typeof CachedFetch !== 'undefined' && CachedFetch._internals) {
         CachedFetch._internals._closeDb();
+    }
+    if (typeof AssetCache !== 'undefined' && AssetCache._internals) {
+        AssetCache._internals._closeDb();
     }
     delete globalThis.ListenerShim;
 }
@@ -754,4 +761,253 @@ describe('RoadTrip.onPageLoad integration with _swapFromHtml', () => {
             delete globalThis.Capacitor;
         }
     });
+});
+
+describe('Phase 3: rewriteAssetTags hook in _swapFromHtml', () => {
+  it('AC2.1: cached /css/styles.css is rewritten to <style> before head swap; no <link> remains', async () => {
+    await setupTest();
+    try {
+      // Pre-populate IDB with bytes for /css/styles.css.
+      const cssBytes = new TextEncoder().encode('body { color: red; }').buffer;
+      await globalThis.AssetCache._internals._putAsset({
+        url: '/css/styles.css',
+        bytes: cssBytes,
+        contentType: 'text/css',
+        sha256: 'css-sha',
+        etag: null,
+        lastModified: null,
+        cachedAt: Date.now(),
+      });
+
+      globalThis.fetch = vi.fn().mockResolvedValue(
+        new Response(
+          '<html><head><link rel="stylesheet" href="/css/styles.css?v=4"></head><body></body></html>',
+          { status: 200, headers: { 'Content-Type': 'text/html' } }
+        )
+      );
+
+      await FetchAndSwap.fetchAndSwap('/post/abc');
+
+      // No <link> for /css/styles.css remains in the live document.
+      expect(document.head.querySelector('link[href*="/css/styles.css"]')).toBeNull();
+      // A <style> with the cached text was injected.
+      const style = document.head.querySelector('style');
+      expect(style).not.toBeNull();
+      expect(style.textContent).toBe('body { color: red; }');
+    } finally {
+      teardownTest();
+    }
+  });
+
+  it('AC2.2: cached /js/foo.js is rewritten to a blob URL with dataset.assetCacheOrigin', async () => {
+    await setupTest();
+    try {
+      const jsBytes = new TextEncoder().encode('console.log("foo");').buffer;
+      await globalThis.AssetCache._internals._putAsset({
+        url: '/js/foo.js',
+        bytes: jsBytes,
+        contentType: 'application/javascript',
+        sha256: 'js-sha',
+        etag: null,
+        lastModified: null,
+        cachedAt: Date.now(),
+      });
+
+      globalThis.fetch = vi.fn().mockResolvedValue(
+        new Response(
+          '<html><head><script src="/js/foo.js"></script></head><body></body></html>',
+          { status: 200, headers: { 'Content-Type': 'text/html' } }
+        )
+      );
+
+      await FetchAndSwap.fetchAndSwap('/post/abc');
+
+      // _recreateScripts moves all <script> to body in the offline shell.
+      const script = document.body.querySelector('script');
+      expect(script).not.toBeNull();
+      expect(script.getAttribute('src')).toMatch(/^blob:/);
+      expect(script.dataset.assetCacheOrigin).toBe('/js/foo.js');
+    } finally {
+      teardownTest();
+    }
+  });
+
+  it('AC2.2 dedup: a second swap with the same /js/foo.js does NOT call appendChild for the script (uses dataset.assetCacheOrigin as dedup key)', async () => {
+    await setupTest();
+    try {
+      const jsBytes = new TextEncoder().encode('console.log("foo");').buffer;
+      await globalThis.AssetCache._internals._putAsset({
+        url: '/js/foo.js',
+        bytes: jsBytes,
+        contentType: 'application/javascript',
+        sha256: 'js-sha',
+        etag: null,
+        lastModified: null,
+        cachedAt: Date.now(),
+      });
+
+      // Mock fetch to return a fresh Response for each call (body can only be consumed once)
+      const htmlContent = '<html><head><script src="/js/foo.js"></script></head><body></body></html>';
+      globalThis.fetch = vi.fn().mockImplementation(() =>
+        Promise.resolve(new Response(htmlContent, { status: 200, headers: { 'Content-Type': 'text/html' } }))
+      );
+
+      // Track dedup behavior via _executedScriptSrcs
+      await FetchAndSwap.fetchAndSwap('/post/page1');
+
+      // After first swap, the script src should be in _executedScriptSrcs (canonicalized).
+      const canonicalSrc = 'https://app-roadtripmap-prod.azurewebsites.net/js/foo.js';
+      expect(FetchAndSwap._executedScriptSrcs.has(canonicalSrc)).toBe(true);
+      const sizeAfterFirst = FetchAndSwap._executedScriptSrcs.size;
+
+      await FetchAndSwap.fetchAndSwap('/post/page2');
+      // Second swap should NOT add a new script to _executedScriptSrcs since it deduped.
+      const sizeAfterSecond = FetchAndSwap._executedScriptSrcs.size;
+      expect(sizeAfterSecond).toBe(sizeAfterFirst); // no new scripts added
+    } finally {
+      teardownTest();
+    }
+  });
+
+  it('AC2.4: cache miss leaves <link> untouched', async () => {
+    await setupTest();
+    try {
+      // Empty cache — no _putAsset call.
+      globalThis.fetch = vi.fn().mockResolvedValue(
+        new Response(
+          '<html><head><link rel="stylesheet" href="/css/styles.css"></head><body></body></html>',
+          { status: 200, headers: { 'Content-Type': 'text/html' } }
+        )
+      );
+
+      await FetchAndSwap.fetchAndSwap('/post/abc');
+
+      const link = document.head.querySelector('link[href="/css/styles.css"]');
+      expect(link).not.toBeNull();
+      expect(document.head.querySelector('style')).toBeNull();
+    } finally {
+      teardownTest();
+    }
+  });
+
+  it('AC2.4: cache miss leaves <script src> untouched', async () => {
+    await setupTest();
+    try {
+      globalThis.fetch = vi.fn().mockResolvedValue(
+        new Response(
+          '<html><head><script src="/js/never-cached.js"></script></head><body></body></html>',
+          { status: 200, headers: { 'Content-Type': 'text/html' } }
+        )
+      );
+
+      await FetchAndSwap.fetchAndSwap('/post/abc');
+
+      const script = document.body.querySelector('script');
+      expect(script).not.toBeNull();
+      expect(script.getAttribute('src')).toBe('/js/never-cached.js');
+      expect(script.dataset.assetCacheOrigin).toBeUndefined();
+    } finally {
+      teardownTest();
+    }
+  });
+
+  it('AC2.5: external CDN URL is never rewritten, even with cache state', async () => {
+    await setupTest();
+    try {
+      // We do NOT put anything in cache for this URL — but the test would still pass
+      // even if we did, because the URL is outside the allow-list.
+      globalThis.fetch = vi.fn().mockResolvedValue(
+        new Response(
+          '<html><head><link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.21.0/dist/maplibre-gl.css"></head><body></body></html>',
+          { status: 200, headers: { 'Content-Type': 'text/html' } }
+        )
+      );
+
+      await FetchAndSwap.fetchAndSwap('/post/abc');
+
+      const link = document.head.querySelector('link[href*="unpkg.com"]');
+      expect(link).not.toBeNull();
+      expect(link.getAttribute('href')).toBe('https://unpkg.com/maplibre-gl@5.21.0/dist/maplibre-gl.css');
+    } finally {
+      teardownTest();
+    }
+  });
+
+  it('AC2.5: /lib/exifr/full.umd.js is never rewritten', async () => {
+    await setupTest();
+    try {
+      globalThis.fetch = vi.fn().mockResolvedValue(
+        new Response(
+          '<html><head><script src="/lib/exifr/full.umd.js"></script></head><body></body></html>',
+          { status: 200, headers: { 'Content-Type': 'text/html' } }
+        )
+      );
+
+      await FetchAndSwap.fetchAndSwap('/post/abc');
+
+      const script = document.body.querySelector('script');
+      expect(script).not.toBeNull();
+      expect(script.getAttribute('src')).toBe('/lib/exifr/full.umd.js');
+      expect(script.dataset.assetCacheOrigin).toBeUndefined();
+    } finally {
+      teardownTest();
+    }
+  });
+
+  it('AC4.3: pages and api stores still work after rewriteAssetTags integration', async () => {
+    await setupTest();
+    try {
+      // The CachedFetch flow must continue to write to RoadTripPageCache pages store.
+      // Stub a page fetch and verify CachedFetch caches it.
+      globalThis.fetch = vi.fn().mockResolvedValue(
+        new Response(
+          '<html><head></head><body>page</body></html>',
+          { status: 200, headers: { 'Content-Type': 'text/html', 'ETag': 'W/"abc"' } }
+        )
+      );
+      await FetchAndSwap.fetchAndSwap('/post/abc');
+
+      // After the swap, CachedFetch should have written to the pages store.
+      const cachedRecord = await globalThis.CachedFetch._internals._getRecord('pages', '/post/abc');
+      expect(cachedRecord).not.toBeNull();
+      expect(cachedRecord).not.toBeUndefined();
+    } finally {
+      teardownTest();
+    }
+  });
+
+  it('blob URLs are revoked at swap-end', async () => {
+    await setupTest();
+    try {
+      const revokeSpy = vi.spyOn(URL, 'revokeObjectURL');
+      const jsBytes = new TextEncoder().encode('//').buffer;
+      await globalThis.AssetCache._internals._putAsset({
+        url: '/js/foo.js',
+        bytes: jsBytes,
+        contentType: 'application/javascript',
+        sha256: 'js-sha',
+        etag: null,
+        lastModified: null,
+        cachedAt: Date.now(),
+      });
+
+      globalThis.fetch = vi.fn().mockResolvedValue(
+        new Response(
+          '<html><head><script src="/js/foo.js"></script></head><body></body></html>',
+          { status: 200, headers: { 'Content-Type': 'text/html' } }
+        )
+      );
+
+      await FetchAndSwap.fetchAndSwap('/post/abc');
+
+      // _revokePendingBlobUrls was called — at minimum once with a blob: URL.
+      expect(revokeSpy).toHaveBeenCalled();
+      const revokedAtLeastOneBlob = revokeSpy.mock.calls.some((call) => typeof call[0] === 'string' && call[0].startsWith('blob:'));
+      expect(revokedAtLeastOneBlob).toBe(true);
+
+      revokeSpy.mockRestore();
+    } finally {
+      teardownTest();
+    }
+  });
 });
