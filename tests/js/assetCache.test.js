@@ -1238,3 +1238,166 @@ describe('AC4.4 invariant: asset cache does not touch RoadTripMapCache', () => {
     expect(storeCount).toBe(0);
   });
 });
+
+// === Phase 4 Subcomponent A: lazy pre-fetch ===
+
+describe('AssetCache._internals._extractAssetUrlsFromHtml (pure)', () => {
+    it('extracts /css/styles.css from a <link rel="stylesheet"> in head', () => {
+        const html = '<html><head><link rel="stylesheet" href="/css/styles.css?v=4"></head><body></body></html>';
+        const urls = globalThis.AssetCache._internals._extractAssetUrlsFromHtml(html);
+        expect(urls).toContain('/css/styles.css');
+    });
+
+    it('extracts /js/foo.js from a <script src> in head or body', () => {
+        const html = '<html><head><script src="/js/foo.js"></script></head><body><script src="/js/bar.js"></script></body></html>';
+        const urls = globalThis.AssetCache._internals._extractAssetUrlsFromHtml(html);
+        expect(urls).toContain('/js/foo.js');
+        expect(urls).toContain('/js/bar.js');
+    });
+
+    it('does NOT include external CDN URLs (AC2.5)', () => {
+        const html = '<html><head><link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5/dist/maplibre-gl.css"></head><body></body></html>';
+        const urls = globalThis.AssetCache._internals._extractAssetUrlsFromHtml(html);
+        expect(urls).not.toContain('https://unpkg.com/maplibre-gl@5/dist/maplibre-gl.css');
+        expect(urls.length).toBe(0);
+    });
+
+    it('does NOT include /lib/exifr/full.umd.js (AC2.5)', () => {
+        const html = '<html><body><script src="/lib/exifr/full.umd.js"></script></body></html>';
+        const urls = globalThis.AssetCache._internals._extractAssetUrlsFromHtml(html);
+        expect(urls.length).toBe(0);
+    });
+
+    it('deduplicates repeated references', () => {
+        const html = '<html><head><link rel="stylesheet" href="/css/styles.css"><link rel="stylesheet" href="/css/styles.css?v=4"></head><body></body></html>';
+        const urls = globalThis.AssetCache._internals._extractAssetUrlsFromHtml(html);
+        expect(urls.filter((u) => u === '/css/styles.css').length).toBe(1);
+    });
+
+    it('returns [] on malformed HTML', () => {
+        const urls = globalThis.AssetCache._internals._extractAssetUrlsFromHtml('not html at all');
+        expect(Array.isArray(urls)).toBe(true);
+    });
+
+    it('returns [] on empty/non-string input', () => {
+        expect(globalThis.AssetCache._internals._extractAssetUrlsFromHtml('')).toEqual([]);
+        expect(globalThis.AssetCache._internals._extractAssetUrlsFromHtml(null)).toEqual([]);
+        expect(globalThis.AssetCache._internals._extractAssetUrlsFromHtml(undefined)).toEqual([]);
+    });
+});
+
+describe('AssetCache._internals._computeSha256Hex', () => {
+    it('returns a 64-character hex string for known input', async () => {
+        // sha256('hello') = 2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824
+        const bytes = new TextEncoder().encode('hello').buffer;
+        const hex = await globalThis.AssetCache._internals._computeSha256Hex(bytes);
+        expect(hex).toBe('2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824');
+    });
+
+    it('returns null when crypto.subtle is unavailable', async () => {
+        const originalDigest = crypto.subtle.digest;
+        crypto.subtle.digest = vi.fn(() => { throw new Error('unavailable'); });
+        try {
+            const bytes = new TextEncoder().encode('hello').buffer;
+            const hex = await globalThis.AssetCache._internals._computeSha256Hex(bytes);
+            expect(hex).toBeNull();
+        } finally {
+            crypto.subtle.digest = originalDigest;
+        }
+    });
+});
+
+describe('AssetCache.lazyPrecacheFromHtml', () => {
+    it('downloads every cacheable URL not already in IDB', async () => {
+        // Use unique URLs so prior-test IDB state (e.g., /css/styles.css from earlier tests)
+        // doesn't make this test see a stale "already cached" record.
+        const html = '<html><head><link rel="stylesheet" href="/css/lazy-fresh-a.css"><script src="/js/lazy-fresh-a.js"></script></head></html>';
+        const cssBytes = new TextEncoder().encode('body{}').buffer;
+        const jsBytes = new TextEncoder().encode('//').buffer;
+
+        vi.stubGlobal('fetch', vi.fn((url) => {
+            if (url.includes('/css/lazy-fresh-a.css')) {
+                return Promise.resolve(new Response(cssBytes, {
+                    status: 200,
+                    headers: { 'Content-Type': 'text/css' }
+                }));
+            }
+            if (url.includes('/js/lazy-fresh-a.js')) {
+                return Promise.resolve(new Response(jsBytes, {
+                    status: 200,
+                    headers: { 'Content-Type': 'application/javascript' }
+                }));
+            }
+            return Promise.resolve(new Response(null, { status: 404 }));
+        }));
+
+        await globalThis.AssetCache.lazyPrecacheFromHtml(html);
+
+        const cssRecord = await globalThis.AssetCache._internals._getAsset('/css/lazy-fresh-a.css');
+        expect(cssRecord).not.toBeNull();
+        expect(cssRecord.contentType).toBe('text/css');
+        expect(typeof cssRecord.sha256).toBe('string');
+        expect(cssRecord.sha256.length).toBe(64);
+
+        const jsRecord = await globalThis.AssetCache._internals._getAsset('/js/lazy-fresh-a.js');
+        expect(jsRecord).not.toBeNull();
+    });
+
+    it('skips URLs already in IDB (sha256 match not required)', async () => {
+        // Unique URL — pre-populate, then verify lazy pre-fetch skips re-download.
+        const existingBytes = new TextEncoder().encode('cached body').buffer;
+        await globalThis.AssetCache._internals._putAsset({
+            url: '/css/lazy-skip-b.css',
+            bytes: existingBytes,
+            contentType: 'text/css',
+            sha256: 'preexisting-sha',
+            etag: null,
+            lastModified: null,
+            cachedAt: Date.now() - 60000,
+        });
+
+        const fetchSpy = vi.fn(() => { throw new Error('lazy should not re-download'); });
+        vi.stubGlobal('fetch', fetchSpy);
+
+        const html = '<html><head><link rel="stylesheet" href="/css/lazy-skip-b.css"></head></html>';
+        await globalThis.AssetCache.lazyPrecacheFromHtml(html);
+
+        expect(fetchSpy).not.toHaveBeenCalled();
+        const record = await globalThis.AssetCache._internals._getAsset('/css/lazy-skip-b.css');
+        expect(record.sha256).toBe('preexisting-sha');
+    });
+
+    it('does NOT touch /api/* even if a malformed page references them', async () => {
+        const html = '<html><body><script src="/api/poi"></script></body></html>';
+        const fetchSpy = vi.fn(() => { throw new Error('should not fetch /api/poi'); });
+        vi.stubGlobal('fetch', fetchSpy);
+        await globalThis.AssetCache.lazyPrecacheFromHtml(html);
+        expect(fetchSpy).not.toHaveBeenCalled();
+    });
+
+    it('swallows individual fetch failures (best-effort)', async () => {
+        const html = '<html><head><script src="/js/a.js"></script><script src="/js/b.js"></script></head></html>';
+        vi.stubGlobal('fetch', vi.fn((url) => {
+            if (url.includes('/js/a.js')) {
+                return Promise.reject(new TypeError('Failed to fetch'));
+            }
+            return Promise.resolve(new Response(new TextEncoder().encode('//').buffer, {
+                status: 200,
+                headers: { 'Content-Type': 'application/javascript' }
+            }));
+        }));
+
+        await expect(globalThis.AssetCache.lazyPrecacheFromHtml(html)).resolves.toBeUndefined();
+
+        expect(await globalThis.AssetCache._internals._getAsset('/js/a.js')).toBeNull();
+        expect(await globalThis.AssetCache._internals._getAsset('/js/b.js')).not.toBeNull();
+    });
+
+    it('handles HTML with no cacheable URLs gracefully', async () => {
+        const html = '<html><body>just text</body></html>';
+        const fetchSpy = vi.fn();
+        vi.stubGlobal('fetch', fetchSpy);
+        await expect(globalThis.AssetCache.lazyPrecacheFromHtml(html)).resolves.toBeUndefined();
+        expect(fetchSpy).not.toHaveBeenCalled();
+    });
+});
