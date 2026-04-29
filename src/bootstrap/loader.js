@@ -14,7 +14,7 @@
             const original = FetchAndSwap.fetchAndSwap;
             FetchAndSwap.fetchAndSwap = async function (url, options) {
                 await original(url, options);
-                _ensureIosCss();
+                await _ensureIosCss();
             };
         } else {
             throw new Error('Bootstrap: FetchAndSwap is not loaded');
@@ -59,14 +59,36 @@
         await _renderFallback(err);
     }
 
-    function _ensureIosCss() {
-        if (!document.head.querySelector('link[data-ios-css]')) {
-            const link = document.createElement('link');
-            link.rel = 'stylesheet';
-            link.href = '/ios.css';
-            link.setAttribute('data-ios-css', 'true');
-            document.head.appendChild(link);
+    async function _ensureIosCss() {
+        if (document.head.querySelector('[data-ios-css]')) {
+            // Already present — could be a cached <style> from a prior swap or
+            // the <link> fallback. Don't double-inject.
+            return;
         }
+
+        // AC2.3: prefer cached bytes if available, fall back to <link> on miss.
+        let cachedText = null;
+        if (typeof globalThis.AssetCache !== 'undefined' && typeof globalThis.AssetCache.getCachedText === 'function') {
+            try {
+                cachedText = await globalThis.AssetCache.getCachedText('/ios.css');
+            } catch {
+                cachedText = null;
+            }
+        }
+
+        if (cachedText) {
+            const style = document.createElement('style');
+            style.setAttribute('data-ios-css', 'true');
+            style.textContent = cachedText;
+            document.head.appendChild(style);
+            return;
+        }
+
+        const link = document.createElement('link');
+        link.rel = 'stylesheet';
+        link.href = '/ios.css';
+        link.setAttribute('data-ios-css', 'true');
+        document.head.appendChild(link);
     }
 
     async function _renderFallback(_originalError) {
