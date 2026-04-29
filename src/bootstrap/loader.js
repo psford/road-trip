@@ -60,9 +60,11 @@
     }
 
     async function _ensureIosCss() {
+        // Early-return guards against intra-swap double-injection (e.g., if a
+        // future caller invokes _ensureIosCss twice in the same swap). Cross-swap
+        // re-injection is the intended idempotent path: fetchAndSwap.js wipes
+        // document.head per swap, so this querySelector is null at that point.
         if (document.head.querySelector('[data-ios-css]')) {
-            // Already present — could be a cached <style> from a prior swap or
-            // the <link> fallback. Don't double-inject.
             return;
         }
 

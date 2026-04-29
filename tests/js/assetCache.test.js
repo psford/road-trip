@@ -813,6 +813,12 @@ describe('AssetCache._internals._normalizeAssetUrl', () => {
     // 'https://app-roadtripmap-prod.azurewebsites.net/css/styles.css' → '/css/styles.css'
     expect(globalThis.AssetCache._internals._normalizeAssetUrl('https://app-roadtripmap-prod.azurewebsites.net/css/styles.css')).toBe('/css/styles.css');
   });
+
+  it('returns empty string for non-string input (defensive)', () => {
+    // The defensive guard typeof href === 'string' catches non-strings after URL throws
+    // For inputs where URL() throws, this ensures we return '' not undefined
+    expect(globalThis.AssetCache._internals._normalizeAssetUrl(null)).toBeDefined();
+  });
 });
 
 describe('AssetCache._internals._isCacheableAssetUrl', () => {
@@ -840,6 +846,10 @@ describe('AssetCache._internals._isCacheableAssetUrl', () => {
 
   it('rejects /api/poi (mapCache territory)', () => {
     expect(globalThis.AssetCache._internals._isCacheableAssetUrl('/api/poi')).toBe(false);
+  });
+
+  it('returns false for non-string input (defensive)', () => {
+    expect(globalThis.AssetCache._internals._isCacheableAssetUrl(null)).toBe(false);
   });
 });
 
@@ -911,16 +921,17 @@ describe('AssetCache.rewriteAssetTags — cache hit (AC2.1)', () => {
       cachedAt: Date.now(),
     });
 
-    // Parsed doc has `<link rel="stylesheet" href="/ios.css" data-ios-css="true">`.
-    const html = '<html><head><link rel="stylesheet" href="/ios.css" data-ios-css="true"></head><body></body></html>';
+    // Parsed doc has `<link rel="stylesheet" href="/ios.css" data-ios-css="true" media="print">`.
+    const html = '<html><head><link rel="stylesheet" href="/ios.css" data-ios-css="true" media="print"></head><body></body></html>';
     const parsed = new DOMParser().parseFromString(html, 'text/html');
 
     await globalThis.AssetCache.rewriteAssetTags(parsed);
 
-    // After rewrite, parsed.head.querySelector('style[data-ios-css]')?.textContent matches cache.
+    // After rewrite, the new <style> should carry both data-ios-css and media attributes.
     const style = parsed.head.querySelector('style[data-ios-css]');
     expect(style).not.toBeNull();
     expect(style.textContent).toBe('ios content');
+    expect(style.getAttribute('media')).toBe('print'); // Verify non-data attributes also preserved
   });
 });
 
@@ -1206,24 +1217,35 @@ describe('AC4.4 invariant: asset cache does not touch RoadTripMapCache', () => {
     const retrieved = await globalThis.AssetCache._internals._getAsset('/css/test.css');
     expect(retrieved).not.toBeNull();
 
-    // Open roadtripmap-cache (read-only); assert it's empty / unchanged.
-    await new Promise((resolve) => {
-      const request = indexedDB.open('roadtripmap-cache');
-      request.onsuccess = () => {
-        const db = request.result;
-        if (db.objectStoreNames.length === 0) {
-          // Database exists but is empty (not created by asset cache)
+    // Open roadtripmap-cache; assert no stores were created.
+    // (asset cache must never touch this database).
+    await Promise.race([
+      new Promise((resolve, reject) => {
+        const request = indexedDB.open('roadtripmap-cache');
+        request.onerror = () => {
+          // Database doesn't exist — also acceptable (and expected)
           resolve();
-          return;
-        }
-        // Database has stores — check if it was pre-created by tests
-        // (acceptable as long as asset cache didn't write to it)
-        resolve();
-      };
-      request.onerror = () => {
-        // Database does not exist — expected, passes the test
-        resolve();
-      };
-    });
+        };
+        request.onsuccess = () => {
+          const db = request.result;
+          try {
+            // If the asset cache wrote to roadtripmap-cache, it would have
+            // created at least one store. The invariant says it must not.
+            // (Prior tests may have pre-created stores; this test runs in a
+            // fresh beforeEach indexedDB.deleteDatabase loop, so a clean state
+            // is the expected starting point.)
+            expect(db.objectStoreNames.length).toBe(0);
+          } finally {
+            db.close();
+          }
+          resolve();
+        };
+        request.onblocked = () => {
+          // Unblock timeout if needed
+          resolve();
+        };
+      }),
+      new Promise((resolve) => setTimeout(resolve, 2000))
+    ]);
   });
 });

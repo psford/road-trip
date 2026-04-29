@@ -847,23 +847,31 @@ describe('Phase 3: rewriteAssetTags hook in _swapFromHtml', () => {
       });
 
       // Mock fetch to return a fresh Response for each call (body can only be consumed once)
-      const htmlContent = '<html><head><script src="/js/foo.js"></script></head><body></body></html>';
-      globalThis.fetch = vi.fn().mockImplementation(() =>
-        Promise.resolve(new Response(htmlContent, { status: 200, headers: { 'Content-Type': 'text/html' } }))
-      );
+      globalThis.fetch = vi.fn().mockImplementation(() => {
+        const htmlContent = '<html><head><script src="/js/foo.js"></script></head><body></body></html>';
+        return Promise.resolve(new Response(htmlContent, { status: 200, headers: { 'Content-Type': 'text/html' } }));
+      });
 
-      // Track dedup behavior via _executedScriptSrcs
+      // Spy on appendChild to count actual script element appends (wraps existing stub from setupTest)
+      const appendChildSpy = vi.spyOn(Node.prototype, 'appendChild');
+
+      // First swap: should append the /js/foo.js script
       await FetchAndSwap.fetchAndSwap('/post/page1');
+      const afterFirstAppends = appendChildSpy.mock.calls.filter(call => {
+        const node = call[0];
+        return node && node.tagName === 'SCRIPT' && node.getAttribute && node.getAttribute('src');
+      }).length;
+      expect(afterFirstAppends).toBe(1); // First swap appended the script
 
-      // After first swap, the script src should be in _executedScriptSrcs (canonicalized).
-      const canonicalSrc = 'https://app-roadtripmap-prod.azurewebsites.net/js/foo.js';
-      expect(FetchAndSwap._executedScriptSrcs.has(canonicalSrc)).toBe(true);
-      const sizeAfterFirst = FetchAndSwap._executedScriptSrcs.size;
-
+      // Second swap with same script: should NOT append it again (dedup short-circuit)
       await FetchAndSwap.fetchAndSwap('/post/page2');
-      // Second swap should NOT add a new script to _executedScriptSrcs since it deduped.
-      const sizeAfterSecond = FetchAndSwap._executedScriptSrcs.size;
-      expect(sizeAfterSecond).toBe(sizeAfterFirst); // no new scripts added
+      const afterSecondAppends = appendChildSpy.mock.calls.filter(call => {
+        const node = call[0];
+        return node && node.tagName === 'SCRIPT' && node.getAttribute && node.getAttribute('src');
+      }).length;
+      expect(afterSecondAppends).toBe(afterFirstAppends); // No new script appends (dedup worked)
+
+      appendChildSpy.mockRestore();
     } finally {
       teardownTest();
     }
