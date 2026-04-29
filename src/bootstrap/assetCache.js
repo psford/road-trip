@@ -298,6 +298,122 @@
     return 'application/octet-stream';
   }
 
+  // Browser sha256: Uint8Array → 64-char hex string.
+  // crypto.subtle.digest is part of WebCrypto, available in modern browsers and JSDOM.
+  async function _computeSha256Hex(arrayBuffer) {
+    try {
+      const digest = await crypto.subtle.digest('SHA-256', arrayBuffer);
+      const bytes = new Uint8Array(digest);
+      let hex = '';
+      for (let i = 0; i < bytes.length; i++) {
+        hex += bytes[i].toString(16).padStart(2, '0');
+      }
+      return hex;
+    } catch {
+      return null;
+    }
+  }
+
+  // Lazy pre-fetch variant of _downloadAsset: no expected sha256 (no manifest).
+  // Computes sha256 from the response bytes and stores it. A subsequent eager
+  // precacheFromManifest can then diff against the manifest sha256 normally
+  // (likely a no-op since we just downloaded the deployed bytes).
+  async function _downloadAssetUnknownSha256(url) {
+    try {
+      const response = await fetch(_absoluteUrl(url), {
+        method: 'GET',
+        cache: 'no-cache',
+      });
+      if (!response || !response.ok) {
+        return;
+      }
+      const bytes = await response.arrayBuffer();
+      const sha256 = await _computeSha256Hex(bytes);
+      if (sha256 === null) {
+        return; // crypto.subtle unavailable — abort defensively
+      }
+      const contentType = response.headers.get('Content-Type') || _guessContentType(url);
+      const etag = response.headers.get('ETag');
+      const lastModified = response.headers.get('Last-Modified');
+
+      const record = {
+        url,
+        bytes,
+        contentType,
+        sha256,
+        etag: etag || null,
+        lastModified: lastModified || null,
+        cachedAt: Date.now(),
+      };
+      await _putAsset(record);
+    } catch (err) {
+      // Swallow — lazy pre-fetch is best-effort.
+    }
+  }
+
+  // Pure (no I/O): given an HTML string, extract every cacheable asset URL
+  // (filtered by the Phase 3 allow-list). Returns an array of canonical
+  // pathnames — duplicates removed, query strings stripped.
+  function _extractAssetUrlsFromHtml(html) {
+    if (typeof html !== 'string' || html.length === 0) {
+      return [];
+    }
+    let parsed;
+    try {
+      parsed = new DOMParser().parseFromString(html, 'text/html');
+    } catch {
+      return [];
+    }
+
+    const urls = new Set();
+
+    const linkEls = parsed.querySelectorAll('link[rel="stylesheet"][href]');
+    for (const link of linkEls) {
+      const href = link.getAttribute('href');
+      if (!href) continue;
+      const pathname = _normalizeAssetUrl(href);
+      if (_isCacheableAssetUrl(pathname)) {
+        urls.add(pathname);
+      }
+    }
+
+    const scriptEls = parsed.querySelectorAll('script[src]');
+    for (const script of scriptEls) {
+      const src = script.getAttribute('src');
+      if (!src) continue;
+      const pathname = _normalizeAssetUrl(src);
+      if (_isCacheableAssetUrl(pathname)) {
+        urls.add(pathname);
+      }
+    }
+
+    return Array.from(urls);
+  }
+
+  // AC5.1: extract asset URLs from a freshly-fetched HTML page and download
+  // any not yet in IDB. Best-effort — every error is swallowed. Designed
+  // to be invoked as `void lazyPrecacheFromHtml(html)` (fire-and-forget).
+  async function lazyPrecacheFromHtml(html) {
+    const urls = _extractAssetUrlsFromHtml(html);
+    if (urls.length === 0) {
+      return;
+    }
+
+    let summaries;
+    try {
+      summaries = await _listAssetSummaries();
+    } catch {
+      summaries = new Map();
+    }
+
+    const missing = urls.filter((u) => !summaries.has(u));
+    if (missing.length === 0) {
+      return;
+    }
+
+    await Promise.allSettled(missing.map((u) => _downloadAssetUnknownSha256(u)));
+  }
+
   // === Public API: manifest pre-cache ===
 
   // AC1.2 + AC1.3 + AC1.4 + module-level AC4.5.
@@ -403,6 +519,7 @@
 
   globalThis.AssetCache = {
     precacheFromManifest,
+    lazyPrecacheFromHtml,
     getCachedText,
     getCachedBlobUrl,
     rewriteAssetTags,
@@ -417,6 +534,9 @@
       _mintBlobUrl,
       _diffManifest,
       _downloadAsset,
+      _downloadAssetUnknownSha256,
+      _computeSha256Hex,
+      _extractAssetUrlsFromHtml,
       _guessContentType,
       _normalizeAssetUrl,
       _isCacheableAssetUrl,
