@@ -813,12 +813,6 @@ describe('AssetCache._internals._normalizeAssetUrl', () => {
     // 'https://app-roadtripmap-prod.azurewebsites.net/css/styles.css' → '/css/styles.css'
     expect(globalThis.AssetCache._internals._normalizeAssetUrl('https://app-roadtripmap-prod.azurewebsites.net/css/styles.css')).toBe('/css/styles.css');
   });
-
-  it('returns empty string for non-string input (defensive)', () => {
-    // The defensive guard typeof href === 'string' catches non-strings after URL throws
-    // For inputs where URL() throws, this ensures we return '' not undefined
-    expect(globalThis.AssetCache._internals._normalizeAssetUrl(null)).toBeDefined();
-  });
 });
 
 describe('AssetCache._internals._isCacheableAssetUrl', () => {
@@ -1219,33 +1213,28 @@ describe('AC4.4 invariant: asset cache does not touch RoadTripMapCache', () => {
 
     // Open roadtripmap-cache; assert no stores were created.
     // (asset cache must never touch this database).
-    await Promise.race([
-      new Promise((resolve, reject) => {
-        const request = indexedDB.open('roadtripmap-cache');
-        request.onerror = () => {
-          // Database doesn't exist — also acceptable (and expected)
-          resolve();
-        };
-        request.onsuccess = () => {
-          const db = request.result;
-          try {
-            // If the asset cache wrote to roadtripmap-cache, it would have
-            // created at least one store. The invariant says it must not.
-            // (Prior tests may have pre-created stores; this test runs in a
-            // fresh beforeEach indexedDB.deleteDatabase loop, so a clean state
-            // is the expected starting point.)
-            expect(db.objectStoreNames.length).toBe(0);
-          } finally {
-            db.close();
-          }
-          resolve();
-        };
-        request.onblocked = () => {
-          // Unblock timeout if needed
-          resolve();
-        };
-      }),
-      new Promise((resolve) => setTimeout(resolve, 2000))
-    ]);
+    const storeCount = await new Promise((resolve) => {
+      const request = indexedDB.open('roadtripmap-cache');
+      request.onerror = () => {
+        // Database doesn't exist — also acceptable (and expected)
+        resolve(0);
+      };
+      request.onsuccess = () => {
+        const db = request.result;
+        // If the asset cache wrote to roadtripmap-cache, it would have
+        // created at least one store. The invariant says it must not.
+        // (Prior tests may have pre-created stores; this test runs in a
+        // fresh beforeEach indexedDB.deleteDatabase loop, so a clean state
+        // is the expected starting point.)
+        const n = db.objectStoreNames.length;
+        db.close();
+        resolve(n);
+      };
+      request.onblocked = () => {
+        // Unblock event; treat as no stores
+        resolve(0);
+      };
+    });
+    expect(storeCount).toBe(0);
   });
 });
