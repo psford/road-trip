@@ -520,3 +520,61 @@ describe('Intercept install', () => {
         expect(installOrder).toBeLessThan(fetchOrder);
     });
 });
+
+describe('Phase 4 eager pre-fetch trigger', () => {
+    it('fires AssetCache.precacheFromManifest after the first swap completes', async () => {
+        const precacheSpy = vi.fn(() => Promise.resolve());
+        globalThis.AssetCache.precacheFromManifest = precacheSpy;
+
+        globalThis.fetch = vi.fn().mockImplementation(() =>
+            Promise.resolve(new Response('<html><body>home</body></html>', {
+                status: 200,
+                headers: { 'Content-Type': 'text/html' },
+            }))
+        );
+
+        await runLoader();
+
+        expect(precacheSpy).toHaveBeenCalledTimes(1);
+        // Body content rendered (proves first paint completed before AssetCache call).
+        expect(document.body.textContent).toContain('home');
+    });
+
+    it('AC4.5: precacheFromManifest does not block first paint', async () => {
+        let precacheCalled = false;
+        globalThis.AssetCache.precacheFromManifest = vi.fn(() => {
+            precacheCalled = true;
+            return new Promise(() => {}); // intentionally never settles
+        });
+
+        globalThis.fetch = vi.fn().mockImplementation(() =>
+            Promise.resolve(new Response('<html><body>home</body></html>', {
+                status: 200,
+                headers: { 'Content-Type': 'text/html' },
+            }))
+        );
+
+        await runLoader();
+
+        // Loader completed (body rendered) despite precache promise not settling.
+        expect(precacheCalled).toBe(true);
+        expect(document.body.textContent).toContain('home');
+        expect(document.body.classList.contains('platform-ios')).toBe(true);
+    });
+
+    it('manifest-fail rejection does NOT throw or break the loader', async () => {
+        globalThis.AssetCache.precacheFromManifest = vi.fn(() =>
+            Promise.reject(new Error('manifest 500'))
+        );
+
+        globalThis.fetch = vi.fn().mockImplementation(() =>
+            Promise.resolve(new Response('<html><body>home</body></html>', {
+                status: 200,
+                headers: { 'Content-Type': 'text/html' },
+            }))
+        );
+
+        await expect(runLoader()).resolves.not.toThrow();
+        expect(document.body.textContent).toContain('home');
+    });
+});

@@ -777,3 +777,122 @@ describe('RoadTripPageCache version 1 → 2 upgrade (assets store)', () => {
     expect(globalThis.CachedFetch._internals.DB_VERSION).toBe(2);
   });
 });
+
+describe('Phase 4 lazy pre-fetch trigger (revalidate path)', () => {
+  // Lazy precache fires from the cache-hit-then-revalidate path: pre-populate
+  // a stale page in IDB, call cachedFetch, then wait for the background
+  // revalidate's 200 response to write through and fire lazyPrecacheFromHtml.
+
+  afterEach(() => {
+    delete globalThis.AssetCache;
+  });
+
+  async function waitForSpy(spy, timeoutMs = 1000) {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      if (spy.mock.calls.length > 0) return;
+      await new Promise((r) => setTimeout(r, 10));
+    }
+  }
+
+  it('calls AssetCache.lazyPrecacheFromHtml after a successful revalidate write-through', async () => {
+    // Pre-populate stale page in cache so we hit the revalidate path.
+    await globalThis.CachedFetch._internals._putRecord('pages', '/post/lazy-trigger-a', {
+      html: '<html><body>stale</body></html>',
+      etag: 'W/"old"',
+      lastModified: null,
+      cachedAt: Date.now() - 60000,
+    });
+
+    const lazySpy = vi.fn(() => Promise.resolve());
+    globalThis.AssetCache = { lazyPrecacheFromHtml: lazySpy };
+
+    globalThis.fetch = vi.fn().mockResolvedValue(
+      new Response('<html><head><link rel="stylesheet" href="/css/styles.css"></head><body>fresh</body></html>', {
+        status: 200,
+        headers: { 'Content-Type': 'text/html', 'ETag': 'W/"v2"' },
+      })
+    );
+
+    await globalThis.CachedFetch.cachedFetch('/post/lazy-trigger-a');
+    await waitForSpy(lazySpy);
+
+    expect(lazySpy).toHaveBeenCalledTimes(1);
+    expect(typeof lazySpy.mock.calls[0][0]).toBe('string');
+    expect(lazySpy.mock.calls[0][0]).toContain('<link rel="stylesheet" href="/css/styles.css">');
+  });
+
+  it('does NOT call lazyPrecacheFromHtml for asJson responses (e.g., /api/photos)', async () => {
+    await globalThis.CachedFetch._internals._putRecord('api', '/api/trips/lazy-b/photos', {
+      body: '{"data": ["stale"]}',
+      contentType: 'application/json',
+      etag: 'W/"old"',
+      lastModified: null,
+      cachedAt: Date.now() - 60000,
+    });
+
+    const lazySpy = vi.fn();
+    globalThis.AssetCache = { lazyPrecacheFromHtml: lazySpy };
+
+    globalThis.fetch = vi.fn().mockResolvedValue(
+      new Response('{"data": ["fresh"]}', {
+        status: 200,
+        headers: { 'Content-Type': 'application/json', 'ETag': 'W/"v2"' },
+      })
+    );
+
+    await globalThis.CachedFetch.cachedFetch('/api/trips/lazy-b/photos', { asJson: true });
+    // Give any fire-and-forget a chance to run.
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(lazySpy).not.toHaveBeenCalled();
+  });
+
+  it('does NOT call lazyPrecacheFromHtml when AssetCache is undefined (defensive)', async () => {
+    await globalThis.CachedFetch._internals._putRecord('pages', '/post/lazy-trigger-c', {
+      html: '<html><body>stale</body></html>',
+      etag: 'W/"old"',
+      lastModified: null,
+      cachedAt: Date.now() - 60000,
+    });
+
+    delete globalThis.AssetCache;
+
+    globalThis.fetch = vi.fn().mockResolvedValue(
+      new Response('<html><body>fresh</body></html>', {
+        status: 200,
+        headers: { 'Content-Type': 'text/html', 'ETag': 'W/"v2"' },
+      })
+    );
+
+    // Should not throw despite AssetCache being absent.
+    const result = await globalThis.CachedFetch.cachedFetch('/post/lazy-trigger-c');
+    expect(result).toBeDefined();
+    // Give the revalidate fire-and-forget time to settle.
+    await new Promise((r) => setTimeout(r, 50));
+  });
+
+  it('lazyPrecacheFromHtml rejection does NOT propagate to cachedFetch caller', async () => {
+    await globalThis.CachedFetch._internals._putRecord('pages', '/post/lazy-trigger-d', {
+      html: '<html><body>stale</body></html>',
+      etag: 'W/"old"',
+      lastModified: null,
+      cachedAt: Date.now() - 60000,
+    });
+
+    globalThis.AssetCache = {
+      lazyPrecacheFromHtml: vi.fn(() => Promise.reject(new Error('boom'))),
+    };
+
+    globalThis.fetch = vi.fn().mockResolvedValue(
+      new Response('<html><body>fresh</body></html>', {
+        status: 200,
+        headers: { 'Content-Type': 'text/html', 'ETag': 'W/"v2"' },
+      })
+    );
+
+    await expect(globalThis.CachedFetch.cachedFetch('/post/lazy-trigger-d')).resolves.toBeDefined();
+    // Give the rejection's catch handler time to run; it should not propagate.
+    await new Promise((r) => setTimeout(r, 50));
+  });
+});

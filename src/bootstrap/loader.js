@@ -54,6 +54,13 @@
         // Remove the bootstrap-progress shim now that the real page has rendered.
         const progress = document.getElementById('bootstrap-progress');
         if (progress) progress.remove();
+
+        // AC4.5: Eager pre-fetch fires AFTER the first swap completes and is
+        // strictly fire-and-forget. The .catch swallows any rejection so an
+        // unhandled-rejection warning never fires on a transient manifest outage.
+        if (typeof globalThis.AssetCache !== 'undefined' && typeof globalThis.AssetCache.precacheFromManifest === 'function') {
+            void globalThis.AssetCache.precacheFromManifest().catch(() => {});
+        }
     } catch (err) {
         console.error('Bootstrap failed:', err);
         await _renderFallback(err);
