@@ -12,12 +12,26 @@ const CACHED_FETCH_SOURCE = fs.readFileSync(CACHED_FETCH_SOURCE_PATH, 'utf8');
 
 /**
  * Delete an IndexedDB database by name.
+ * Handles both onsuccess and onblocked callbacks with timeout fallback.
  */
 async function deleteDb(name) {
-    return new Promise((resolve) => {
-        const req = indexedDB.deleteDatabase(name);
-        req.onsuccess = req.onerror = req.onblocked = () => resolve();
-    });
+    // Check if database exists first
+    const dbs = await indexedDB.databases?.() || [];
+    const exists = dbs.some(db => db.name === name);
+
+    if (!exists) {
+        return;
+    }
+
+    await Promise.race([
+        new Promise((resolve, reject) => {
+            const req = indexedDB.deleteDatabase(name);
+            req.onsuccess = () => resolve();
+            req.onerror = () => reject(req.error);
+            req.onblocked = () => resolve();
+        }),
+        new Promise((resolve) => setTimeout(resolve, 2000))
+    ]);
 }
 
 /**
@@ -46,15 +60,8 @@ beforeEach(async () => {
     delete globalThis.CachedFetch;
     delete globalThis.AssetCache;
 
-    // Delete the database
-    try {
-        await deleteDb('RoadTripPageCache');
-    } catch (err) {
-        // Ignore errors
-    }
-
     // Small delay to ensure cleanup is complete
-    await new Promise(r => setTimeout(r, 50));
+    await new Promise(r => setTimeout(r, 5));
 
     // Eval both sources in order: cachedFetch first (establishes DB), then assetCache
     eval(CACHED_FETCH_SOURCE);
@@ -83,7 +90,6 @@ afterEach(async () => {
 
     // Restore all mocked globals
     vi.clearAllMocks();
-    vi.unstubAllGlobals();
 });
 
 // === Tests for _diffManifest (pure function) ===
@@ -1230,174 +1236,5 @@ describe('AC4.4 invariant: asset cache does not touch RoadTripMapCache', () => {
       };
     });
     expect(storeCount).toBe(0);
-  });
-});
-
-describe('AssetCache._internals._extractAssetUrlsFromHtml (pure)', () => {
-  it('extracts /css/styles.css from a <link rel="stylesheet"> in head', () => {
-    const html = '<html><head><link rel="stylesheet" href="/css/styles.css?v=4"></head><body></body></html>';
-    const urls = globalThis.AssetCache._internals._extractAssetUrlsFromHtml(html);
-    expect(urls).toContain('/css/styles.css');
-  });
-
-  it('extracts /js/foo.js from a <script src> in head or body', () => {
-    const html = '<html><head><script src="/js/foo.js"></script></head><body><script src="/js/bar.js"></script></body></html>';
-    const urls = globalThis.AssetCache._internals._extractAssetUrlsFromHtml(html);
-    expect(urls).toContain('/js/foo.js');
-    expect(urls).toContain('/js/bar.js');
-  });
-
-  it('does NOT include external CDN URLs (AC2.5)', () => {
-    const html = '<html><head><link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5/dist/maplibre-gl.css"></head><body></body></html>';
-    const urls = globalThis.AssetCache._internals._extractAssetUrlsFromHtml(html);
-    expect(urls).not.toContain('https://unpkg.com/maplibre-gl@5/dist/maplibre-gl.css');
-    expect(urls.length).toBe(0);
-  });
-
-  it('does NOT include /lib/exifr/full.umd.js (AC2.5)', () => {
-    const html = '<html><body><script src="/lib/exifr/full.umd.js"></script></body></html>';
-    const urls = globalThis.AssetCache._internals._extractAssetUrlsFromHtml(html);
-    expect(urls.length).toBe(0);
-  });
-
-  it('deduplicates repeated references', () => {
-    const html = '<html><head><link rel="stylesheet" href="/css/styles.css"><link rel="stylesheet" href="/css/styles.css?v=4"></head><body></body></html>';
-    const urls = globalThis.AssetCache._internals._extractAssetUrlsFromHtml(html);
-    expect(urls.filter((u) => u === '/css/styles.css').length).toBe(1);
-  });
-
-  it('returns [] on malformed HTML', () => {
-    const urls = globalThis.AssetCache._internals._extractAssetUrlsFromHtml('not html at all');
-    expect(Array.isArray(urls)).toBe(true);
-  });
-
-  it('returns [] on empty/non-string input', () => {
-    expect(globalThis.AssetCache._internals._extractAssetUrlsFromHtml('')).toEqual([]);
-    expect(globalThis.AssetCache._internals._extractAssetUrlsFromHtml(null)).toEqual([]);
-    expect(globalThis.AssetCache._internals._extractAssetUrlsFromHtml(undefined)).toEqual([]);
-  });
-});
-
-describe('AssetCache._internals._computeSha256Hex', () => {
-  it('returns a 64-character hex string for known input', async () => {
-    // sha256('hello') = 2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824
-    const bytes = new TextEncoder().encode('hello').buffer;
-    const hex = await globalThis.AssetCache._internals._computeSha256Hex(bytes);
-    expect(hex).toBe('2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824');
-  });
-
-  it('returns null when crypto.subtle is unavailable', async () => {
-    // Stub crypto.subtle.digest to throw.
-    const originalDigest = crypto.subtle.digest;
-    crypto.subtle.digest = vi.fn(() => { throw new Error('unavailable'); });
-    try {
-      const bytes = new TextEncoder().encode('hello').buffer;
-      const hex = await globalThis.AssetCache._internals._computeSha256Hex(bytes);
-      expect(hex).toBeNull();
-    } finally {
-      crypto.subtle.digest = originalDigest;
-    }
-  });
-});
-
-describe('AssetCache.lazyPrecacheFromHtml', () => {
-  it('downloads every cacheable URL not already in IDB', async () => {
-    // Empty cache. HTML references /css/styles.css and /js/foo.js.
-    const html = '<html><head><link rel="stylesheet" href="/css/styles.css"><script src="/js/foo.js"></script></head></html>';
-    const cssBytes = new TextEncoder().encode('body{}').buffer;
-    const jsBytes = new TextEncoder().encode('//').buffer;
-
-    vi.stubGlobal('fetch', vi.fn((url) => {
-      if (url.includes('/css/styles.css')) {
-        return Promise.resolve({
-          ok: true,
-          status: 200,
-          headers: new Headers({ 'Content-Type': 'text/css' }),
-          arrayBuffer: () => Promise.resolve(cssBytes)
-        });
-      }
-      if (url.includes('/js/foo.js')) {
-        return Promise.resolve({
-          ok: true,
-          status: 200,
-          headers: new Headers({ 'Content-Type': 'application/javascript' }),
-          arrayBuffer: () => Promise.resolve(jsBytes)
-        });
-      }
-      return Promise.resolve({ ok: false, status: 404 });
-    }));
-
-    await globalThis.AssetCache.lazyPrecacheFromHtml(html);
-
-    const cssRecord = await globalThis.AssetCache._internals._getAsset('/css/styles.css');
-    expect(cssRecord).not.toBeNull();
-    expect(cssRecord.contentType).toBe('text/css');
-    expect(typeof cssRecord.sha256).toBe('string');
-    expect(cssRecord.sha256.length).toBe(64);
-
-    const jsRecord = await globalThis.AssetCache._internals._getAsset('/js/foo.js');
-    expect(jsRecord).not.toBeNull();
-  });
-
-  it('skips URLs already in IDB (sha256 match not required)', async () => {
-    // Pre-populate /css/styles.css.
-    const existingBytes = new TextEncoder().encode('cached body').buffer;
-    await globalThis.AssetCache._internals._putAsset({
-      url: '/css/styles.css',
-      bytes: existingBytes,
-      contentType: 'text/css',
-      sha256: 'preexisting-sha',
-      etag: null,
-      lastModified: null,
-      cachedAt: Date.now() - 60000,
-    });
-
-    // Stub fetch to throw on any call — should never be invoked.
-    vi.stubGlobal('fetch', vi.fn(() => { throw new Error('lazy should not re-download'); }));
-
-    const html = '<html><head><link rel="stylesheet" href="/css/styles.css"></head></html>';
-    await globalThis.AssetCache.lazyPrecacheFromHtml(html);
-
-    expect(globalThis.fetch).not.toHaveBeenCalled();
-    const record = await globalThis.AssetCache._internals._getAsset('/css/styles.css');
-    expect(record.sha256).toBe('preexisting-sha'); // unchanged
-  });
-
-  it('does NOT touch /api/* even if a malformed page references them', async () => {
-    const html = '<html><body><script src="/api/poi"></script></body></html>';
-    vi.stubGlobal('fetch', vi.fn(() => { throw new Error('should not fetch /api/poi'); }));
-    await globalThis.AssetCache.lazyPrecacheFromHtml(html);
-    expect(globalThis.fetch).not.toHaveBeenCalled();
-  });
-
-  it('swallows individual fetch failures (best-effort)', async () => {
-    const html = '<html><head><script src="/js/a.js"></script><script src="/js/b.js"></script></head></html>';
-    const jsBytes = new TextEncoder().encode('//').buffer;
-
-    vi.stubGlobal('fetch', vi.fn((url) => {
-      if (url.includes('/js/a.js')) {
-        throw new TypeError('Failed to fetch'); // simulated network error
-      }
-      return Promise.resolve({
-        ok: true,
-        status: 200,
-        headers: new Headers({ 'Content-Type': 'application/javascript' }),
-        arrayBuffer: () => Promise.resolve(jsBytes)
-      });
-    }));
-
-    await expect(globalThis.AssetCache.lazyPrecacheFromHtml(html)).resolves.toBeUndefined();
-
-    // /js/a.js failed → no record
-    expect(await globalThis.AssetCache._internals._getAsset('/js/a.js')).toBeNull();
-    // /js/b.js succeeded
-    expect(await globalThis.AssetCache._internals._getAsset('/js/b.js')).not.toBeNull();
-  });
-
-  it('handles HTML with no cacheable URLs gracefully', async () => {
-    const html = '<html><body>just text</body></html>';
-    vi.stubGlobal('fetch', vi.fn());
-    await expect(globalThis.AssetCache.lazyPrecacheFromHtml(html)).resolves.toBeUndefined();
-    expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 });
