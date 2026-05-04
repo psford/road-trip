@@ -112,6 +112,34 @@ function checkBundleSyntax(bundlePath) {
   }
 }
 
+// Asset manifest: per-file listing consumed by the iOS shell asset pre-cache
+// (src/bootstrap/assetCache.js, see docs/design-plans/2026-04-26-offline-asset-precache.md).
+// Schema is intentionally distinct from bundle/manifest.json — different consumer,
+// different shape. Enumerate every file on disk, not the hardcoded jsFiles array
+// (jsFiles is bundle-specific and may not include every wwwroot/js/*.js file).
+function buildAssetManifest(version) {
+  const entries = [];
+
+  const cssNames = fs.readdirSync(cssDir).filter((f) => f.endsWith('.css')).sort();
+  for (const name of cssNames) {
+    const buf = fs.readFileSync(path.join(cssDir, name));
+    entries.push({ url: `/css/${name}`, size: buf.length, sha256: sha256(buf) });
+  }
+
+  const jsNames = fs.readdirSync(jsDir).filter((f) => f.endsWith('.js')).sort();
+  for (const name of jsNames) {
+    const buf = fs.readFileSync(path.join(jsDir, name));
+    entries.push({ url: `/js/${name}`, size: buf.length, sha256: sha256(buf) });
+  }
+
+  if (fs.existsSync(iosCssSrc)) {
+    const buf = fs.readFileSync(iosCssSrc);
+    entries.push({ url: '/ios.css', size: buf.length, sha256: sha256(buf) });
+  }
+
+  return { version, files: entries };
+}
+
 function main() {
   fs.mkdirSync(outDir, { recursive: true });
 
@@ -150,6 +178,11 @@ function main() {
     files,
   };
   fs.writeFileSync(path.join(outDir, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n');
+
+  const assetManifest = buildAssetManifest(version);
+  const assetManifestPath = path.join(repoRoot, 'src/RoadTripMap/wwwroot/asset-manifest.json');
+  fs.writeFileSync(assetManifestPath, JSON.stringify(assetManifest, null, 2) + '\n');
+  console.log(`Asset manifest: ${assetManifest.files.length} files → asset-manifest.json`);
 
   console.log(`Bundle built: version=${version}`);
   for (const [name, meta] of Object.entries(files)) {

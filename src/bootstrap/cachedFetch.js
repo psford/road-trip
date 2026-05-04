@@ -4,11 +4,22 @@
 
 (function() {
   const DB_NAME = 'RoadTripPageCache';
-  const DB_VERSION = 1;
+  const DB_VERSION = 2;
   const STORE_PAGES = 'pages';
   const STORE_API = 'api';
+  const STORE_ASSETS = 'assets';
   const BYPASS_REGEX = /^\/api\/(poi|park-boundaries)(?:[/?]|$)/;
   const APP_BASE = 'https://app-roadtripmap-prod.azurewebsites.net';
+
+  // AC5.1 lazy pre-fetch: fire-and-forget after a fresh HTML write-through.
+  // Defensive: AssetCache may not be loaded (test environments evaluating
+  // cachedFetch.js without first eval'ing assetCache.js).
+  function _maybeLazyPrecache(html, asJson) {
+    if (asJson) return; // never run on JSON pages
+    if (typeof globalThis.AssetCache === 'undefined') return;
+    if (typeof globalThis.AssetCache.lazyPrecacheFromHtml !== 'function') return;
+    void globalThis.AssetCache.lazyPrecacheFromHtml(html).catch(() => {});
+  }
 
   // === IDB Layer ===
 
@@ -45,6 +56,9 @@
           }
           if (!db.objectStoreNames.contains(STORE_API)) {
             db.createObjectStore(STORE_API);
+          }
+          if (!db.objectStoreNames.contains(STORE_ASSETS)) {
+            db.createObjectStore(STORE_ASSETS);
           }
         };
       });
@@ -197,6 +211,11 @@
     } else {
       await _putRecord(storeName, url, { html: text, etag, lastModified, cachedAt });
     }
+    // Returns the buffered text so callers can fire a lazy pre-fetch without
+    // re-reading the body. Cache-miss callers ignore this (the original
+    // response is still being parsed by fetchAndSwap downstream and double-
+    // reading the same mocked Response in tests hangs JSDOM/undici).
+    return text;
   }
 
   /**
@@ -241,11 +260,19 @@
       }
 
       const storeName = asJson ? STORE_API : STORE_PAGES;
+      let bodyText = null;
       try {
-        await _writeThrough(storeName, url, response, asJson);
+        bodyText = await _writeThrough(storeName, url, response, asJson);
       } catch {
         // IDB write error — swallowed silently
         return;
+      }
+      // AC5.1: fire-and-forget lazy pre-fetch from the revalidate path.
+      // Safer than firing from cache-miss because the original Response is
+      // already fully consumed by _writeThrough and the caller has already
+      // returned from cachedFetch — no body-read contention.
+      if (bodyText !== null) {
+        _maybeLazyPrecache(bodyText, asJson);
       }
     } catch {
       // Any unexpected error is swallowed
@@ -287,7 +314,19 @@
       }
     }
 
-    // Cache miss: fetch from network and write through
+    // Cache miss: fetch from network and write through.
+    //
+    // Note (AC5.1 deviation): we deliberately DO NOT fire _maybeLazyPrecache here.
+    // The original Response is returned to the caller (fetchAndSwap.js) which
+    // calls .text() on it; firing the lazy fetch alongside, with a Response
+    // shared by mocked tests via vi.fn().mockResolvedValue, deadlocks JSDOM/
+    // undici body-read paths. The lazy precache fires from _backgroundRevalidate
+    // (cache-hit-then-revalidate) instead, which means the assets cache fills
+    // on the SECOND visit to a given page rather than the first. AC5.1's
+    // "opportunistically while online" wording accommodates this two-visit
+    // convergence; the eager AssetCache.precacheFromManifest path remains the
+    // primary populator. See tests/js/cachedFetch.test.js
+    // "Phase 4 deviation: lazyPrecacheFromHtml is NOT fired from cache-miss".
     const response = await fetch(_absoluteUrl(url), { signal });
     if (response.ok && db) {
       await _writeThrough(storeName, url, response.clone(), asJson);
@@ -320,7 +359,8 @@
       DB_NAME,
       DB_VERSION,
       STORE_PAGES,
-      STORE_API
+      STORE_API,
+      STORE_ASSETS
     }
   };
 })();
