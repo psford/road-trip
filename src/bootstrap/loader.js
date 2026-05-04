@@ -14,7 +14,7 @@
             const original = FetchAndSwap.fetchAndSwap;
             FetchAndSwap.fetchAndSwap = async function (url, options) {
                 await original(url, options);
-                _ensureIosCss();
+                await _ensureIosCss();
             };
         } else {
             throw new Error('Bootstrap: FetchAndSwap is not loaded');
@@ -54,19 +54,50 @@
         // Remove the bootstrap-progress shim now that the real page has rendered.
         const progress = document.getElementById('bootstrap-progress');
         if (progress) progress.remove();
+
+        // AC4.5: Eager pre-fetch fires AFTER the first swap completes and is
+        // strictly fire-and-forget. The .catch swallows any rejection so an
+        // unhandled-rejection warning never fires on a transient manifest outage.
+        if (typeof globalThis.AssetCache !== 'undefined' && typeof globalThis.AssetCache.precacheFromManifest === 'function') {
+            void globalThis.AssetCache.precacheFromManifest().catch(() => {});
+        }
     } catch (err) {
         console.error('Bootstrap failed:', err);
         await _renderFallback(err);
     }
 
-    function _ensureIosCss() {
-        if (!document.head.querySelector('link[data-ios-css]')) {
-            const link = document.createElement('link');
-            link.rel = 'stylesheet';
-            link.href = '/ios.css';
-            link.setAttribute('data-ios-css', 'true');
-            document.head.appendChild(link);
+    async function _ensureIosCss() {
+        // Early-return guards against intra-swap double-injection (e.g., if a
+        // future caller invokes _ensureIosCss twice in the same swap). Cross-swap
+        // re-injection is the intended idempotent path: fetchAndSwap.js wipes
+        // document.head per swap, so this querySelector is null at that point.
+        if (document.head.querySelector('[data-ios-css]')) {
+            return;
         }
+
+        // AC2.3: prefer cached bytes if available, fall back to <link> on miss.
+        let cachedText = null;
+        if (typeof globalThis.AssetCache !== 'undefined' && typeof globalThis.AssetCache.getCachedText === 'function') {
+            try {
+                cachedText = await globalThis.AssetCache.getCachedText('/ios.css');
+            } catch {
+                cachedText = null;
+            }
+        }
+
+        if (cachedText) {
+            const style = document.createElement('style');
+            style.setAttribute('data-ios-css', 'true');
+            style.textContent = cachedText;
+            document.head.appendChild(style);
+            return;
+        }
+
+        const link = document.createElement('link');
+        link.rel = 'stylesheet';
+        link.href = '/ios.css';
+        link.setAttribute('data-ios-css', 'true');
+        document.head.appendChild(link);
     }
 
     async function _renderFallback(_originalError) {

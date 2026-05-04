@@ -22,8 +22,13 @@
 
             // External script path (has a non-empty src attribute)
             if (rawSrc) {
-                const absoluteSrc = _absolutizeSrc(rawSrc);
-                if (_executedScriptSrcs.has(absoluteSrc)) {
+                // Phase 3: when rewriteAssetTags has substituted a blob: URL, the canonical
+                // path lives in dataset.assetCacheOrigin. Use it as the dedup key so blob URLs
+                // (which are unique per swap) don't defeat the _executedScriptSrcs invariant.
+                const dedupKey = oldScript.dataset.assetCacheOrigin
+                    ? _absolutizeSrc(oldScript.dataset.assetCacheOrigin)
+                    : _absolutizeSrc(rawSrc);
+                if (_executedScriptSrcs.has(dedupKey)) {
                     // Already executed in this realm (previous page, or earlier in this page).
                     // Skip recreation to avoid the duplicate-const cascade.
                     continue;
@@ -32,11 +37,16 @@
                 for (const attr of oldScript.attributes) {
                     fresh.setAttribute(attr.name, attr.value);
                 }
+                // Carry the dataset annotation onto the fresh element so a future
+                // _recreateScripts call sees the canonical path even if the blob URL changed.
+                if (oldScript.dataset.assetCacheOrigin) {
+                    fresh.dataset.assetCacheOrigin = oldScript.dataset.assetCacheOrigin;
+                }
                 await new Promise((resolve) => {
                     fresh.onload = () => {
                         // Only add on successful load. onerror does not guarantee the
                         // script's top-level declarations executed, so we allow retry.
-                        _executedScriptSrcs.add(absoluteSrc);
+                        _executedScriptSrcs.add(dedupKey);
                         resolve();
                     };
                     fresh.onerror = () => resolve();
@@ -65,6 +75,21 @@
             const base = parsed.createElement('base');
             base.setAttribute('href', APP_BASE);
             parsed.head.insertBefore(base, parsed.head.firstChild);
+        }
+
+        // Phase 3: rewrite cached <link rel="stylesheet"> → <style> and cached
+        // <script src> → blob: URL BEFORE scripts are extracted, so the
+        // scriptsInOrder array picks up the rewritten src + dataset annotation.
+        // Defensive: AssetCache may not be loaded in test environments that
+        // eval fetchAndSwap.js without first eval'ing assetCache.js.
+        if (typeof globalThis.AssetCache !== 'undefined' && typeof globalThis.AssetCache.rewriteAssetTags === 'function') {
+            try {
+                await globalThis.AssetCache.rewriteAssetTags(parsed);
+            } catch (err) {
+                // Never block render on a rewrite failure — fall through with the
+                // unmutated parsed doc. The browser will fetch from the network
+                // (online) or fail silently (offline; acceptable per AC scope).
+            }
         }
 
         // Strip scripts from the parsed doc — they'd be inert if included via innerHTML
@@ -115,6 +140,17 @@
         // Defensive: TripStorage may not be loaded; markOpened may throw on storage error.
         if (typeof TripStorage !== 'undefined' && typeof TripStorage.markOpened === 'function') {
             try { TripStorage.markOpened(url); } catch { /* never block render on storage */ }
+        }
+
+        // Phase 3: revoke blob URLs minted by rewriteAssetTags. Each <script src=blob:>
+        // has loaded (or errored) by now — _recreateScripts awaits onload/onerror per
+        // script. Revoke synchronously to avoid leaking memory in the SPA-style shell.
+        if (typeof globalThis.AssetCache !== 'undefined' && globalThis.AssetCache._internals && typeof globalThis.AssetCache._internals._revokePendingBlobUrls === 'function') {
+            try {
+                globalThis.AssetCache._internals._revokePendingBlobUrls();
+            } catch (err) {
+                // Swallow — leak is preferable to throwing during the render path.
+            }
         }
     }
 

@@ -7,6 +7,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SHELL = path.resolve(__dirname, '../../src/bootstrap');
 const SOURCES = {
     cachedFetch: fs.readFileSync(path.join(SHELL, 'cachedFetch.js'), 'utf8'),
+    assetCache: fs.readFileSync(path.join(SHELL, 'assetCache.js'), 'utf8'),
     tripStorage: fs.readFileSync(path.join(SHELL, 'tripStorage.js'), 'utf8'),
     fetchAndSwap: fs.readFileSync(path.join(SHELL, 'fetchAndSwap.js'), 'utf8'),
     intercept: fs.readFileSync(path.join(SHELL, 'intercept.js'), 'utf8'),
@@ -15,14 +16,18 @@ const SOURCES = {
 
 let lsStore;
 beforeEach(async () => {
-    // Close any prior cachedFetch IDB handle BEFORE deleting globals/database.
+    // Close any prior IDB handles BEFORE deleting globals/database.
     // Otherwise indexedDB.deleteDatabase blocks on the still-open connection
     // from the previous test's IIFE closure.
     if (typeof CachedFetch !== 'undefined' && CachedFetch._internals && CachedFetch._internals._closeDb) {
         CachedFetch._internals._closeDb();
     }
+    if (typeof AssetCache !== 'undefined' && AssetCache._internals && AssetCache._internals._closeDb) {
+        AssetCache._internals._closeDb();
+    }
 
     delete globalThis.CachedFetch;
+    delete globalThis.AssetCache;
     delete globalThis.TripStorage;
     delete globalThis.FetchAndSwap;
     delete globalThis.Intercept;
@@ -74,6 +79,7 @@ beforeEach(async () => {
 
     // Use eval with proper scope - this ensures all modules see globalThis changes
     eval(SOURCES.cachedFetch);
+    eval(SOURCES.assetCache);
     const tripStorageCode = SOURCES.tripStorage.replace(/^const TripStorage = /m, 'globalThis.TripStorage = ');
     eval(tripStorageCode);
     eval(SOURCES.fetchAndSwap);
@@ -313,6 +319,85 @@ describe('ios.css injection', () => {
         const links = document.head.querySelectorAll('link[data-ios-css]');
         expect(links.length).toBe(1);
     });
+
+    it('AC2.3 cache hit: injects <style data-ios-css> with cached bytes when AssetCache has /ios.css', async () => {
+        // Pre-populate /ios.css in AssetCache. AssetCache must be eval'd by beforeEach.
+        const iosCssBytes = new TextEncoder().encode('.platform-ios { padding-top: 1rem; }').buffer;
+        await globalThis.AssetCache._internals._putAsset({
+            url: '/ios.css',
+            bytes: iosCssBytes,
+            contentType: 'text/css',
+            sha256: 'ios-sha',
+            etag: null,
+            lastModified: null,
+            cachedAt: Date.now(),
+        });
+
+        globalThis.fetch = vi.fn().mockImplementation(() =>
+            Promise.resolve(
+                new Response('<html><body>page</body></html>', {
+                    status: 200,
+                    headers: { 'Content-Type': 'text/html' }
+                })
+            )
+        );
+
+        await runLoader();
+
+        const style = document.head.querySelector('style[data-ios-css]');
+        expect(style).not.toBeNull();
+        expect(style.textContent).toBe('.platform-ios { padding-top: 1rem; }');
+        expect(document.head.querySelector('link[data-ios-css]')).toBeNull();
+    });
+
+    it('AC2.3 cache miss: falls back to <link data-ios-css href="/ios.css"> when AssetCache has no entry', async () => {
+        // No _putAsset call — empty cache.
+        globalThis.fetch = vi.fn().mockImplementation(() =>
+            Promise.resolve(
+                new Response('<html><body>page</body></html>', {
+                    status: 200,
+                    headers: { 'Content-Type': 'text/html' }
+                })
+            )
+        );
+
+        await runLoader();
+
+        expect(document.head.querySelector('style[data-ios-css]')).toBeNull();
+        const link = document.head.querySelector('link[data-ios-css]');
+        expect(link).not.toBeNull();
+        expect(link.getAttribute('href')).toBe('/ios.css');
+    });
+
+    it('AC2.3: does not double-inject when both <style> and a swap fire', async () => {
+        // Pre-populate cache so first injection produces <style>.
+        const iosCssBytes = new TextEncoder().encode('.platform-ios { padding: 0; }').buffer;
+        await globalThis.AssetCache._internals._putAsset({
+            url: '/ios.css',
+            bytes: iosCssBytes,
+            contentType: 'text/css',
+            sha256: 'ios-sha',
+            etag: null,
+            lastModified: null,
+            cachedAt: Date.now(),
+        });
+
+        globalThis.fetch = vi.fn().mockImplementation(() =>
+            Promise.resolve(
+                new Response('<html><body>page</body></html>', {
+                    status: 200,
+                    headers: { 'Content-Type': 'text/html' }
+                })
+            )
+        );
+
+        await runLoader();
+        await FetchAndSwap.fetchAndSwap('/post/page2');
+
+        // After two swaps, only one [data-ios-css] element exists in document.head.
+        const tagged = document.head.querySelectorAll('[data-ios-css]');
+        expect(tagged.length).toBe(1);
+    });
 });
 
 describe('AC3.6: offline + cache miss → fallback.html', () => {
@@ -433,5 +518,63 @@ describe('Intercept install', () => {
         const installOrder = installSpy.mock.invocationCallOrder[0];
         const fetchOrder = fetchSpy.mock.invocationCallOrder[0];
         expect(installOrder).toBeLessThan(fetchOrder);
+    });
+});
+
+describe('Phase 4 eager pre-fetch trigger', () => {
+    it('fires AssetCache.precacheFromManifest after the first swap completes', async () => {
+        const precacheSpy = vi.fn(() => Promise.resolve());
+        globalThis.AssetCache.precacheFromManifest = precacheSpy;
+
+        globalThis.fetch = vi.fn().mockImplementation(() =>
+            Promise.resolve(new Response('<html><body>home</body></html>', {
+                status: 200,
+                headers: { 'Content-Type': 'text/html' },
+            }))
+        );
+
+        await runLoader();
+
+        expect(precacheSpy).toHaveBeenCalledTimes(1);
+        // Body content rendered (proves first paint completed before AssetCache call).
+        expect(document.body.textContent).toContain('home');
+    });
+
+    it('AC4.5: precacheFromManifest does not block first paint', async () => {
+        let precacheCalled = false;
+        globalThis.AssetCache.precacheFromManifest = vi.fn(() => {
+            precacheCalled = true;
+            return new Promise(() => {}); // intentionally never settles
+        });
+
+        globalThis.fetch = vi.fn().mockImplementation(() =>
+            Promise.resolve(new Response('<html><body>home</body></html>', {
+                status: 200,
+                headers: { 'Content-Type': 'text/html' },
+            }))
+        );
+
+        await runLoader();
+
+        // Loader completed (body rendered) despite precache promise not settling.
+        expect(precacheCalled).toBe(true);
+        expect(document.body.textContent).toContain('home');
+        expect(document.body.classList.contains('platform-ios')).toBe(true);
+    });
+
+    it('manifest-fail rejection does NOT throw or break the loader', async () => {
+        globalThis.AssetCache.precacheFromManifest = vi.fn(() =>
+            Promise.reject(new Error('manifest 500'))
+        );
+
+        globalThis.fetch = vi.fn().mockImplementation(() =>
+            Promise.resolve(new Response('<html><body>home</body></html>', {
+                status: 200,
+                headers: { 'Content-Type': 'text/html' },
+            }))
+        );
+
+        await expect(runLoader()).resolves.not.toThrow();
+        expect(document.body.textContent).toContain('home');
     });
 });
