@@ -27,8 +27,5 @@ Add a dedicated app icon so iOS home screen bookmarks look polished instead of u
 
 ## Low Priority
 
-### Node.js 20 deprecation in GitHub Actions
-`azure/login@v2` uses Node.js 20, deprecated June 2026. Update before forced migration. See memory: `project_node20_deprecation.md`.
-
 ### Key Vault for road-trip SQL credentials
 Road-trip prod SQL password is hardcoded in App Service settings, not in Key Vault. See `docs/security-issues/2026-03-31-gh-token-scope.md`.
