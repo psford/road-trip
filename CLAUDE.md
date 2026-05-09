@@ -202,11 +202,30 @@ develop (work here) → PR → main (production)
 
 | Operation | Why |
 |-----------|-----|
-| `git merge main` | Develop flows TO main only |
-| `git pull origin main` | Pulls and merges main into develop |
-| `git rebase main` | Rewrites develop history based on main |
+| `git merge main` | Pulls main's merge commits back into develop — wrong direction for the develop → main flow |
+| `git pull origin main` | Same as above (it's a fetch + merge under the hood) |
 
-If main and develop diverge, merge develop into main via PR — never the reverse.
+If main and develop diverge in *content*, merge develop into main via PR — never the reverse.
+
+### Allowed: post-squash-merge maintenance
+
+Develop → main PRs are squash-merged (see PR settings). After a squash, develop's
+commits remain in develop's history but their content now lives in `main` under a
+single new commit with a different SHA — call these **phantom commits**. Phantom
+commits make the next develop → main merge attempt conflict on overlapping
+edits even though the content is logically equivalent.
+
+Realign develop after every develop → main squash-merge:
+
+```
+git fetch origin
+git rebase origin/main           # auto-skips phantom commits as "patch already upstream"
+git push --force-with-lease origin develop
+```
+
+This rewrites develop's history but only drops commits whose patches are
+already in main; any unmerged develop work is preserved on top. The repo
+allows force-push to develop (force-push to main is forbidden).
 
 ### Who can do what (Claude vs Patrick)
 
