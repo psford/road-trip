@@ -93,24 +93,23 @@ If anyone (Claude or Patrick) accidentally squash-merges a develop → main PR, 
 
 This is the most important mitigation in this plan. **Without it, M-1 and M-2 are aspirations.**
 
-### M-4: Drift detector (post-hoc, second line of defense)
+### M-4: Drift detector (DROPPED as redundant during implementation)
 
-A second CI check that asserts:
+The prevention plan originally proposed a second CI check that asserted develop
+is a strict ancestor of main (or vice versa). On implementation review this
+was dropped because:
 
-> "develop is a strict ancestor of main (or equal to main + commits not yet merged)."
+- M-3 catches every squash-merge to main (the only way drift can be introduced
+  in this workflow). If M-3 holds, drift cannot occur.
+- A correctly-implemented drift detector is genuinely tricky: after a regular
+  develop → main merge, develop is an ancestor of main but main is *not* an
+  ancestor of develop (yet). Any further work on develop puts main into the
+  "develop's history doesn't include main's tip" state, which is the *normal*
+  state during feature development. Distinguishing "healthy in-progress
+  develop" from "drifted develop" requires a richer signal than ancestry.
 
-```bash
-- name: Assert develop is strict ancestor of main
-  run: |
-    git fetch origin main develop
-    if ! git merge-base --is-ancestor origin/develop origin/main && \
-       ! git merge-base --is-ancestor origin/main origin/develop; then
-      echo "::error::develop and main have diverged — phantom-commit drift detected. See docs/issues/2026-05-09-rca-git-flow-catastrophe.md"
-      exit 1
-    fi
-```
-
-If develop diverges from main (the failure mode of this incident), CI flags it on the next push. This catches the case where M-3 is somehow defeated.
+If M-3 is ever defeated (e.g., the CI check is bypassed), we can add M-4 then.
+For now, M-3 alone is sufficient.
 
 ### M-5: Update the RCA into project context (CLAUDE.md gotcha)
 

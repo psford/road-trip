@@ -155,6 +155,7 @@ Mobile-first road trip photo sharing app. Users create a trip, get two secret li
 
 ## Gotchas
 
+- **develop → main merge strategy is "Create a merge commit", never squash.** Squash-merging develop → main creates phantom-commit drift that breaks the next develop → main PR with conflicts. See `docs/issues/2026-05-09-rca-git-flow-catastrophe.md` for the full incident report. The CI step `git-flow-guard` in `.github/workflows/roadtrip-ci.yml` enforces this — it fails on the next push to main if a squash-merge is detected (HEAD on main with only 1 parent).
 - Schema changes use EF Core migrations only (never raw SQL migration scripts). Migrations auto-apply on app startup; for prod they are also applied manually via the deployment runbook before the App Service deploy.
 - Deploy is Docker-based (App Service with containerized builds)
 - Port 5100 locally (distinct from other .NET apps)
@@ -198,15 +199,25 @@ develop (work here) → PR → main (production)
 - **Direct on develop** for: small fixes, tweaks, internal docs
 - **NEVER** commit directly to main, merge to main via CLI, or deploy without explicit approval
 
+### Merge strategies (mandatory — enforced by CI)
+
+| Source → target | Strategy | Why |
+|-----------------|----------|-----|
+| feature branch → develop | **Squash and merge** | Feature branches have intermediate commits we don't want in long-term history |
+| develop → main | **Create a merge commit** (regular merge) | Keeps develop and main structurally in sync. Squash-merge here causes phantom-commit drift on the next develop → main PR. See `docs/issues/2026-05-09-rca-git-flow-catastrophe.md`. |
+
+**Rebase-and-merge is not used** anywhere in this repo. It produces the same phantom-commit drift as squash for develop → main without the tidy-commit benefit, and adds nothing for feature → develop.
+
+These are not preferences. The CI workflow `roadtrip-ci.yml` includes a `git-flow-guard` step that fails if the latest commit on `main` has fewer than 2 parents (i.e., if anyone squash-merged develop → main). If you find yourself wanting to deviate, stop and read the RCA document linked above first.
+
 ### Forbidden Operations (on develop)
 
 | Operation | Why |
 |-----------|-----|
-| `git merge main` | Develop flows TO main only |
-| `git pull origin main` | Pulls and merges main into develop |
-| `git rebase main` | Rewrites develop history based on main |
+| `git merge main` | Pulls main's merge commits back into develop — wrong direction for the develop → main flow |
+| `git pull origin main` | Same as above (it's a fetch + merge under the hood) |
 
-If main and develop diverge, merge develop into main via PR — never the reverse.
+If main and develop diverge in *content*, merge develop into main via PR — never the reverse.
 
 ### Who can do what (Claude vs Patrick)
 
@@ -234,12 +245,13 @@ The "ask first" rule for develop-targeted actions still applies — Claude shoul
 **After Creating a PR targeting `develop`:**
 1. Wait for CI to pass (roadtrip-ci.yml)
 2. Claude may merge via `gh pr merge` after asking for approval
-3. Prefer `--squash` for feature branches with intermediate commits; `--merge` is fine for clean histories
+3. Use `--squash` for feature branches → develop. This is the standard. Per the merge-strategies table above.
 
 **After Creating a PR targeting `main`:**
 1. Wait for CI to pass (roadtrip-ci.yml)
 2. Patrick approves manually by merging through the GitHub web UI
-3. Claude must NEVER use `gh pr merge` against main
+3. **Use "Create a merge commit" (regular merge), NOT "Squash and merge" or "Rebase and merge".** Per the merge-strategies table above. CI will fail on main's next push if this is violated.
+4. Claude must NEVER use `gh pr merge` against main
 
 **Merged PRs:** Once closed, a PR is DEAD. After any merge:
 1. Check: `gh pr list --head develop --base main --state open`
