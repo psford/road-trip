@@ -155,7 +155,6 @@ Mobile-first road trip photo sharing app. Users create a trip, get two secret li
 
 ## Gotchas
 
-- EXIF rotation is TODO -- `ApplyExifRotation()` is a no-op stub
 - Schema changes use EF Core migrations only (never raw SQL migration scripts). Migrations auto-apply on app startup; for prod they are also applied manually via the deployment runbook before the App Service deploy.
 - Deploy is Docker-based (App Service with containerized builds)
 - Port 5100 locally (distinct from other .NET apps)
