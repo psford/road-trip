@@ -142,8 +142,9 @@ a:hover {
 label {
   display: block;
   margin-bottom: var(--space-xs);
-  font-weight: 500;
-  color: var(--color-text);
+  font-size: var(--font-size-subhead);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-secondary);
 }
 
 input[type="text"],
@@ -151,12 +152,13 @@ textarea {
   width: 100%;
   padding: var(--space-sm);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius);
+  border-radius: var(--radius-md);
   font-family: inherit;
-  font-size: inherit;
+  font-size: var(--font-size-body);
   color: var(--color-text);
   background-color: var(--color-surface);
   line-height: 1.4;
+  transition: border-color var(--motion-duration-fast) var(--motion-ease-standard);
 }
 
 input[type="text"]:focus,
@@ -299,6 +301,7 @@ textarea {
   padding: var(--space-sm) var(--space-md);
   margin-right: var(--space-sm);
   margin-bottom: var(--space-xs);
+  border-radius: var(--radius-md);
 }
 
 /* Tablet and up */
@@ -378,11 +381,15 @@ textarea {
   padding: var(--space-sm) var(--space-md);
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius);
+  border-radius: var(--radius-md);
   text-decoration: none;
   color: var(--color-text);
   box-shadow: var(--shadow);
-  transition: border-color 0.15s;
+  transition: transform var(--motion-duration-instant) var(--motion-ease-standard);
+}
+
+.my-trip-card:active {
+  transform: scale(0.99);
 }
 
 .my-trip-card:hover {
@@ -390,7 +397,8 @@ textarea {
 }
 
 .my-trip-name {
-  font-weight: 600;
+  font-size: var(--font-size-headline);
+  font-weight: var(--font-weight-semibold);
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -545,13 +553,16 @@ textarea {
 }
 
 .hero h1 {
+  font-size: var(--font-size-large-title);
+  font-weight: var(--font-weight-bold);
+  letter-spacing: -0.02em;
   color: white;
   margin-bottom: var(--space-sm);
 }
 
 .hero p {
-  color: rgba(255, 255, 255, 0.9);
-  font-size: 1.05rem;
+  font-size: var(--font-size-body);
+  color: var(--color-text-secondary);
   margin-bottom: var(--space-md);
 }
 
@@ -561,14 +572,18 @@ textarea {
   background: white;
   color: var(--color-primary-dark);
   border: none;
-  border-radius: 24px;
+  border-radius: var(--radius-md);
   font-family: inherit;
-  font-size: 1rem;
-  font-weight: 600;
+  font-size: var(--font-size-headline);
+  font-weight: var(--font-weight-semibold);
   cursor: pointer;
   text-decoration: none;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
-  transition: all 0.2s ease;
+  transition: transform var(--motion-duration-instant) var(--motion-ease-standard);
+}
+
+.hero .button-hero:active {
+  transform: scale(0.97);
 }
 
 .hero .button-hero:hover {
