@@ -1,10 +1,10 @@
 {
-  "version": "1.0.0-4824879",
+  "version": "1.0.0-9235560",
   "files": [
     {
       "url": "/css/styles.css",
-      "size": 32147,
-      "sha256": "cafec313ff8b603d46960b6229438d915c923a11b9eb26db73e066ee0a1a24d4"
+      "size": 33621,
+      "sha256": "adbca29a5f3c1ac8a773f8d38a3deff14dfbde6a1e47e35a52046f9f79c1a374"
     },
     {
       "url": "/js/api.js",
@@ -43,8 +43,8 @@
     },
     {
       "url": "/js/nativeBridge.js",
-      "size": 6372,
-      "sha256": "062bfd1904638f57824d6675572169165a63c89461cc4dba6a11ce44907d7fa9"
+      "size": 6416,
+      "sha256": "89fd9f69446edabd3376d0ad811df08c70ceeb1231d7412aa5dd180f265c5002"
     },
     {
       "url": "/js/offlineError.js",
@@ -63,8 +63,8 @@
     },
     {
       "url": "/js/photoCarousel.js",
-      "size": 13567,
-      "sha256": "7373e521b8c8a7bffe6b985f4b0f5166580b9476857e2bbfe80c27b19ea79371"
+      "size": 13664,
+      "sha256": "7c4def42301675acf3f066f877a48d69432ccd6c6ba49cc96d8dfe86aebf12c3"
     },
     {
       "url": "/js/poiLayer.js",
@@ -78,8 +78,8 @@
     },
     {
       "url": "/js/postUI.js",
-      "size": 50990,
-      "sha256": "1fbca487320e5b644d7212412f8ac3cd453715929f207445682b73dbb0fd8a6e"
+      "size": 52071,
+      "sha256": "548d95e05e33d97a39865df7872c202d64c740df65f91c3ff2f1f337de9849de"
     },
     {
       "url": "/js/progressPanel.js",
@@ -113,8 +113,8 @@
     },
     {
       "url": "/js/uploadQueue.js",
-      "size": 25760,
-      "sha256": "dd708646825409777a8741c80114f3e8f87ae0b792bb639489f1626990a95b9c"
+      "size": 26357,
+      "sha256": "27d6295afc7ce140ff75639799fe7a99f5357ecc5ea8761045e6d91ae64e7fc8"
     },
     {
       "url": "/js/uploadSemaphore.js",
@@ -143,8 +143,8 @@
     },
     {
       "url": "/ios.css",
-      "size": 5197,
-      "sha256": "b3d893763164c9fccfac23d64869428dd898af63dd7aefdf3a58b6393594d536"
+      "size": 7072,
+      "sha256": "d87d5502ee67abbbf7ff7319a3b9ab3e09c5688d77ffa38211323e9615f0eede"
     }
   ]
 }
