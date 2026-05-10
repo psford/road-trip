@@ -1,3 +1,4 @@
+// pattern: Imperative Shell
 /**
  * Native bridge — Capacitor plugin wrapper with web fallbacks.
  *
@@ -51,10 +52,10 @@ globalThis.Native ??= {};
             };
 
             if (impactMap[label]) {
-                const [method, style] = impactMap[label];
+                const [, style] = impactMap[label];
                 return Haptics.impact({ style: ImpactStyle[style] });
             } else if (notificationMap[label]) {
-                const [method, type] = notificationMap[label];
+                const [, type] = notificationMap[label];
                 return Haptics.notification({ type: NotificationType[type] });
             }
 
@@ -169,7 +170,7 @@ globalThis.Native ??= {};
 
     // Explicit install: no-op (the IIFE already completed the install)
     N.install = function () {
-        // Already installed by the _installed guard above
+        // Already true after IIFE; idempotent reassignment for explicit-call safety.
         N._installed = true;
     };
 })();

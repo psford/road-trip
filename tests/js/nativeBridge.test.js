@@ -51,15 +51,16 @@ describe('Native.install idempotency', () => {
         // First install already happened in beforeEach
         expect(globalThis.Native._installed).toBe(true);
 
-        // Capture initial state
-        const originalInstalled = globalThis.Native._installed;
+        // Capture initial state: method reference before re-eval
+        const hapticBefore = globalThis.Native.haptic;
 
         // Re-eval the source (simulating a script re-execution in a swap)
         eval(SOURCE);
 
-        // Verify idempotency: _installed should still be true, and the flag value unchanged
+        // Verify idempotency: methods should be identical (IIFE early-returned)
+        expect(globalThis.Native.haptic).toBe(hapticBefore);
+        // _installed should still be true
         expect(globalThis.Native._installed).toBe(true);
-        expect(globalThis.Native._installed).toBe(originalInstalled);
     });
 });
 
