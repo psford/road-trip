@@ -336,3 +336,72 @@
   bottom: calc(env(safe-area-inset-bottom, 0px) + var(--space-md));
   right: var(--space-md);
 }
+
+/* Phase 4: index.html + create.html chrome */
+.platform-ios .hero {
+  padding-top: calc(env(safe-area-inset-top, 0px) + var(--space-xl));
+  background: transparent;
+}
+
+.platform-ios .hero h1 {
+  font-size: var(--font-size-large-title);
+  font-weight: var(--font-weight-bold);
+  letter-spacing: -0.02em;
+  color: var(--color-text);
+}
+
+.platform-ios .hero p {
+  color: var(--color-text-secondary);
+}
+
+.platform-ios .button-hero {
+  background-color: var(--color-accent);
+  color: #ffffff;
+  border-radius: var(--radius-md);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.platform-ios .my-trips-section h2 {
+  font-size: var(--font-size-title-2);
+  font-weight: var(--font-weight-bold);
+  letter-spacing: -0.01em;
+}
+
+.platform-ios .my-trip-card {
+  background-color: var(--color-surface);
+  border-radius: var(--radius-md);
+  border: none;
+  padding: var(--space-md);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+}
+
+.platform-ios .my-trip-card:active {
+  transform: scale(0.98);
+  background-color: var(--color-fill-secondary);
+}
+
+/* Phase 4: create.html — iOS-styled form inputs */
+.platform-ios input[type="text"],
+.platform-ios textarea {
+  background-color: var(--color-fill-secondary);
+  border: none;
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-body);
+  padding: var(--space-sm) var(--space-md);
+  color: var(--color-text);
+}
+
+.platform-ios input[type="text"]:focus,
+.platform-ios textarea:focus {
+  background-color: var(--color-surface);
+  outline: 2px solid var(--color-accent);
+  outline-offset: 0;
+}
+
+.platform-ios label {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-footnote);
+  font-weight: var(--font-weight-medium);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
