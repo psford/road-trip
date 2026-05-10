@@ -86,6 +86,12 @@
 
                     const result = await API.createTrip(name, description || null);
 
+                    // AC6.3: success haptic fires before navigation, so the user feels confirmation
+                    // even if the navigation branch is slow (network on shell-fetch, Safari on web).
+                    if (globalThis.Native && typeof globalThis.Native.haptic === 'function') {
+                        void globalThis.Native.haptic('success');
+                    }
+
                     // Save trip to localStorage for My Trips
                     TripStorage.saveTrip(name, result.postUrl, result.viewUrl || '');
 

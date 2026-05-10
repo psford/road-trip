@@ -81,6 +81,106 @@ describe('create-flow', () => {
     describe('happy path', () => {
         beforeEach(() => setupHappyPath());
 
+        it('fires Native.haptic("success") after API.createTrip resolves', async () => {
+            // Arrange: stub Native.haptic
+            const hapticMock = vi.fn().mockResolvedValue(undefined);
+            globalThis.Native = { haptic: hapticMock };
+
+            globalThis.API = {
+                createTrip: vi.fn().mockResolvedValue({
+                    postUrl: '/post/test-token',
+                    viewUrl: '/trips/view-token'
+                })
+            };
+
+            globalThis.TripStorage = {
+                saveTrip: vi.fn().mockResolvedValue(undefined)
+            };
+
+            // FetchAndSwap is NOT defined (browser branch)
+            delete globalThis.FetchAndSwap;
+
+            // Mock window.location.href setter
+            let hrefSetValue = null;
+            const originalDescriptor = Object.getOwnPropertyDescriptor(window, 'location');
+            Object.defineProperty(window, 'location', {
+                configurable: true,
+                value: {
+                    href: 'http://localhost/create',
+                    get href() { return this._href; },
+                    set href(val) { hrefSetValue = val; }
+                }
+            });
+
+            // Eval the script
+            eval(INLINE_SCRIPT);
+
+            // Act: Submit the form
+            const form = document.getElementById('createTripForm');
+            const evt = new SubmitEvent('submit', { bubbles: true, cancelable: true });
+            form.dispatchEvent(evt);
+
+            // Await async operations
+            await new Promise(r => setTimeout(r, 20));
+
+            // Assert: haptic was called exactly once with 'success'
+            expect(hapticMock).toHaveBeenCalledWith('success');
+            expect(hapticMock).toHaveBeenCalledTimes(1);
+
+            // Cleanup
+            Object.defineProperty(window, 'location', {
+                configurable: true,
+                value: originalDescriptor.value
+            });
+        });
+
+        it('does not throw when Native is undefined on success', async () => {
+            // Arrange: Native is undefined (test environment)
+            delete globalThis.Native;
+
+            globalThis.API = {
+                createTrip: vi.fn().mockResolvedValue({
+                    postUrl: '/post/test-token',
+                    viewUrl: '/trips/view-token'
+                })
+            };
+
+            globalThis.TripStorage = {
+                saveTrip: vi.fn().mockResolvedValue(undefined)
+            };
+
+            delete globalThis.FetchAndSwap;
+
+            // Mock window.location.href setter
+            let hrefSetValue = null;
+            const originalDescriptor = Object.getOwnPropertyDescriptor(window, 'location');
+            Object.defineProperty(window, 'location', {
+                configurable: true,
+                value: {
+                    href: 'http://localhost/create',
+                    get href() { return this._href; },
+                    set href(val) { hrefSetValue = val; }
+                }
+            });
+
+            // Act & Assert: eval and submit without throwing
+            eval(INLINE_SCRIPT);
+
+            const form = document.getElementById('createTripForm');
+            const evt = new SubmitEvent('submit', { bubbles: true, cancelable: true });
+            form.dispatchEvent(evt);
+
+            // Await and verify no error is thrown
+            await new Promise(r => setTimeout(r, 20));
+            expect(hrefSetValue).toBe('/post/test-token');
+
+            // Cleanup
+            Object.defineProperty(window, 'location', {
+                configurable: true,
+                value: originalDescriptor.value
+            });
+        });
+
         it('Browser branch (FetchAndSwap undefined) → window.location.href setter called', async () => {
             // Set up API and TripStorage mocks
             globalThis.API = {
