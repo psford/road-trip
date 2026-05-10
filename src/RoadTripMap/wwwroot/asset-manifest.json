@@ -1,10 +1,10 @@
 {
-  "version": "1.0.0-344bafd",
+  "version": "1.0.0-84f6318",
   "files": [
     {
       "url": "/css/styles.css",
-      "size": 33757,
-      "sha256": "b2499dce7dd83c55f67f7b4ca7cfc5ad412fa036c99f0ecbd111c6fbc62cb559"
+      "size": 34525,
+      "sha256": "950336d49c3c1ee21a63bfd165ba17fe70affd94f2014234c6ba2529ca4f94ba"
     },
     {
       "url": "/js/api.js",
@@ -38,8 +38,8 @@
     },
     {
       "url": "/js/mapUI.js",
-      "size": 10389,
-      "sha256": "d150faef66a903f0cd489c6953a64024ec4030d0b46676ec9e27131231a02537"
+      "size": 11128,
+      "sha256": "77cf24df01986f2a9668f6b400b1824c25b4fa12dec95f617eefd69238cf613b"
     },
     {
       "url": "/js/nativeBridge.js",
@@ -63,8 +63,8 @@
     },
     {
       "url": "/js/photoCarousel.js",
-      "size": 13797,
-      "sha256": "928deeb35046adb83a84329bf2ac1fef8df3e0fe999949b9924d58729c60d0de"
+      "size": 18579,
+      "sha256": "cef339b7b6379b737aca1c4762585ae52470f1e2dc0f6405fd9e3ac195a730df"
     },
     {
       "url": "/js/poiLayer.js",
@@ -143,8 +143,8 @@
     },
     {
       "url": "/ios.css",
-      "size": 7023,
-      "sha256": "0969d8b1a3bbb125a4458579c7864e0fcabce442ce8e26796e21399953037256"
+      "size": 10933,
+      "sha256": "9097890a8dee64315bb42f432708456db220a204fd1257b50d4a32a3cbc4cb35"
     }
   ]
 }
