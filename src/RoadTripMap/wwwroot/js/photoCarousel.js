@@ -414,5 +414,68 @@ const PhotoCarousel = {
         };
         overlay._handleEscape = handleEscape;
         document.addEventListener('keydown', handleEscape);
+
+        // Swipe-down to dismiss (iOS only, via Pointer Events)
+        if (globalThis.RoadTrip && globalThis.RoadTrip.isNativePlatform && globalThis.RoadTrip.isNativePlatform()) {
+            let startY = null;
+            let startTime = 0;
+            let dragging = false;
+
+            const onDown = (e) => {
+                // Only start a drag if the touch starts on the overlay or image,
+                // not on chrome buttons (close/save/edit/delete).
+                const t = e.target;
+                if (!(t === overlay || t.tagName === 'IMG')) return;
+                startY = e.clientY;
+                startTime = e.timeStamp;
+                dragging = true;
+                overlay.style.transition = 'none';
+            };
+
+            const onMove = (e) => {
+                if (!dragging) return;
+                const dy = Math.max(0, e.clientY - startY);
+                overlay.style.transform = 'translateY(' + dy + 'px)';
+                overlay.style.opacity = String(Math.max(0, 1 - dy / 600));
+            };
+
+            const onUp = (e) => {
+                if (!dragging) return;
+                dragging = false;
+                const dy = Math.max(0, e.clientY - startY);
+                const dt = Math.max(1, e.timeStamp - startTime);
+                const velocity = dy / dt; // px per ms
+
+                overlay.style.transition = '';
+
+                if (dy > 100 || velocity > 0.5) {
+                    // Animate the rest of the dismiss.
+                    overlay.classList.add('is-dismissing');
+                    overlay.style.transform = 'translateY(100vh)';
+                    overlay.style.opacity = '0';
+                    // closeOverlay handles status-bar restore + DOM removal in try/finally.
+                    // Use the transition-end event so the user sees the animation complete
+                    // before the overlay disappears.
+                    const onEnd = () => {
+                        overlay.removeEventListener('transitionend', onEnd);
+                        PhotoCarousel.closeOverlay(overlay);
+                    };
+                    overlay.addEventListener('transitionend', onEnd);
+                    // Safety net: if transitionend doesn't fire (browser quirk), still close.
+                    setTimeout(() => {
+                        if (overlay.parentNode) PhotoCarousel.closeOverlay(overlay);
+                    }, 400);
+                } else {
+                    // Snap back.
+                    overlay.style.transform = '';
+                    overlay.style.opacity = '';
+                }
+            };
+
+            overlay.addEventListener('pointerdown', onDown);
+            overlay.addEventListener('pointermove', onMove);
+            overlay.addEventListener('pointerup', onUp);
+            overlay.addEventListener('pointercancel', onUp);
+        }
     }
 };
