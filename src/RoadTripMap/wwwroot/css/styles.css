@@ -608,9 +608,9 @@ textarea {
 
 /* Page Header (inner pages) */
 .page-header {
-  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%);
+  background: var(--color-surface);
   padding: var(--space-xs) var(--space-sm);
-  color: white;
+  color: var(--color-text);
   margin: calc(-1 * var(--space-sm));
   margin-bottom: var(--space-xs);
   display: flex;
@@ -620,8 +620,8 @@ textarea {
 }
 
 .page-header h1 {
-  color: white;
-  font-size: 1rem;
+  color: var(--color-text);
+  font-size: var(--font-size-body);
   margin-bottom: 0;
   text-align: right;
   flex: 1;
@@ -629,6 +629,12 @@ textarea {
 }
 
 .page-header p {
+  display: block;
+  font-size: var(--font-size-subhead);
+  color: var(--color-text-secondary);
+}
+
+.page-header p:empty {
   display: none;
 }
 
@@ -638,13 +644,13 @@ textarea {
 }
 
 .page-header .nav a {
-  color: rgba(255, 255, 255, 0.85);
+  color: var(--color-primary);
   padding: 0;
-  font-size: 0.85rem;
+  font-size: var(--font-size-subhead);
 }
 
 .page-header .nav a:hover {
-  color: white;
+  color: var(--color-primary-hover);
 }
 
 @media (min-width: 768px) {
@@ -662,14 +668,14 @@ textarea {
   }
 
   .page-header h1 {
-    font-size: 2rem;
+    font-size: var(--font-size-title-1);
     margin-bottom: var(--space-xs);
     text-align: left;
   }
 
   .page-header p {
     display: block;
-    font-size: 1rem;
+    font-size: var(--font-size-body);
   }
 
   .page-header .nav {
@@ -677,7 +683,7 @@ textarea {
   }
 
   .page-header .nav a {
-    font-size: 1rem;
+    font-size: var(--font-size-body);
   }
 }
 
@@ -690,20 +696,30 @@ textarea {
 .add-photo-button {
   width: 100%;
   padding: var(--space-sm);
-  font-size: 0.95rem;
-  font-weight: 600;
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-semibold);
+  background-color: var(--color-primary);
+  color: white;
+  border: none;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: var(--motion-duration-fast) var(--motion-ease-standard);
 }
 
 @media (min-width: 768px) {
   .add-photo-button {
     padding: var(--space-md);
-    font-size: 1.1rem;
+    font-size: var(--font-size-headline);
   }
 }
 
 /* Photo Preview Section */
 .preview-section {
   display: none;
+  background-color: var(--color-surface);
+  padding: var(--space-md);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-separator);
 }
 
 .preview-section.visible {
@@ -718,17 +734,17 @@ textarea {
 }
 
 .place-name-display {
-  font-size: 0.95rem;
-  color: var(--color-text-light);
+  font-size: var(--font-size-subhead);
+  color: var(--color-text-secondary);
   margin-bottom: var(--space-md);
   padding: var(--space-sm);
-  background-color: var(--color-bg);
+  background-color: var(--color-fill-tertiary);
   border-radius: var(--radius);
 }
 
 .place-name-display.no-gps {
   color: var(--color-error);
-  background-color: var(--color-error-bg);
+  background-color: var(--color-fill-tertiary);
 }
 
 /* Pin-drop Map */
@@ -736,8 +752,8 @@ textarea {
   width: 100%;
   height: 300px;
   margin-bottom: var(--space-md);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius);
+  border: 1px solid var(--color-separator);
+  border-radius: var(--radius-md);
 }
 
 .map-section {
@@ -749,11 +765,11 @@ textarea {
 }
 
 .map-instruction {
-  font-size: 0.9rem;
-  color: var(--color-text-light);
+  font-size: var(--font-size-footnote);
+  color: var(--color-text-secondary);
   margin-bottom: var(--space-md);
   padding: var(--space-sm);
-  background-color: var(--color-bg);
+  background-color: var(--color-fill-tertiary);
   border-radius: var(--radius);
 }
 
@@ -761,10 +777,10 @@ textarea {
 .caption-input {
   width: 100%;
   padding: var(--space-sm);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius);
+  border: 1px solid var(--color-separator);
+  border-radius: var(--radius-md);
   font-family: inherit;
-  font-size: inherit;
+  font-size: var(--font-size-body);
   color: var(--color-text);
   background-color: var(--color-surface);
   margin-bottom: var(--space-md);
@@ -784,10 +800,24 @@ textarea {
 
 .post-button-group button {
   flex: 1;
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-headline);
+  font-weight: var(--font-weight-semibold);
+  cursor: pointer;
+  border: none;
 }
 
 .post-button-group .button-primary {
   flex: 2;
+  background-color: var(--color-primary);
+  color: white;
+  transition: var(--motion-duration-fast) var(--motion-ease-standard);
+}
+
+.post-button-group .button-secondary {
+  background-color: var(--color-fill-secondary);
+  color: var(--color-text);
+  transition: var(--motion-duration-fast) var(--motion-ease-standard);
 }
 
 /* Photo Map on Post Page */
@@ -801,16 +831,17 @@ textarea {
 }
 
 .photo-map-section h3 {
-  font-size: 1rem;
+  font-size: var(--font-size-body);
   margin-bottom: var(--space-xs);
   margin-top: 0;
+  font-weight: var(--font-weight-semibold);
 }
 
 .post-photo-map {
   width: 100%;
   height: 300px;
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
+  border: 1px solid var(--color-separator);
+  border-radius: var(--radius-md);
   overflow: visible;
   margin-bottom: var(--space-md);
 }
@@ -831,9 +862,10 @@ textarea {
 }
 
 .photo-list h3 {
-  font-size: 1rem;
+  font-size: var(--font-size-body);
   margin-bottom: var(--space-xs);
   margin-top: 0;
+  font-weight: var(--font-weight-semibold);
 }
 
 /* View Link Section */
@@ -842,14 +874,15 @@ textarea {
 }
 
 .view-link-section h3 {
-  font-size: 1rem;
+  font-size: var(--font-size-body);
   margin-bottom: var(--space-xs);
   margin-top: 0;
+  font-weight: var(--font-weight-semibold);
 }
 
 .view-link-section p {
-  font-size: 0.85rem;
-  color: var(--color-text-light);
+  font-size: var(--font-size-subhead);
+  color: var(--color-text-secondary);
 }
 
 /* Toast Notifications */
@@ -863,10 +896,11 @@ textarea {
 
 .toast {
   padding: var(--space-md);
-  border-radius: var(--radius);
+  border-radius: var(--radius-md);
   margin-bottom: var(--space-sm);
-  animation: slideInRight 0.3s ease;
+  animation: slideInRight var(--motion-duration-normal) var(--motion-ease-standard);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  font-size: var(--font-size-subhead);
 }
 
 .toast.success {
