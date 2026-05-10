@@ -135,6 +135,10 @@
                         window.location.href = result.postUrl;
                     }
                 } catch (error) {
+                    if (globalThis.Native && typeof globalThis.Native.haptic === 'function') {
+                        void globalThis.Native.haptic('error');
+                    }
+
                     // Surface the full error (with stack) to the Web Inspector.
                     // The banner shows the friendly copy; the console shows why.
                     console.error('[create-flow] submit failed:', error);

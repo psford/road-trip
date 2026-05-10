@@ -396,6 +396,139 @@ describe('create-flow', () => {
         });
     });
 
+    describe('error haptic', () => {
+        beforeEach(() => setupOfflineTests());
+
+        it('fires Native.haptic("error") when API.createTrip rejects', async () => {
+            // Arrange: stub Native.haptic
+            const hapticMock = vi.fn().mockResolvedValue(undefined);
+            globalThis.Native = { haptic: hapticMock };
+
+            // API rejects with a non-offline error
+            globalThis.API = {
+                createTrip: vi.fn().mockRejectedValue(new Error('Server error'))
+            };
+
+            globalThis.TripStorage = {
+                saveTrip: vi.fn().mockResolvedValue(undefined)
+            };
+
+            eval(INLINE_SCRIPT);
+
+            // Act: Submit the form
+            const form = document.getElementById('createTripForm');
+            const evt = new SubmitEvent('submit', { bubbles: true, cancelable: true });
+            form.dispatchEvent(evt);
+
+            // Await async operations
+            await new Promise(r => setTimeout(r, 20));
+
+            // Assert: haptic was called exactly once with 'error'
+            expect(hapticMock).toHaveBeenCalledWith('error');
+            expect(hapticMock).toHaveBeenCalledTimes(1);
+        });
+
+        it('fires Native.haptic("error") when API.createTrip rejects with offline error', async () => {
+            // Arrange: stub Native.haptic
+            const hapticMock = vi.fn().mockResolvedValue(undefined);
+            globalThis.Native = { haptic: hapticMock };
+
+            // API rejects with TypeError (offline shape per offlineError.js)
+            globalThis.API = {
+                createTrip: vi.fn().mockRejectedValue(new TypeError('Load failed'))
+            };
+
+            globalThis.TripStorage = {
+                saveTrip: vi.fn().mockResolvedValue(undefined)
+            };
+
+            eval(INLINE_SCRIPT);
+
+            // Act: Submit the form
+            const form = document.getElementById('createTripForm');
+            const evt = new SubmitEvent('submit', { bubbles: true, cancelable: true });
+            form.dispatchEvent(evt);
+
+            // Await async operations
+            await new Promise(r => setTimeout(r, 20));
+
+            // Assert: haptic was called exactly once with 'error'
+            expect(hapticMock).toHaveBeenCalledWith('error');
+            expect(hapticMock).toHaveBeenCalledTimes(1);
+        });
+
+        it('fires Native.haptic("error") when name is missing (validation error)', async () => {
+            // Arrange: stub Native.haptic
+            const hapticMock = vi.fn().mockResolvedValue(undefined);
+            globalThis.Native = { haptic: hapticMock };
+
+            globalThis.API = {
+                createTrip: vi.fn().mockResolvedValue({
+                    postUrl: '/post/test-token',
+                    viewUrl: '/trips/view-token'
+                })
+            };
+
+            globalThis.TripStorage = {
+                saveTrip: vi.fn().mockResolvedValue(undefined)
+            };
+
+            // Setup with empty name (before eval, so script binds to correct DOM)
+            document.body.innerHTML = `
+                <div id="errorMessage" class="message error hidden"></div>
+                <form id="createTripForm">
+                    <input type="text" id="tripName" name="name" value="" />
+                    <textarea id="tripDescription" name="description"></textarea>
+                    <button type="submit" id="createButton">Create Trip</button>
+                </form>
+            `;
+            document.body.dataset.page = 'create';
+
+            eval(INLINE_SCRIPT);
+
+            // Act: Submit form with empty name (validation throws before API call)
+            const form = document.getElementById('createTripForm');
+            const evt = new SubmitEvent('submit', { bubbles: true, cancelable: true });
+            form.dispatchEvent(evt);
+
+            // Await async operations
+            await new Promise(r => setTimeout(r, 20));
+
+            // Assert: haptic was called exactly once with 'error'
+            expect(hapticMock).toHaveBeenCalledWith('error');
+            expect(hapticMock).toHaveBeenCalledTimes(1);
+
+            // Also verify API.createTrip was NOT called (validation threw first)
+            expect(globalThis.API.createTrip).not.toHaveBeenCalled();
+        });
+
+        it('does not throw when Native is undefined on failure', async () => {
+            // Arrange: Native is undefined (test environment)
+            delete globalThis.Native;
+
+            globalThis.API = {
+                createTrip: vi.fn().mockRejectedValue(new Error('Server error'))
+            };
+
+            globalThis.TripStorage = {
+                saveTrip: vi.fn().mockResolvedValue(undefined)
+            };
+
+            eval(INLINE_SCRIPT);
+
+            // Act: Submit the form
+            const form = document.getElementById('createTripForm');
+            const evt = new SubmitEvent('submit', { bubbles: true, cancelable: true });
+            form.dispatchEvent(evt);
+
+            // Await and verify no error is thrown, error message is shown
+            await new Promise(r => setTimeout(r, 20));
+            const errorEl = document.getElementById('errorMessage');
+            expect(errorEl.classList.contains('hidden')).toBe(false);
+            expect(errorEl.textContent).toBe('Server error');
+        });
+    });
+
     describe('in-shell navigation hardening', () => {
         // If FetchAndSwap.fetchAndSwap rejects mid-swap, or if the shell is
         // active but FetchAndSwap somehow isn't loaded, the old handler fell
