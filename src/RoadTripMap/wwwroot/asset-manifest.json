@@ -1,10 +1,10 @@
 {
-  "version": "1.0.0-84f6318",
+  "version": "1.0.0-a3383bb",
   "files": [
     {
       "url": "/css/styles.css",
-      "size": 34525,
-      "sha256": "950336d49c3c1ee21a63bfd165ba17fe70affd94f2014234c6ba2529ca4f94ba"
+      "size": 34537,
+      "sha256": "2bbd06f3e1a04d1903fa1b65cef50add4b1dd7f5cb04e55dce2258b33655b497"
     },
     {
       "url": "/js/api.js",
@@ -38,8 +38,8 @@
     },
     {
       "url": "/js/mapUI.js",
-      "size": 11128,
-      "sha256": "77cf24df01986f2a9668f6b400b1824c25b4fa12dec95f617eefd69238cf613b"
+      "size": 11287,
+      "sha256": "5d0761fca1649fde196a3d2214b2fb92986f8f40985919445399351d9d9a4032"
     },
     {
       "url": "/js/nativeBridge.js",
@@ -63,8 +63,8 @@
     },
     {
       "url": "/js/photoCarousel.js",
-      "size": 18579,
-      "sha256": "cef339b7b6379b737aca1c4762585ae52470f1e2dc0f6405fd9e3ac195a730df"
+      "size": 18770,
+      "sha256": "7c8c0a1fd245ea5ce2aaf1ebadbb8b76baf7b50fbc6c1de24af7f23374670cef"
     },
     {
       "url": "/js/poiLayer.js",
