@@ -99,6 +99,8 @@ beforeAll(() => {
     loadGlobal('resumeBanner.js');
     loadGlobal('photoCarousel.js');
     loadGlobal('postUI.js');
+    loadGlobal('mapService.js');
+    loadGlobal('mapUI.js');
 });
 
 /**

@@ -111,6 +111,9 @@ const MapUI = {
                         img.style.cursor = 'pointer';
                         img.addEventListener('click', (e) => {
                             e.stopPropagation();
+                            if (globalThis.Native && typeof globalThis.Native.haptic === 'function') {
+                                void globalThis.Native.haptic('light');
+                            }
                             PhotoCarousel.showFullscreen(photo);
                         });
                     }
@@ -190,12 +193,17 @@ const MapUI = {
     },
 
     async sharePhoto(url, title) {
-        try {
-            const fullUrl = RoadTrip.appOrigin() + url;
-            await navigator.share({ title: title || 'Photo', url: fullUrl });
-        } catch (err) {
-            if (err.name !== 'AbortError') console.warn('Share failed:', err);
+        const safeTitle = title || 'Photo';
+        const fullUrl = url.startsWith('http') ? url : (RoadTrip.appOrigin() + url);
+        if (globalThis.Native && typeof globalThis.Native.share === 'function') {
+            await globalThis.Native.share({ title: safeTitle, url: fullUrl });
+            return;
         }
+        if (typeof navigator.share === 'function') {
+            await navigator.share({ title: safeTitle, url: fullUrl });
+        }
+        // No silent fallback — if neither Native nor navigator.share exists, the
+        // calling button shouldn't have been rendered (createSaveButton checks).
     },
 
     /**
