@@ -578,3 +578,60 @@ describe('Phase 4 eager pre-fetch trigger', () => {
         expect(document.body.textContent).toContain('home');
     });
 });
+
+describe('Cold-start Native.statusBar', () => {
+    it('calls Native.statusBar("dark") on cold start when Native is available', async () => {
+        globalThis.Native = {
+            statusBar: vi.fn().mockResolvedValue(undefined)
+        };
+
+        globalThis.fetch = vi.fn().mockImplementation(() =>
+            Promise.resolve(
+                new Response('<html><body>page</body></html>', {
+                    status: 200,
+                    headers: { 'Content-Type': 'text/html' }
+                })
+            )
+        );
+
+        await runLoader();
+
+        expect(globalThis.Native.statusBar).toHaveBeenCalledWith('dark');
+    });
+
+    it('does not throw on cold start when Native is undefined', async () => {
+        // Ensure Native is undefined
+        delete globalThis.Native;
+
+        globalThis.fetch = vi.fn().mockImplementation(() =>
+            Promise.resolve(
+                new Response('<html><body>page</body></html>', {
+                    status: 200,
+                    headers: { 'Content-Type': 'text/html' }
+                })
+            )
+        );
+
+        await expect(runLoader()).resolves.not.toThrow();
+        expect(document.body.classList.contains('platform-ios')).toBe(true);
+    });
+
+    it('swallows errors from Native.statusBar to avoid breaking bootstrap', async () => {
+        globalThis.Native = {
+            statusBar: vi.fn().mockRejectedValue(new Error('plugin failure'))
+        };
+
+        globalThis.fetch = vi.fn().mockImplementation(() =>
+            Promise.resolve(
+                new Response('<html><body>page</body></html>', {
+                    status: 200,
+                    headers: { 'Content-Type': 'text/html' }
+                })
+            )
+        );
+
+        await expect(runLoader()).resolves.not.toThrow();
+        expect(document.body.classList.contains('platform-ios')).toBe(true);
+        expect(document.body.textContent).toContain('page');
+    });
+});
