@@ -82,10 +82,60 @@
         }
     }
 
+    async function _animatePageOut() {
+        return new Promise((resolve) => {
+            const onEnd = () => {
+                document.body.removeEventListener('animationend', onEnd);
+                document.body.classList.remove('page-out');
+                resolve();
+            };
+            // Safety net — if animationend doesn't fire (rare browser quirk),
+            // resolve after the max expected duration + 50ms buffer.
+            const safetyTimeout = setTimeout(() => {
+                document.body.removeEventListener('animationend', onEnd);
+                document.body.classList.remove('page-out');
+                resolve();
+            }, 250);
+            document.body.addEventListener('animationend', () => {
+                clearTimeout(safetyTimeout);
+                onEnd();
+            }, { once: true });
+            document.body.classList.add('page-out');
+        });
+    }
+
+    async function _animatePageIn() {
+        return new Promise((resolve) => {
+            const safetyTimeout = setTimeout(() => {
+                document.body.removeEventListener('animationend', onEnd);
+                document.body.classList.remove('page-in');
+                resolve();
+            }, 400);
+            const onEnd = () => {
+                clearTimeout(safetyTimeout);
+                document.body.removeEventListener('animationend', onEnd);
+                document.body.classList.remove('page-in');
+                resolve();
+            };
+            document.body.addEventListener('animationend', onEnd, { once: true });
+            document.body.classList.add('page-in');
+        });
+    }
+
     async function _swapFromHtml(html, url) {
         // Phase 5: increment generation counter and capture it for this swap's lifecycle.
         _swapGeneration += 1;
         const myGen = _swapGeneration;
+
+        // Skip animation entirely if NOT in the iOS shell — browsers get the
+        // existing behavior (instant swap). The .platform-ios class is the
+        // gate, but we also need to skip the JS animation choreography for
+        // browsers to avoid unnecessary class-add/remove churn.
+        const isShell = document.body.classList.contains('platform-ios');
+
+        if (isShell) {
+            await _animatePageOut(); // adds .page-out, awaits animationend, removes class
+        }
 
         const parsed = new DOMParser().parseFromString(html, 'text/html');
 
@@ -171,6 +221,13 @@
             } catch (err) {
                 // Swallow — leak is preferable to throwing during the render path.
             }
+        }
+
+        if (isShell) {
+            // Fire-and-forget — don't await page-in. onPageLoad handlers can
+            // start their own work in parallel; the user sees the fade-in
+            // overlapping with content rendering, which feels native.
+            void _animatePageIn();
         }
     }
 

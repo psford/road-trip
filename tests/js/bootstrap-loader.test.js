@@ -68,6 +68,20 @@ beforeEach(async () => {
         return result;
     });
 
+    // Phase 5: Stub classList.add to dispatch animationend for page-out/page-in.
+    // jsdom doesn't fire CSS animations, but _animatePageOut/_animatePageIn await
+    // animationend. Manually dispatch after the class is added so the promise resolves.
+    const realClassListAdd = DOMTokenList.prototype.add;
+    vi.spyOn(DOMTokenList.prototype, 'add').mockImplementation(function(...classNames) {
+        const result = realClassListAdd.apply(this, classNames);
+        if ((classNames.includes('page-out') || classNames.includes('page-in')) && this === document.body.classList) {
+            setTimeout(() => {
+                document.body.dispatchEvent(new Event('animationend'));
+            }, 0);
+        }
+        return result;
+    });
+
     document.head.innerHTML = '<title>shell</title>';
     document.body.innerHTML = '<div id="bootstrap-progress">Loading…</div>';
     document.body.classList.remove('platform-ios');
