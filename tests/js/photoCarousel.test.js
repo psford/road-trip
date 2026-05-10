@@ -315,4 +315,171 @@ describe('PhotoCarousel', () => {
             expect(document.querySelector('.fullscreen-overlay')).toBeNull();
         });
     });
+
+    describe('Immersive viewer — swipe-to-dismiss', () => {
+        beforeEach(() => {
+            const container = document.createElement('div');
+            PhotoCarousel.init(container, [photo], { canDelete: false });
+        });
+
+        it('pointerdown + pointermove + pointerup with dy > 100 dismisses', () => {
+            // Stub isNativePlatform to return true so swipe listeners are attached
+            globalThis.RoadTrip = {
+                appOrigin: vi.fn().mockReturnValue('https://example.test'),
+                isNativePlatform: vi.fn().mockReturnValue(true),
+            };
+            globalThis.Native = { statusBar: vi.fn() };
+
+            PhotoCarousel.showFullscreen(photo);
+            const overlay = document.querySelector('.fullscreen-overlay');
+            expect(overlay).not.toBeNull();
+
+            // Dispatch pointer events: start at y=100, move to y=250 (dy=150)
+            const pointerDown = new PointerEvent('pointerdown', {
+                clientY: 100,
+                bubbles: true,
+                cancelable: true,
+            });
+            Object.defineProperty(pointerDown, 'clientY', { value: 100, configurable: true });
+            overlay.dispatchEvent(pointerDown);
+
+            const pointerMove = new PointerEvent('pointermove', {
+                clientY: 250,
+                bubbles: true,
+                cancelable: true,
+            });
+            Object.defineProperty(pointerMove, 'clientY', { value: 250, configurable: true });
+            overlay.dispatchEvent(pointerMove);
+
+            // Verify transform was applied during drag
+            expect(overlay.style.transform).toMatch(/translateY/);
+
+            const pointerUp = new PointerEvent('pointerup', {
+                clientY: 250,
+                bubbles: true,
+                cancelable: true,
+            });
+            Object.defineProperty(pointerUp, 'clientY', { value: 250, configurable: true });
+            overlay.dispatchEvent(pointerUp);
+
+            // After pointerup with dy > 100, the overlay should have is-dismissing class
+            // and the closeOverlay logic should have been triggered
+            expect(overlay.classList.contains('is-dismissing')).toBe(true);
+        });
+
+        it('pointerup with dy < 100 snaps back (no dismiss)', () => {
+            globalThis.RoadTrip = {
+                appOrigin: vi.fn().mockReturnValue('https://example.test'),
+                isNativePlatform: vi.fn().mockReturnValue(true),
+            };
+            globalThis.Native = { statusBar: vi.fn() };
+
+            PhotoCarousel.showFullscreen(photo);
+            const overlay = document.querySelector('.fullscreen-overlay');
+
+            // Dispatch pointer events: start at y=100, move to y=130 (dy=30, less than 100)
+            // Slow drag (1000ms) so velocity = 30/1000 = 0.03 px/ms, well below 0.5 threshold
+            const pointerDown = new PointerEvent('pointerdown', {
+                clientY: 100,
+                bubbles: true,
+                cancelable: true,
+            });
+            Object.defineProperty(pointerDown, 'clientY', { value: 100, configurable: true });
+            Object.defineProperty(pointerDown, 'timeStamp', { value: 100, configurable: true });
+            overlay.dispatchEvent(pointerDown);
+
+            const pointerMove = new PointerEvent('pointermove', {
+                clientY: 130,
+                bubbles: true,
+                cancelable: true,
+            });
+            Object.defineProperty(pointerMove, 'clientY', { value: 130, configurable: true });
+            overlay.dispatchEvent(pointerMove);
+
+            const pointerUp = new PointerEvent('pointerup', {
+                clientY: 130,
+                bubbles: true,
+                cancelable: true,
+            });
+            Object.defineProperty(pointerUp, 'clientY', { value: 130, configurable: true });
+            Object.defineProperty(pointerUp, 'timeStamp', { value: 1100, configurable: true });
+            overlay.dispatchEvent(pointerUp);
+
+            // With dy < 100 and low velocity, should NOT have is-dismissing class and overlay should still exist
+            expect(overlay.classList.contains('is-dismissing')).toBe(false);
+            expect(document.querySelector('.fullscreen-overlay')).not.toBeNull();
+        });
+
+        it('pointerdown on a chrome button does not start a drag', () => {
+            globalThis.RoadTrip = {
+                appOrigin: vi.fn().mockReturnValue('https://example.test'),
+                isNativePlatform: vi.fn().mockReturnValue(true),
+            };
+            globalThis.Native = { statusBar: vi.fn() };
+
+            PhotoCarousel.showFullscreen(photo);
+            const overlay = document.querySelector('.fullscreen-overlay');
+            const closeBtn = overlay.querySelector('.fullscreen-close');
+            expect(closeBtn).not.toBeNull();
+
+            // Record initial transform state
+            const initialTransform = overlay.style.transform;
+
+            // Start pointer on the close button
+            const pointerDown = new PointerEvent('pointerdown', {
+                clientY: 100,
+                bubbles: true,
+                cancelable: true,
+                target: closeBtn,
+            });
+            closeBtn.dispatchEvent(pointerDown);
+
+            // Try to move
+            const pointerMove = new PointerEvent('pointermove', {
+                clientY: 250,
+                bubbles: true,
+                cancelable: true,
+            });
+            overlay.dispatchEvent(pointerMove);
+
+            // Since the drag started on a chrome button (not on overlay or img),
+            // the transform should NOT have changed
+            expect(overlay.style.transform).toBe(initialTransform);
+        });
+
+        it('does not attach pointer listeners when not on iOS', () => {
+            globalThis.RoadTrip = {
+                appOrigin: vi.fn().mockReturnValue('https://example.test'),
+                isNativePlatform: vi.fn().mockReturnValue(false),
+            };
+            globalThis.Native = { statusBar: vi.fn() };
+
+            PhotoCarousel.showFullscreen(photo);
+            const overlay = document.querySelector('.fullscreen-overlay');
+
+            // Record initial transform state
+            const initialTransform = overlay.style.transform;
+
+            // Dispatch pointer events even though isNativePlatform is false
+            const pointerDown = new PointerEvent('pointerdown', {
+                clientY: 100,
+                bubbles: true,
+                cancelable: true,
+            });
+            Object.defineProperty(pointerDown, 'clientY', { value: 100, configurable: true });
+            overlay.dispatchEvent(pointerDown);
+
+            const pointerMove = new PointerEvent('pointermove', {
+                clientY: 250,
+                bubbles: true,
+                cancelable: true,
+            });
+            Object.defineProperty(pointerMove, 'clientY', { value: 250, configurable: true });
+            overlay.dispatchEvent(pointerMove);
+
+            // Since listeners should not be attached when isNativePlatform is false,
+            // transform should remain unchanged
+            expect(overlay.style.transform).toBe(initialTransform);
+        });
+    });
 });
