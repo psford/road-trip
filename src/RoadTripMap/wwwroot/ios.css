@@ -138,3 +138,17 @@
     padding-top: calc(var(--space-md) + env(safe-area-inset-top));
     padding-bottom: calc(var(--space-md) + env(safe-area-inset-bottom));
 }
+
+/* iOS system-blue accent — light scheme */
+.platform-ios {
+  --color-accent: #007AFF;
+  --color-accent-hover: #0066CC;
+}
+
+/* iOS system-blue accent — dark scheme */
+@media (prefers-color-scheme: dark) {
+  .platform-ios {
+    --color-accent: #0A84FF;
+    --color-accent-hover: #409CFF;
+  }
+}
