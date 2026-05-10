@@ -892,4 +892,95 @@ describe('UploadQueue', () => {
             });
         });
     });
+
+    describe('Task 3 & 4: Haptic feedback on upload state transitions', () => {
+        it('emits Native.haptic("medium") when an upload commits successfully', async () => {
+            globalThis.Native = { haptic: vi.fn() };
+
+            const uploadId = 'haptic-medium-test';
+            const photoId = 'photo-123';
+            const tripToken = 'test-trip-token';
+            const sasUrl = 'https://test.blob.core.windows.net/test?sv=...';
+            const file = new File(['test'], 'test.jpg', { type: 'image/jpeg' });
+
+            // Mock API calls
+            API.requestUpload.mockResolvedValue({
+                photoId,
+                blobPath: '/test/blob',
+                sasUrl,
+            });
+
+            UploadTransport.uploadFile.mockResolvedValue(['blockId0']);
+            API.commit.mockResolvedValue({ id: photoId });
+
+            // Start upload
+            await UploadQueue.start(tripToken, [{
+                file,
+                metadata: {},
+                uploadId,
+            }], {});
+
+            await UploadQueueTestHelper.waitForAll();
+
+            // Verify haptic('medium') was called on successful commit
+            expect(globalThis.Native.haptic).toHaveBeenCalledWith('medium');
+            expect(globalThis.Native.haptic).toHaveBeenCalledTimes(1);
+        });
+
+        it('emits Native.haptic("error") when an upload fails permanently', async () => {
+            globalThis.Native = { haptic: vi.fn() };
+
+            const uploadId = 'haptic-error-test';
+            const tripToken = 'test-trip-token';
+            const file = new File(['test'], 'test.jpg', { type: 'image/jpeg' });
+
+            // Mock API to reject
+            API.requestUpload.mockRejectedValue(new Error('Network error'));
+
+            // Start upload (will fail)
+            await UploadQueue.start(tripToken, [{
+                file,
+                metadata: {},
+                uploadId,
+            }], {});
+
+            await UploadQueueTestHelper.waitForAll();
+
+            // Verify haptic('error') was called on permanent failure
+            expect(globalThis.Native.haptic).toHaveBeenCalledWith('error');
+        });
+
+        it('Native.haptic absence does not interfere with the state machine', async () => {
+            globalThis.Native = undefined;
+
+            const uploadId = 'haptic-absence-test';
+            const photoId = 'photo-456';
+            const tripToken = 'test-trip-token';
+            const sasUrl = 'https://test.blob.core.windows.net/test?sv=...';
+            const file = new File(['test'], 'test.jpg', { type: 'image/jpeg' });
+
+            // Mock API calls
+            API.requestUpload.mockResolvedValue({
+                photoId,
+                blobPath: '/test/blob',
+                sasUrl,
+            });
+
+            UploadTransport.uploadFile.mockResolvedValue(['blockId0']);
+            API.commit.mockResolvedValue({ id: photoId });
+
+            // Start upload without Native defined
+            await UploadQueue.start(tripToken, [{
+                file,
+                metadata: {},
+                uploadId,
+            }], {});
+
+            await UploadQueueTestHelper.waitForAll();
+
+            // Verify the upload still completes successfully
+            const item = await StorageAdapter.getItem(uploadId);
+            expect(item.status).toBe('committed');
+        });
+    });
 });

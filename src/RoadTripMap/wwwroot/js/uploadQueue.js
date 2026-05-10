@@ -167,6 +167,10 @@ const UploadQueue = {
                 })
             );
 
+            if (globalThis.Native && typeof globalThis.Native.haptic === 'function') {
+                void globalThis.Native.haptic('error');
+            }
+
             // Remove from storage
             await StorageAdapter.deleteItem(uploadId);
         });
@@ -232,6 +236,10 @@ const UploadQueue = {
                 },
             })
         );
+
+        if (globalThis.Native && typeof globalThis.Native.haptic === 'function') {
+            void globalThis.Native.haptic('error');
+        }
 
         await StorageAdapter.deleteItem(uploadId);
     },
@@ -675,6 +683,10 @@ const UploadQueue = {
             })
         );
 
+        if (globalThis.Native && typeof globalThis.Native.haptic === 'function') {
+            void globalThis.Native.haptic('medium');
+        }
+
         // Call callback
         if (callbacks && callbacks.onEachComplete) {
             callbacks.onEachComplete({
@@ -715,6 +727,10 @@ const UploadQueue = {
                 },
             })
         );
+
+        if (globalThis.Native && typeof globalThis.Native.haptic === 'function') {
+            void globalThis.Native.haptic('error');
+        }
     },
 
 };
