@@ -33,6 +33,7 @@
 .platform-ios .copy-button,
 .platform-ios .map-back,
 .platform-ios .poi-action-btn,
+.platform-ios .fullscreen-close,
 .platform-ios button {
   min-height: 44px;
   min-width: 44px;
