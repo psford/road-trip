@@ -408,3 +408,30 @@
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
+
+/* Phase 5: page transitions — iOS shell only */
+@keyframes page-out {
+  from { opacity: 1; transform: translateY(0); }
+  to   { opacity: 0; transform: translateY(-8px); }
+}
+
+@keyframes page-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.platform-ios body.page-out {
+  animation: page-out var(--motion-duration-fast) var(--motion-ease-accelerate) both;
+  pointer-events: none; /* prevent accidental taps mid-animation */
+}
+
+.platform-ios body.page-in {
+  animation: page-in var(--motion-duration-normal) var(--motion-ease-decelerate) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .platform-ios body.page-out,
+  .platform-ios body.page-in {
+    animation-duration: 0.001ms !important; /* effectively instant; still fires animationend */
+  }
+}
