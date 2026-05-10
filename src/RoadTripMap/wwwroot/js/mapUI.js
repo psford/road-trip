@@ -43,6 +43,15 @@ const MapUI = {
      */
     async init(viewToken) {
         try {
+            // Skeleton placeholders during fetch (Phase 5)
+            const carousel = document.getElementById('viewCarousel');
+            if (carousel) {
+                carousel.innerHTML =
+                    '<div class="skeleton skeleton-carousel-item"></div>' +
+                    '<div class="skeleton skeleton-carousel-item"></div>' +
+                    '<div class="skeleton skeleton-carousel-item"></div>';
+            }
+
             const { trip, photos } = await MapService.loadTrip(viewToken);
 
             // Update page header with trip name
@@ -60,6 +69,11 @@ const MapUI = {
         } catch (error) {
             console.error('Failed to initialize map:', error);
             this.showError('Failed to load trip');
+            // Clear skeletons on error
+            const carousel = document.getElementById('viewCarousel');
+            if (carousel) {
+                carousel.innerHTML = '';
+            }
         }
     },
 
