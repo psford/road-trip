@@ -15,6 +15,17 @@ const MapUI = {
     markerLookup: null,
 
     /**
+     * Handle photo popup image tap: haptic + fullscreen viewer
+     * @param {Object} photo - PhotoResponse object
+     */
+    _onPhotoPopupImageTap(photo) {
+        if (globalThis.Native && typeof globalThis.Native.haptic === 'function') {
+            void globalThis.Native.haptic('light');
+        }
+        PhotoCarousel.showFullscreen(photo);
+    },
+
+    /**
      * Escape HTML special characters to prevent XSS
      * @param {string} text - Text to escape
      * @returns {string} - Escaped text safe for HTML
@@ -111,10 +122,7 @@ const MapUI = {
                         img.style.cursor = 'pointer';
                         img.addEventListener('click', (e) => {
                             e.stopPropagation();
-                            if (globalThis.Native && typeof globalThis.Native.haptic === 'function') {
-                                void globalThis.Native.haptic('light');
-                            }
-                            PhotoCarousel.showFullscreen(photo);
+                            MapUI._onPhotoPopupImageTap(photo);
                         });
                     }
                     // Pan map to keep popup in view

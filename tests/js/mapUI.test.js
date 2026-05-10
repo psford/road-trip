@@ -85,57 +85,38 @@ describe('MapUI', () => {
     });
 
     describe('photo-popup image tap handler', () => {
-        it('fires Native.haptic("light") on image click', () => {
+        it('fires Native.haptic("light") on image tap', () => {
             globalThis.Native = { haptic: vi.fn() };
+            globalThis.PhotoCarousel = { showFullscreen: vi.fn() };
 
-            // Create a mock popup element structure
-            const popupEl = document.createElement('div');
-            const img = document.createElement('img');
-            img.className = 'photo-popup-img';
-            popupEl.appendChild(img);
+            const photo = {
+                id: 'photo-456',
+                displayUrl: '/api/photos/trip-1/photo-456/display',
+                originalUrl: '/api/photos/trip-1/photo-456/original',
+                placeName: 'Test Location'
+            };
 
-            // Simulate the event listener attachment
-            img.dataset.listenerAttached = 'true';
-            const clickEvent = new MouseEvent('click', { bubbles: true });
+            MapUI._onPhotoPopupImageTap(photo);
 
-            // Manually attach the listener (simulating what mapUI.js does)
-            let hapticCalled = false;
-            img.addEventListener('click', (e) => {
-                e.stopPropagation();
-                if (globalThis.Native && typeof globalThis.Native.haptic === 'function') {
-                    void globalThis.Native.haptic('light');
-                    hapticCalled = true;
-                }
-            });
-
-            img.dispatchEvent(clickEvent);
-
-            expect(hapticCalled).toBe(true);
             expect(globalThis.Native.haptic).toHaveBeenCalledWith('light');
+            expect(globalThis.PhotoCarousel.showFullscreen).toHaveBeenCalledWith(photo);
         });
 
         it('does not throw when Native is unavailable', () => {
             globalThis.Native = undefined;
+            globalThis.PhotoCarousel = { showFullscreen: vi.fn() };
 
-            const popupEl = document.createElement('div');
-            const img = document.createElement('img');
-            img.className = 'photo-popup-img';
-            popupEl.appendChild(img);
-
-            const clickEvent = new MouseEvent('click', { bubbles: true });
-
-            // Simulate the listener attachment
-            img.addEventListener('click', (e) => {
-                e.stopPropagation();
-                if (globalThis.Native && typeof globalThis.Native.haptic === 'function') {
-                    void globalThis.Native.haptic('light');
-                }
-                // No throw expected
-            });
+            const photo = {
+                id: 'photo-789',
+                displayUrl: '/api/photos/trip-1/photo-789/display',
+                originalUrl: '/api/photos/trip-1/photo-789/original',
+                placeName: 'Another Location'
+            };
 
             expect(() => {
-                img.dispatchEvent(clickEvent);
+                MapUI._onPhotoPopupImageTap(photo);
             }).not.toThrow();
+            expect(globalThis.PhotoCarousel.showFullscreen).toHaveBeenCalledWith(photo);
         });
     });
 });
