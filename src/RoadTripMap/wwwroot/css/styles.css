@@ -996,7 +996,7 @@ body.map-page {
   text-decoration: none;
 }
 
-[data-large-title] {
+.map-header [data-large-title] {
   font-size: var(--font-size-large-title);
   font-weight: var(--font-weight-bold);
   letter-spacing: -0.02em;
