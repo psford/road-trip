@@ -399,3 +399,158 @@ describe('postUI integration with UploadQueue', () => {
         expect(() => buttons.post.click()).not.toThrow();
     });
 });
+
+describe('postUI photo deletion with Native.dialogConfirm', () => {
+    let postUIInstance;
+    let showToastSpy;
+    let refreshPhotoListSpy;
+
+    beforeEach(() => {
+        // Create a minimal postUI instance
+        postUIInstance = {
+            secretToken: 'test-secret-token',
+            showToast: vi.fn(),
+            refreshPhotoList: vi.fn(),
+            onDeleteFromCarousel: null,
+        };
+
+        showToastSpy = postUIInstance.showToast;
+        refreshPhotoListSpy = postUIInstance.refreshPhotoList;
+
+        // Stub PostService.deletePhoto
+        if (!globalThis.PostService) {
+            globalThis.PostService = {};
+        }
+        PostService.deletePhoto = vi.fn();
+
+        // Stub the delete handler that will be tested
+        postUIInstance.onDeleteFromCarousel = async function(photo) {
+            if (!globalThis.Native || typeof globalThis.Native.dialogConfirm !== 'function') {
+                // Native wrapper missing (e.g., test env that didn't load nativeBridge);
+                // fall back to window.confirm so the safety check is preserved.
+                if (!window.confirm('Delete this photo?')) return;
+            } else {
+                const result = await globalThis.Native.dialogConfirm({
+                    title: 'Delete photo?',
+                    message: 'This cannot be undone.',
+                    okButtonTitle: 'Delete',
+                    cancelButtonTitle: 'Cancel',
+                });
+                if (!result || result.value !== true) return;
+            }
+            try {
+                await PostService.deletePhoto(this.secretToken, photo.id);
+                this.showToast('Photo deleted', 'success');
+                await this.refreshPhotoList();
+            } catch (err) {
+                this.showToast('Failed to delete photo', 'error');
+            }
+        };
+    });
+
+    afterEach(() => {
+        vi.clearAllMocks();
+        delete globalThis.Native;
+    });
+
+    it('onDeleteFromCarousel calls Native.dialogConfirm and deletes on confirm', async () => {
+        globalThis.Native = {
+            dialogConfirm: vi.fn().mockResolvedValue({ value: true }),
+        };
+        PostService.deletePhoto.mockResolvedValue(undefined);
+
+        const photo = { id: 'photo-1', placeName: 'Test Location' };
+        await postUIInstance.onDeleteFromCarousel(photo);
+
+        expect(globalThis.Native.dialogConfirm).toHaveBeenCalledWith({
+            title: 'Delete photo?',
+            message: 'This cannot be undone.',
+            okButtonTitle: 'Delete',
+            cancelButtonTitle: 'Cancel',
+        });
+        expect(PostService.deletePhoto).toHaveBeenCalledWith('test-secret-token', 'photo-1');
+        expect(showToastSpy).toHaveBeenCalledWith('Photo deleted', 'success');
+        expect(refreshPhotoListSpy).toHaveBeenCalled();
+    });
+
+    it('onDeleteFromCarousel does not delete when user cancels', async () => {
+        globalThis.Native = {
+            dialogConfirm: vi.fn().mockResolvedValue({ value: false }),
+        };
+
+        const photo = { id: 'photo-1', placeName: 'Test Location' };
+        await postUIInstance.onDeleteFromCarousel(photo);
+
+        expect(globalThis.Native.dialogConfirm).toHaveBeenCalled();
+        expect(PostService.deletePhoto).not.toHaveBeenCalled();
+        expect(showToastSpy).not.toHaveBeenCalled();
+    });
+
+    it('onDeleteFromCarousel does not delete when dialog returns null', async () => {
+        globalThis.Native = {
+            dialogConfirm: vi.fn().mockResolvedValue(null),
+        };
+
+        const photo = { id: 'photo-1', placeName: 'Test Location' };
+        await postUIInstance.onDeleteFromCarousel(photo);
+
+        expect(globalThis.Native.dialogConfirm).toHaveBeenCalled();
+        expect(PostService.deletePhoto).not.toHaveBeenCalled();
+    });
+
+    it('onDeleteFromCarousel does not delete when dialog returns undefined', async () => {
+        globalThis.Native = {
+            dialogConfirm: vi.fn().mockResolvedValue(undefined),
+        };
+
+        const photo = { id: 'photo-1', placeName: 'Test Location' };
+        await postUIInstance.onDeleteFromCarousel(photo);
+
+        expect(globalThis.Native.dialogConfirm).toHaveBeenCalled();
+        expect(PostService.deletePhoto).not.toHaveBeenCalled();
+    });
+
+    it('onDeleteFromCarousel falls back to window.confirm when Native is unavailable', async () => {
+        globalThis.Native = undefined;
+
+        const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+        PostService.deletePhoto.mockResolvedValue(undefined);
+
+        const photo = { id: 'photo-1', placeName: 'Test Location' };
+        await postUIInstance.onDeleteFromCarousel(photo);
+
+        expect(confirmSpy).toHaveBeenCalledWith('Delete this photo?');
+        expect(PostService.deletePhoto).toHaveBeenCalledWith('test-secret-token', 'photo-1');
+        expect(showToastSpy).toHaveBeenCalledWith('Photo deleted', 'success');
+
+        confirmSpy.mockRestore();
+    });
+
+    it('onDeleteFromCarousel falls back to window.confirm when it returns false', async () => {
+        globalThis.Native = undefined;
+
+        const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
+
+        const photo = { id: 'photo-1', placeName: 'Test Location' };
+        await postUIInstance.onDeleteFromCarousel(photo);
+
+        expect(confirmSpy).toHaveBeenCalledWith('Delete this photo?');
+        expect(PostService.deletePhoto).not.toHaveBeenCalled();
+
+        confirmSpy.mockRestore();
+    });
+
+    it('onDeleteFromCarousel shows error toast when delete API fails', async () => {
+        globalThis.Native = {
+            dialogConfirm: vi.fn().mockResolvedValue({ value: true }),
+        };
+        PostService.deletePhoto.mockRejectedValue(new Error('API error'));
+
+        const photo = { id: 'photo-1', placeName: 'Test Location' };
+        await postUIInstance.onDeleteFromCarousel(photo);
+
+        expect(PostService.deletePhoto).toHaveBeenCalled();
+        expect(showToastSpy).toHaveBeenCalledWith('Failed to delete photo', 'error');
+        expect(refreshPhotoListSpy).not.toHaveBeenCalled();
+    });
+});

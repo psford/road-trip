@@ -1150,7 +1150,19 @@ const PostUI = {
     },
 
     async onDeleteFromCarousel(photo) {
-        if (!confirm('Delete this photo?')) return;
+        if (!globalThis.Native || typeof globalThis.Native.dialogConfirm !== 'function') {
+            // Native wrapper missing (e.g., test env that didn't load nativeBridge);
+            // fall back to window.confirm so the safety check is preserved.
+            if (!window.confirm('Delete this photo?')) return;
+        } else {
+            const result = await globalThis.Native.dialogConfirm({
+                title: 'Delete photo?',
+                message: 'This cannot be undone.',
+                okButtonTitle: 'Delete',
+                cancelButtonTitle: 'Cancel',
+            });
+            if (!result || result.value !== true) return;
+        }
         try {
             await PostService.deletePhoto(this.secretToken, photo.id);
             this.showToast('Photo deleted', 'success');
