@@ -152,3 +152,69 @@
     --color-accent-hover: #409CFF;
   }
 }
+
+/* Phase 2: post.html chrome (also applies to create.html when Phase 4 lands) */
+.platform-ios .page-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background-color: var(--material-bg-light);
+  backdrop-filter: var(--material-blur-regular);
+  -webkit-backdrop-filter: var(--material-blur-regular);
+  border-bottom: 0.5px solid var(--color-separator);
+  padding-top: calc(env(safe-area-inset-top, 0px) + var(--space-sm));
+  padding-bottom: var(--space-sm);
+}
+
+@media (prefers-color-scheme: dark) {
+  .platform-ios .page-header {
+    background-color: var(--material-bg-dark);
+    border-bottom-color: var(--color-separator);
+  }
+}
+
+.platform-ios .page-header h1 {
+  font-size: var(--font-size-title-1);
+  font-weight: var(--font-weight-bold);
+  letter-spacing: -0.01em;
+}
+
+.platform-ios .page-header p {
+  font-size: var(--font-size-subhead);
+  color: var(--color-text-secondary);
+}
+
+.platform-ios .page-header .nav a {
+  color: var(--color-accent);
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-regular);
+  text-decoration: none;
+}
+
+.platform-ios .add-photo-button {
+  background-color: var(--color-accent);
+  color: #ffffff;
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-headline);
+  font-weight: var(--font-weight-semibold);
+  transition: transform var(--motion-duration-instant) var(--motion-ease-standard);
+}
+.platform-ios .add-photo-button:active {
+  transform: scale(0.97);
+}
+
+.platform-ios .preview-section {
+  border-radius: var(--radius-lg);
+  background-color: var(--color-surface);
+}
+
+.platform-ios .post-button-group .button-primary,
+.platform-ios .post-button-group .button-secondary {
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-headline);
+  font-weight: var(--font-weight-semibold);
+}
+
+.platform-ios .toast-container {
+  bottom: calc(env(safe-area-inset-bottom, 0px) + var(--space-md));
+}
