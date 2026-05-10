@@ -562,3 +562,99 @@ describe('postUI photo deletion with Native.dialogConfirm', () => {
         expect(postUIInstance.refreshPhotoList).not.toHaveBeenCalled();
     });
 });
+
+describe('postUI skeleton placeholders during photo fetch', () => {
+    let postUIInstance;
+
+    beforeEach(async () => {
+        // Set up DOM
+        document.body.innerHTML = `
+            <div id="photoCarousel"></div>
+            <div id="photoList"></div>
+            <div id="photoMapSection"></div>
+        `;
+
+        // Stub PostService
+        globalThis.PostService = {
+            listPhotos: vi.fn(),
+        };
+
+        // Stub PhotoCarousel to avoid rendering errors
+        globalThis.PhotoCarousel = {
+            init: vi.fn().mockReturnValue({ selectPhoto: vi.fn() }),
+        };
+
+        // Create PostUI instance
+        postUIInstance = Object.create(PostUI);
+        postUIInstance.secretToken = 'test-secret-token';
+        postUIInstance.showToast = vi.fn();
+        postUIInstance.photos = [];
+        postUIInstance.carousel = null;
+        postUIInstance.map = null;
+        postUIInstance.renderPhotoMap = vi.fn();
+        postUIInstance.hidePhotoMap = vi.fn();
+    });
+
+    it('injects 3 skeleton placeholders before listPhotos resolves', async () => {
+        // Mock listPhotos to never resolve (pending)
+        const neverResolvePromise = new Promise(() => {});
+        PostService.listPhotos.mockReturnValue(neverResolvePromise);
+
+        // Start the fetch (don't await)
+        const loadPromise = postUIInstance.loadPhotoList();
+
+        // Give async operations a chance to run
+        await new Promise(r => setTimeout(r, 10));
+
+        // Assert skeletons are present
+        const container = document.getElementById('photoCarousel');
+        const skeletons = container.querySelectorAll('.skeleton.skeleton-carousel-item');
+        expect(skeletons).toHaveLength(3);
+
+        // Clean up the pending promise (prevent unhandled rejection)
+        (async () => { await loadPromise; })().catch(() => {});
+    });
+
+    it('removes skeletons after listPhotos resolves with content', async () => {
+        const mockPhotos = [
+            { id: 'photo-1', displayUrl: '/api/photos/trip-1/photo-1/display' },
+            { id: 'photo-2', displayUrl: '/api/photos/trip-1/photo-2/display' },
+        ];
+        PostService.listPhotos.mockResolvedValue(mockPhotos);
+
+        // Call loadPhotoList and await it
+        await postUIInstance.loadPhotoList();
+
+        // At this point:
+        // - Skeletons were injected initially
+        // - listPhotos resolved with photos
+        // - The render path executes: container.innerHTML = '' (line 960)
+        // - PhotoCarousel.init is called
+        // So skeletons should be cleared by the innerHTML = ''
+
+        // Assert skeletons are gone
+        const container = document.getElementById('photoCarousel');
+        const skeletons = container.querySelectorAll('.skeleton.skeleton-carousel-item');
+        expect(skeletons).toHaveLength(0);
+
+        // Assert carousel was initialized (which means innerHTML = '' happened)
+        expect(globalThis.PhotoCarousel.init).toHaveBeenCalled();
+    });
+
+    it('removes skeletons after listPhotos rejects', async () => {
+        PostService.listPhotos.mockRejectedValue(new Error('Network error'));
+
+        postUIInstance.showToast = vi.fn();
+
+        // Call loadPhotoList and let it reject
+        await postUIInstance.loadPhotoList();
+
+        // Assert skeletons are gone (error handler may have rendered error state)
+        const container = document.getElementById('photoCarousel');
+        const skeletons = container.querySelectorAll('.skeleton.skeleton-carousel-item');
+        expect(skeletons).toHaveLength(0);
+
+        // Assert error was shown
+        expect(postUIInstance.showToast).toHaveBeenCalled();
+    });
+});

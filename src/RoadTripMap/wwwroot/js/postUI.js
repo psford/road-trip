@@ -916,6 +916,15 @@ const PostUI = {
 
     async loadPhotoList() {
         try {
+            // Skeleton placeholders during fetch (Phase 5)
+            const carouselContainer = document.getElementById('photoCarousel');
+            if (carouselContainer) {
+                carouselContainer.innerHTML =
+                    '<div class="skeleton skeleton-carousel-item"></div>' +
+                    '<div class="skeleton skeleton-carousel-item"></div>' +
+                    '<div class="skeleton skeleton-carousel-item"></div>';
+            }
+
             const photos = await PostService.listPhotos(this.secretToken);
             this.photos = photos;
 
@@ -958,6 +967,11 @@ const PostUI = {
         } catch (err) {
             console.error('Error loading photos:', err);
             this.showToast(OfflineError.friendlyMessage(err, 'photos'), 'error');
+            // Clear skeletons on error
+            const carouselContainer = document.getElementById('photoCarousel');
+            if (carouselContainer) {
+                carouselContainer.innerHTML = '';
+            }
         }
     },
 
