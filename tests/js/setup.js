@@ -77,6 +77,7 @@ beforeAll(() => {
 
     // Load modules
     loadGlobal('roadTrip.js');
+    loadGlobal('nativeBridge.js');
     loadGlobal('offlineError.js');
     loadGlobal('featureFlags.js');
     loadGlobal('api.js');
