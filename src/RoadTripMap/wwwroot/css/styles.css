@@ -977,23 +977,33 @@ body.map-page {
   gap: var(--space-sm);
   padding: 0 var(--space-lg);
   background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%);
-  font-size: 1.5rem;
-  font-weight: 700;
-  color: white;
+  font-size: var(--font-size-title-2);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-surface);
 }
 
 /* Back button in map header */
 .map-back {
-  color: rgba(255, 255, 255, 0.85);
+  color: var(--color-surface);
   text-decoration: none;
-  font-size: 1.2rem;
+  font-size: var(--font-size-title-1);
   line-height: 1;
   flex-shrink: 0;
 }
 
 .map-back:hover {
-  color: white;
+  color: var(--color-surface);
   text-decoration: none;
+}
+
+[data-large-title] {
+  font-size: var(--font-size-large-title);
+  font-weight: var(--font-weight-bold);
+  letter-spacing: -0.02em;
+  margin: 0;
+  padding: var(--space-sm) var(--space-md) 0;
+  color: var(--color-text);
+  display: none; /* hidden by default; .platform-ios shows it */
 }
 
 /* Push MapLibre zoom controls below floating header on view page */
@@ -1008,20 +1018,20 @@ body.map-page .maplibregl-ctrl-top-left {
   right: 10px;
   z-index: 1000;
   padding: var(--space-sm) var(--space-md);
-  background-color: white;
+  background-color: var(--color-surface);
   color: var(--color-text);
   border: 2px solid var(--color-primary);
-  border-radius: var(--radius);
+  border-radius: var(--radius-md);
   cursor: pointer;
-  font-weight: 500;
-  font-size: 0.95rem;
+  font-weight: var(--font-weight-medium);
+  font-size: var(--font-size-body);
   box-shadow: var(--shadow);
-  transition: all 0.2s ease;
+  transition: background-color var(--motion-duration-fast) var(--motion-ease-standard), color var(--motion-duration-fast) var(--motion-ease-standard);
 }
 
 .map-control:hover {
   background-color: var(--color-primary);
-  color: white;
+  color: var(--color-surface);
 }
 
 .map-control:active {
@@ -1204,9 +1214,9 @@ body.map-page .maplibregl-ctrl-top-left {
   bottom: 0;
   left: 0;
   right: 0;
-  background: rgba(0, 0, 0, 0.6);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
+  background: var(--color-surface);
+  backdrop-filter: var(--material-blur-regular);
+  -webkit-backdrop-filter: var(--material-blur-regular);
   z-index: 999;
   padding: var(--space-xs) 0;
   display: none;
@@ -1261,11 +1271,11 @@ body.map-page .maplibregl-ctrl-top-left {
   flex: 0 0 auto;
   width: 120px;
   position: relative;
-  border-radius: var(--radius);
+  border-radius: var(--radius-md);
   overflow: hidden;
   cursor: pointer;
   border: 2px solid transparent;
-  transition: border-color 0.2s;
+  transition: border-color var(--motion-duration-fast) var(--motion-ease-standard);
 }
 
 .carousel-item.selected {
@@ -1299,15 +1309,16 @@ body.map-page .maplibregl-ctrl-top-left {
 .carousel-action-btn {
   width: 28px;
   height: 28px;
-  border-radius: 50%;
+  border-radius: var(--radius-full);
   background: rgba(0, 0, 0, 0.5);
   border: none;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: white;
+  color: var(--color-surface);
   padding: 0;
+  transition: background-color var(--motion-duration-fast) var(--motion-ease-standard);
 }
 
 .carousel-action-btn svg {

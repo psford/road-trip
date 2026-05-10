@@ -217,3 +217,121 @@
 .platform-ios .toast-container {
   bottom: calc(env(safe-area-inset-bottom, 0px) + var(--space-md));
 }
+
+/* Phase 3: trips.html chrome */
+.platform-ios .map-header {
+  background-color: var(--material-bg-light);
+  backdrop-filter: var(--material-blur-regular);
+  -webkit-backdrop-filter: var(--material-blur-regular);
+  border-bottom: 0.5px solid var(--color-separator);
+}
+
+@media (prefers-color-scheme: dark) {
+  .platform-ios .map-header {
+    background-color: var(--material-bg-dark);
+  }
+}
+
+.platform-ios .map-header .map-back {
+  color: var(--color-accent);
+  font-size: var(--font-size-title-2);
+}
+
+.platform-ios .map-header #tripName {
+  /* On iOS, large title takes over; small inline title still shows
+     because there's no scrollable surface yet to drive the collapse.
+     Keeps the header visually balanced between back-button and title. */
+  font-size: var(--font-size-headline);
+  font-weight: var(--font-weight-semibold);
+}
+
+.platform-ios .map-header [data-large-title] {
+  display: block;
+  /* Dormant collapse foundation: when .map-header gets .is-collapsed (no
+     trigger fires today on trips.html — see Phase 3 Discrepancies note on
+     AC5.1), the large title hides and the small inline title fills the
+     nav-bar role. A future trigger (carousel interaction, map-zoom, page
+     scroll if added) can toggle .is-collapsed in mapUI without further
+     CSS changes. */
+  transition: opacity var(--motion-duration-fast) var(--motion-ease-standard),
+              max-height var(--motion-duration-fast) var(--motion-ease-standard);
+  max-height: 100px;
+  overflow: hidden;
+}
+
+.platform-ios .map-header.is-collapsed [data-large-title] {
+  opacity: 0;
+  max-height: 0;
+  padding-top: 0;
+}
+
+/* Phase 3: trips.html — view-route carousel & action button polish */
+.platform-ios .view-carousel-container {
+  background-color: var(--material-bg-dark);
+  backdrop-filter: var(--material-blur-regular);
+  -webkit-backdrop-filter: var(--material-blur-regular);
+  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + var(--space-sm));
+}
+
+.platform-ios .carousel-item {
+  border-radius: var(--radius-md);
+  transition: transform var(--motion-duration-instant) var(--motion-ease-standard);
+}
+.platform-ios .carousel-item:active {
+  transform: scale(0.96);
+}
+
+.platform-ios .carousel-action-btn {
+  background-color: rgba(0, 0, 0, 0.55);
+  backdrop-filter: var(--material-blur-thin);
+  -webkit-backdrop-filter: var(--material-blur-thin);
+  color: #ffffff;
+  border-radius: var(--radius-full);
+}
+
+/* Phase 3: trips.html — immersive Photos viewer */
+.platform-ios .fullscreen-overlay {
+  background: #000000; /* true-black, not the universal 90% rgba */
+}
+
+.platform-ios .fullscreen-overlay .fullscreen-actions,
+.platform-ios .fullscreen-overlay .fullscreen-close {
+  transition: opacity var(--motion-duration-fast) var(--motion-ease-standard);
+}
+
+.platform-ios .fullscreen-overlay.chrome-hidden .fullscreen-actions,
+.platform-ios .fullscreen-overlay.chrome-hidden .fullscreen-close {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.platform-ios .fullscreen-overlay.is-dismissing {
+  transition: opacity var(--motion-duration-normal) var(--motion-ease-decelerate),
+              transform var(--motion-duration-normal) var(--motion-ease-decelerate);
+  opacity: 0;
+}
+
+.platform-ios .fullscreen-overlay .fullscreen-close {
+  position: absolute;
+  top: calc(env(safe-area-inset-top, 0px) + var(--space-md));
+  left: var(--space-md);
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-full);
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: var(--material-blur-thin);
+  -webkit-backdrop-filter: var(--material-blur-thin);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--font-size-title-3);
+  cursor: pointer;
+  border: none;
+}
+
+.platform-ios .fullscreen-overlay .fullscreen-actions {
+  position: absolute;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + var(--space-md));
+  right: var(--space-md);
+}
