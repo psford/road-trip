@@ -39,6 +39,10 @@ const MapUI = {
             if (tripNameEl) {
                 tripNameEl.textContent = trip.name;
             }
+            const largeTitleEl = document.getElementById('tripNameLarge');
+            if (largeTitleEl) {
+                largeTitleEl.textContent = trip.name;
+            }
 
             // Render map
             this.renderMap(photos);
