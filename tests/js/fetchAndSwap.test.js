@@ -1019,3 +1019,170 @@ describe('Phase 3: rewriteAssetTags hook in _swapFromHtml', () => {
     }
   });
 });
+
+describe('Rapid-navigation race conditions', () => {
+  it('a stale-swap script onload does not pollute _executedScriptSrcs', async () => {
+    await setupTest();
+    try {
+      // HTML for post page with postUI.js script
+      const postHtml = '<html><head><script src="/js/postUI.js"></script></head><body>post</body></html>';
+      // HTML for create page (different content)
+      const createHtml = '<html><head><script src="/js/createUI.js"></script></head><body>create</body></html>';
+
+      // Capture scripts and their pending onloads
+      let swap1ScriptElement = null;
+      const capturedScripts = [];
+
+      // Restore the appendChild mock and install a custom one that captures scripts
+      Node.prototype.appendChild.mockRestore();
+      const realAppendChild = Node.prototype.appendChild;
+      vi.spyOn(Node.prototype, 'appendChild').mockImplementation(function(node) {
+        const result = realAppendChild.call(this, node);
+        if (node && node.tagName === 'SCRIPT' && node.getAttribute && node.getAttribute('src')) {
+          capturedScripts.push({ element: node, src: node.getAttribute('src') });
+          // For swap 1 only (first postUI.js), fire onload manually later
+          if (node.getAttribute('src') === '/js/postUI.js' && !swap1ScriptElement) {
+            swap1ScriptElement = node;
+          } else {
+            // For other scripts, fire onload immediately via setTimeout
+            setTimeout(() => { if (node.onload) node.onload(); }, 0);
+          }
+        }
+        return result;
+      });
+
+      // Swap 1: post
+      const swap1Promise = FetchAndSwap._swapFromHtml(postHtml, 'https://app-roadtripmap-prod.azurewebsites.net/post/abc');
+
+      // Swap 2: create (while swap 1 is still in flight, waiting for manual onload)
+      globalThis.fetch = vi.fn().mockResolvedValue(
+        new Response(createHtml, {
+          status: 200,
+          headers: { 'Content-Type': 'text/html' }
+        })
+      );
+      const swap2Promise = FetchAndSwap.fetchAndSwap('/create');
+      await swap2Promise;
+
+      // Now manually fire swap 1's stale onload callback
+      // This simulates the race: swap 1's onload fires AFTER swap 2 has replaced the body
+      if (swap1ScriptElement && swap1ScriptElement.onload) {
+        swap1ScriptElement.onload();
+      }
+
+      // Now await swap 1 so its promise resolves
+      await swap1Promise;
+
+      // Reset capturedScripts for swap 3
+      capturedScripts.length = 0;
+
+      // Swap 3: post again
+      globalThis.fetch = vi.fn().mockResolvedValue(
+        new Response(postHtml, {
+          status: 200,
+          headers: { 'Content-Type': 'text/html' }
+        })
+      );
+      await FetchAndSwap.fetchAndSwap('/post/abc');
+
+      // Verify that postUI.js WAS re-injected in swap 3
+      // (not skipped because the stale onload from swap 1 didn't pollute the Set)
+      const swap3PostUICount = capturedScripts.filter(s => s.src === '/js/postUI.js').length;
+      expect(swap3PostUICount).toBeGreaterThan(0);
+    } finally {
+      teardownTest();
+    }
+  });
+
+  it('current-generation onload still adds to _executedScriptSrcs (dedup still works)', async () => {
+    await setupTest();
+    try {
+      const postHtml = '<html><head><script src="/js/postUI.js"></script></head><body>post</body></html>';
+
+      // Track script appends
+      const appendedScripts = [];
+      Node.prototype.appendChild.mockRestore();
+      const realAppendChild = Node.prototype.appendChild;
+      vi.spyOn(Node.prototype, 'appendChild').mockImplementation(function(node) {
+        const result = realAppendChild.call(this, node);
+        if (node && node.tagName === 'SCRIPT' && node.getAttribute && node.getAttribute('src')) {
+          appendedScripts.push(node.getAttribute('src'));
+          // Fire onload immediately
+          setTimeout(() => { if (node.onload) node.onload(); }, 0);
+        }
+        return result;
+      });
+
+      // First swap of post.html
+      globalThis.fetch = vi.fn().mockResolvedValue(
+        new Response(postHtml, {
+          status: 200,
+          headers: { 'Content-Type': 'text/html' }
+        })
+      );
+      await FetchAndSwap.fetchAndSwap('/post/abc');
+
+      // Verify postUI.js is in the Set
+      expect(FetchAndSwap._executedScriptSrcs.has(
+        'https://app-roadtripmap-prod.azurewebsites.net/js/postUI.js'
+      )).toBe(true);
+
+      const swap1Count = appendedScripts.filter(s => s === '/js/postUI.js').length;
+      expect(swap1Count).toBe(1);
+
+      // Second swap of the SAME post.html
+      appendedScripts.length = 0;
+      globalThis.fetch = vi.fn().mockResolvedValue(
+        new Response(postHtml, {
+          status: 200,
+          headers: { 'Content-Type': 'text/html' }
+        })
+      );
+      await FetchAndSwap.fetchAndSwap('/post/abc');
+
+      // Verify postUI.js was NOT re-injected (still in Set, dedup working)
+      const swap2Count = appendedScripts.filter(s => s === '/js/postUI.js').length;
+      expect(swap2Count).toBe(0);
+    } finally {
+      teardownTest();
+    }
+  });
+
+  it('three rapid swaps complete without crashing', async () => {
+    await setupTest();
+    try {
+      const htmlA = '<html><head><script src="/js/a.js"></script></head><body>A</body></html>';
+      const htmlB = '<html><head><script src="/js/b.js"></script></head><body>B</body></html>';
+      const htmlC = '<html><head><script src="/js/c.js"></script></head><body>C</body></html>';
+
+      // Mock fetch to return appropriate HTML based on URL
+      globalThis.fetch = vi.fn((url) => {
+        let html;
+        if (url.includes('/a')) html = htmlA;
+        else if (url.includes('/b')) html = htmlB;
+        else if (url.includes('/c')) html = htmlC;
+        else html = '<html><head></head><body>unknown</body></html>';
+
+        return Promise.resolve(new Response(html, { status: 200, headers: { 'Content-Type': 'text/html' } }));
+      });
+
+      // Fire three swaps without awaiting them individually
+      const swap1 = FetchAndSwap.fetchAndSwap('/a');
+      const swap2 = FetchAndSwap.fetchAndSwap('/b');
+      const swap3 = FetchAndSwap.fetchAndSwap('/c');
+
+      // Wait for all three to settle
+      const results = await Promise.allSettled([swap1, swap2, swap3]);
+
+      // All should have resolved (no crashes/rejections)
+      results.forEach((result, index) => {
+        if (result.status === 'rejected') {
+          console.error(`Swap ${index + 1} rejected:`, result.reason);
+        }
+        expect(result.status).toBe('fulfilled');
+      });
+    } finally {
+      teardownTest();
+    }
+  });
+});
