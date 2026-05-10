@@ -983,4 +983,80 @@ describe('UploadQueue', () => {
             expect(item.status).toBe('committed');
         });
     });
+
+    describe('User-initiated cancellation (abort/discardAll) does not fire error haptic', () => {
+        it('user-initiated abort does not fire Native.haptic', async () => {
+            globalThis.Native = { haptic: vi.fn() };
+
+            const tripToken = 'test-token';
+            const uploadId = 'upload-1';
+
+            // Create a pending upload in storage
+            await StorageAdapter.putItem({
+                upload_id: uploadId,
+                trip_token: tripToken,
+                filename: 'test.jpg',
+                size: 1024,
+                content_type: 'image/jpeg',
+                status: 'pending',
+                created_at: new Date().toISOString(),
+                last_activity_at: new Date().toISOString(),
+            });
+
+            API.abort.mockResolvedValue(undefined);
+
+            // User initiates abort
+            await UploadQueue.abort(uploadId);
+
+            // Haptic should NOT have been called (user cancel is not a failure)
+            expect(globalThis.Native.haptic).not.toHaveBeenCalled();
+
+            // Verify upload was deleted from storage
+            const item = await StorageAdapter.getItem(uploadId);
+            expect(item).toBeFalsy(); // null or undefined, both indicate deletion
+        });
+
+        it('user-initiated discardAll does not fire Native.haptic', async () => {
+            globalThis.Native = { haptic: vi.fn() };
+
+            const tripToken = 'test-token';
+            const uploadId1 = 'upload-1';
+            const uploadId2 = 'upload-2';
+
+            // Create pending uploads in storage
+            await StorageAdapter.putItem({
+                upload_id: uploadId1,
+                trip_token: tripToken,
+                filename: 'test1.jpg',
+                size: 1024,
+                status: 'pending',
+                created_at: new Date().toISOString(),
+                last_activity_at: new Date().toISOString(),
+            });
+
+            await StorageAdapter.putItem({
+                upload_id: uploadId2,
+                trip_token: tripToken,
+                filename: 'test2.jpg',
+                size: 2048,
+                status: 'pending',
+                created_at: new Date().toISOString(),
+                last_activity_at: new Date().toISOString(),
+            });
+
+            API.abort.mockResolvedValue(undefined);
+
+            // User initiates discardAll
+            await UploadQueue.discardAll(tripToken);
+
+            // Haptic should NOT have been called
+            expect(globalThis.Native.haptic).not.toHaveBeenCalled();
+
+            // Verify uploads were removed
+            const item1 = await StorageAdapter.getItem(uploadId1);
+            const item2 = await StorageAdapter.getItem(uploadId2);
+            expect(item1).toBeFalsy(); // null or undefined
+            expect(item2).toBeFalsy(); // null or undefined
+        });
+    });
 });

@@ -774,6 +774,10 @@ const PostUI = {
                 takenAt
             );
 
+            if (globalThis.Native && typeof globalThis.Native.haptic === 'function') {
+                void globalThis.Native.haptic('medium');
+            }
+
             this.showToast('Photo posted!', 'success');
             this.hidePreview();
             await this.refreshPhotoList();

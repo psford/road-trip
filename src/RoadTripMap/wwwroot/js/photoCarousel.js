@@ -128,7 +128,9 @@ const PhotoCarousel = {
      * @param {Object} photo - Photo object
      */
     async handleSave(photo) {
-        const url = photo.originalUrl;
+        const url = (typeof RoadTrip !== 'undefined' && typeof RoadTrip.appOrigin === 'function')
+            ? RoadTrip.appOrigin() + photo.originalUrl
+            : photo.originalUrl;
         const title = photo.placeName || 'Photo';
 
         if (globalThis.Native && typeof globalThis.Native.share === 'function') {
@@ -144,7 +146,7 @@ const PhotoCarousel = {
 
         // Fallback: download the original image (for test environments without Native)
         const link = document.createElement('a');
-        link.href = photo.originalUrl;
+        link.href = url;
         link.download = `photo-${photo.id}`;
         document.body.appendChild(link);
         link.click();

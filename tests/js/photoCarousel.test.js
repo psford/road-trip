@@ -11,6 +11,11 @@ describe('PhotoCarousel', () => {
     let photoWithPlaceName;
 
     beforeEach(() => {
+        // Mock RoadTrip.appOrigin for absolute URL tests
+        globalThis.RoadTrip = {
+            appOrigin: vi.fn().mockReturnValue('https://example.test'),
+        };
+
         photo = {
             id: 'photo-123',
             originalUrl: '/api/photos/trip-1/photo-123/original',
@@ -38,7 +43,7 @@ describe('PhotoCarousel', () => {
 
             expect(globalThis.Native.share).toHaveBeenCalledWith({
                 title: 'Empire State Building',
-                url: '/api/photos/trip-1/photo-123/original',
+                url: 'https://example.test/api/photos/trip-1/photo-123/original',
             });
         });
 
@@ -49,7 +54,7 @@ describe('PhotoCarousel', () => {
 
             expect(globalThis.Native.share).toHaveBeenCalledWith({
                 title: 'Photo',
-                url: '/api/photos/trip-1/photo-123/original',
+                url: 'https://example.test/api/photos/trip-1/photo-123/original',
             });
         });
 
@@ -113,6 +118,29 @@ describe('PhotoCarousel', () => {
             expect(warnSpy).toHaveBeenCalledWith('Share failed:', error);
 
             warnSpy.mockRestore();
+        });
+
+        it('applies RoadTrip.appOrigin to construct absolute URL when available', async () => {
+            globalThis.Native = { share: vi.fn().mockResolvedValue(undefined) };
+
+            await PhotoCarousel.handleSave(photoWithPlaceName);
+
+            expect(globalThis.Native.share).toHaveBeenCalledWith({
+                title: 'Empire State Building',
+                url: 'https://example.test/api/photos/trip-1/photo-123/original',
+            });
+        });
+
+        it('uses relative URL when RoadTrip.appOrigin is not available', async () => {
+            globalThis.Native = { share: vi.fn().mockResolvedValue(undefined) };
+            globalThis.RoadTrip = undefined;
+
+            await PhotoCarousel.handleSave(photoWithPlaceName);
+
+            expect(globalThis.Native.share).toHaveBeenCalledWith({
+                title: 'Empire State Building',
+                url: '/api/photos/trip-1/photo-123/original',
+            });
         });
     });
 });

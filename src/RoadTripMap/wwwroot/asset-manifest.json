@@ -1,10 +1,10 @@
 {
-  "version": "1.0.0-9235560",
+  "version": "1.0.0-f0c7fe9",
   "files": [
     {
       "url": "/css/styles.css",
-      "size": 33621,
-      "sha256": "adbca29a5f3c1ac8a773f8d38a3deff14dfbde6a1e47e35a52046f9f79c1a374"
+      "size": 33757,
+      "sha256": "b2499dce7dd83c55f67f7b4ca7cfc5ad412fa036c99f0ecbd111c6fbc62cb559"
     },
     {
       "url": "/js/api.js",
@@ -63,8 +63,8 @@
     },
     {
       "url": "/js/photoCarousel.js",
-      "size": 13664,
-      "sha256": "7c4def42301675acf3f066f877a48d69432ccd6c6ba49cc96d8dfe86aebf12c3"
+      "size": 13797,
+      "sha256": "928deeb35046adb83a84329bf2ac1fef8df3e0fe999949b9924d58729c60d0de"
     },
     {
       "url": "/js/poiLayer.js",
@@ -78,8 +78,8 @@
     },
     {
       "url": "/js/postUI.js",
-      "size": 52071,
-      "sha256": "548d95e05e33d97a39865df7872c202d64c740df65f91c3ff2f1f337de9849de"
+      "size": 52230,
+      "sha256": "b685fc5f9966553ab82121e494502833ae4ef0252110b1c38c13a9a05d6715f3"
     },
     {
       "url": "/js/progressPanel.js",
@@ -113,8 +113,8 @@
     },
     {
       "url": "/js/uploadQueue.js",
-      "size": 26357,
-      "sha256": "27d6295afc7ce140ff75639799fe7a99f5357ecc5ea8761045e6d91ae64e7fc8"
+      "size": 26053,
+      "sha256": "3593049f9a129562d2caf71e4041fc2e04689680de0c70993dd27a1182dc44b0"
     },
     {
       "url": "/js/uploadSemaphore.js",
@@ -143,8 +143,8 @@
     },
     {
       "url": "/ios.css",
-      "size": 7072,
-      "sha256": "d87d5502ee67abbbf7ff7319a3b9ab3e09c5688d77ffa38211323e9615f0eede"
+      "size": 7023,
+      "sha256": "0969d8b1a3bbb125a4458579c7864e0fcabce442ce8e26796e21399953037256"
     }
   ]
 }

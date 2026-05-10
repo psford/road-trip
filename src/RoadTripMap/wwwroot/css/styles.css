@@ -814,6 +814,8 @@ textarea {
   transition: var(--motion-duration-fast) var(--motion-ease-standard);
 }
 
+/* Cancel button is intentionally subdued in this destructive-action context
+   vs. the global teal-bordered .button-secondary look. */
 .post-button-group .button-secondary {
   background-color: var(--color-fill-secondary);
   color: var(--color-text);

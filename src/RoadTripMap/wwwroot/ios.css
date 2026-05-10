@@ -169,7 +169,6 @@
 @media (prefers-color-scheme: dark) {
   .platform-ios .page-header {
     background-color: var(--material-bg-dark);
-    border-bottom-color: var(--color-separator);
   }
 }
 

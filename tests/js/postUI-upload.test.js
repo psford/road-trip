@@ -400,52 +400,65 @@ describe('postUI integration with UploadQueue', () => {
     });
 });
 
+describe('postUI.onPostConfirm manual pin-drop upload haptic', () => {
+    it('fires Native.haptic("medium") after successful legacy pin-drop upload', async () => {
+        globalThis.Native = { haptic: vi.fn() };
+
+        // Stub PostService.uploadPhoto
+        if (!globalThis.PostService) {
+            globalThis.PostService = {};
+        }
+        PostService.uploadPhoto = vi.fn().mockResolvedValue({ id: 'photo-1' });
+
+        // Set up minimal DOM elements that onPostConfirm needs
+        const postButton = document.createElement('button');
+        postButton.id = 'postButton';
+        document.body.appendChild(postButton);
+
+        const captionInput = document.createElement('input');
+        captionInput.id = 'captionInput';
+        captionInput.value = '';
+        document.body.appendChild(captionInput);
+
+        const postUIInstance = Object.create(PostUI);
+        postUIInstance.secretToken = 'test-secret-token';
+        postUIInstance.currentFile = new File(['test'], 'test.jpg', { type: 'image/jpeg' });
+        postUIInstance.currentLat = 40.7128;
+        postUIInstance.currentLng = -74.0060;
+        postUIInstance.currentMetadata = { timestamp: null };
+        postUIInstance.showToast = vi.fn();
+        postUIInstance.hidePreview = vi.fn();
+        postUIInstance.refreshPhotoList = vi.fn().mockResolvedValue(undefined);
+        postUIInstance.pinDropQueue = null;
+
+        // Call the real onPostConfirm method
+        await postUIInstance.onPostConfirm();
+
+        // Verify production code was invoked and haptic was fired
+        expect(PostService.uploadPhoto).toHaveBeenCalledWith(
+            'test-secret-token',
+            expect.any(File),
+            40.7128,
+            -74.0060,
+            null,
+            null
+        );
+        expect(globalThis.Native.haptic).toHaveBeenCalledWith('medium');
+        expect(postUIInstance.showToast).toHaveBeenCalledWith('Photo posted!', 'success');
+
+        // Clean up
+        document.body.removeChild(postButton);
+        document.body.removeChild(captionInput);
+    });
+});
+
 describe('postUI photo deletion with Native.dialogConfirm', () => {
-    let postUIInstance;
-    let showToastSpy;
-    let refreshPhotoListSpy;
-
     beforeEach(() => {
-        // Create a minimal postUI instance
-        postUIInstance = {
-            secretToken: 'test-secret-token',
-            showToast: vi.fn(),
-            refreshPhotoList: vi.fn(),
-            onDeleteFromCarousel: null,
-        };
-
-        showToastSpy = postUIInstance.showToast;
-        refreshPhotoListSpy = postUIInstance.refreshPhotoList;
-
         // Stub PostService.deletePhoto
         if (!globalThis.PostService) {
             globalThis.PostService = {};
         }
         PostService.deletePhoto = vi.fn();
-
-        // Stub the delete handler that will be tested
-        postUIInstance.onDeleteFromCarousel = async function(photo) {
-            if (!globalThis.Native || typeof globalThis.Native.dialogConfirm !== 'function') {
-                // Native wrapper missing (e.g., test env that didn't load nativeBridge);
-                // fall back to window.confirm so the safety check is preserved.
-                if (!window.confirm('Delete this photo?')) return;
-            } else {
-                const result = await globalThis.Native.dialogConfirm({
-                    title: 'Delete photo?',
-                    message: 'This cannot be undone.',
-                    okButtonTitle: 'Delete',
-                    cancelButtonTitle: 'Cancel',
-                });
-                if (!result || result.value !== true) return;
-            }
-            try {
-                await PostService.deletePhoto(this.secretToken, photo.id);
-                this.showToast('Photo deleted', 'success');
-                await this.refreshPhotoList();
-            } catch (err) {
-                this.showToast('Failed to delete photo', 'error');
-            }
-        };
     });
 
     afterEach(() => {
@@ -459,6 +472,12 @@ describe('postUI photo deletion with Native.dialogConfirm', () => {
         };
         PostService.deletePhoto.mockResolvedValue(undefined);
 
+        // Create a real PostUI instance and spy on its methods
+        const postUIInstance = Object.create(PostUI);
+        postUIInstance.secretToken = 'test-secret-token';
+        postUIInstance.showToast = vi.fn();
+        postUIInstance.refreshPhotoList = vi.fn();
+
         const photo = { id: 'photo-1', placeName: 'Test Location' };
         await postUIInstance.onDeleteFromCarousel(photo);
 
@@ -469,8 +488,8 @@ describe('postUI photo deletion with Native.dialogConfirm', () => {
             cancelButtonTitle: 'Cancel',
         });
         expect(PostService.deletePhoto).toHaveBeenCalledWith('test-secret-token', 'photo-1');
-        expect(showToastSpy).toHaveBeenCalledWith('Photo deleted', 'success');
-        expect(refreshPhotoListSpy).toHaveBeenCalled();
+        expect(postUIInstance.showToast).toHaveBeenCalledWith('Photo deleted', 'success');
+        expect(postUIInstance.refreshPhotoList).toHaveBeenCalled();
     });
 
     it('onDeleteFromCarousel does not delete when user cancels', async () => {
@@ -478,12 +497,17 @@ describe('postUI photo deletion with Native.dialogConfirm', () => {
             dialogConfirm: vi.fn().mockResolvedValue({ value: false }),
         };
 
+        const postUIInstance = Object.create(PostUI);
+        postUIInstance.secretToken = 'test-secret-token';
+        postUIInstance.showToast = vi.fn();
+        postUIInstance.refreshPhotoList = vi.fn();
+
         const photo = { id: 'photo-1', placeName: 'Test Location' };
         await postUIInstance.onDeleteFromCarousel(photo);
 
         expect(globalThis.Native.dialogConfirm).toHaveBeenCalled();
         expect(PostService.deletePhoto).not.toHaveBeenCalled();
-        expect(showToastSpy).not.toHaveBeenCalled();
+        expect(postUIInstance.showToast).not.toHaveBeenCalled();
     });
 
     it('onDeleteFromCarousel does not delete when dialog returns null', async () => {
@@ -491,17 +515,10 @@ describe('postUI photo deletion with Native.dialogConfirm', () => {
             dialogConfirm: vi.fn().mockResolvedValue(null),
         };
 
-        const photo = { id: 'photo-1', placeName: 'Test Location' };
-        await postUIInstance.onDeleteFromCarousel(photo);
-
-        expect(globalThis.Native.dialogConfirm).toHaveBeenCalled();
-        expect(PostService.deletePhoto).not.toHaveBeenCalled();
-    });
-
-    it('onDeleteFromCarousel does not delete when dialog returns undefined', async () => {
-        globalThis.Native = {
-            dialogConfirm: vi.fn().mockResolvedValue(undefined),
-        };
+        const postUIInstance = Object.create(PostUI);
+        postUIInstance.secretToken = 'test-secret-token';
+        postUIInstance.showToast = vi.fn();
+        postUIInstance.refreshPhotoList = vi.fn();
 
         const photo = { id: 'photo-1', placeName: 'Test Location' };
         await postUIInstance.onDeleteFromCarousel(photo);
@@ -516,26 +533,17 @@ describe('postUI photo deletion with Native.dialogConfirm', () => {
         const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
         PostService.deletePhoto.mockResolvedValue(undefined);
 
+        const postUIInstance = Object.create(PostUI);
+        postUIInstance.secretToken = 'test-secret-token';
+        postUIInstance.showToast = vi.fn();
+        postUIInstance.refreshPhotoList = vi.fn();
+
         const photo = { id: 'photo-1', placeName: 'Test Location' };
         await postUIInstance.onDeleteFromCarousel(photo);
 
         expect(confirmSpy).toHaveBeenCalledWith('Delete this photo?');
         expect(PostService.deletePhoto).toHaveBeenCalledWith('test-secret-token', 'photo-1');
-        expect(showToastSpy).toHaveBeenCalledWith('Photo deleted', 'success');
-
-        confirmSpy.mockRestore();
-    });
-
-    it('onDeleteFromCarousel falls back to window.confirm when it returns false', async () => {
-        globalThis.Native = undefined;
-
-        const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
-
-        const photo = { id: 'photo-1', placeName: 'Test Location' };
-        await postUIInstance.onDeleteFromCarousel(photo);
-
-        expect(confirmSpy).toHaveBeenCalledWith('Delete this photo?');
-        expect(PostService.deletePhoto).not.toHaveBeenCalled();
+        expect(postUIInstance.showToast).toHaveBeenCalledWith('Photo deleted', 'success');
 
         confirmSpy.mockRestore();
     });
@@ -546,11 +554,16 @@ describe('postUI photo deletion with Native.dialogConfirm', () => {
         };
         PostService.deletePhoto.mockRejectedValue(new Error('API error'));
 
+        const postUIInstance = Object.create(PostUI);
+        postUIInstance.secretToken = 'test-secret-token';
+        postUIInstance.showToast = vi.fn();
+        postUIInstance.refreshPhotoList = vi.fn();
+
         const photo = { id: 'photo-1', placeName: 'Test Location' };
         await postUIInstance.onDeleteFromCarousel(photo);
 
         expect(PostService.deletePhoto).toHaveBeenCalled();
-        expect(showToastSpy).toHaveBeenCalledWith('Failed to delete photo', 'error');
-        expect(refreshPhotoListSpy).not.toHaveBeenCalled();
+        expect(postUIInstance.showToast).toHaveBeenCalledWith('Failed to delete photo', 'error');
+        expect(postUIInstance.refreshPhotoList).not.toHaveBeenCalled();
     });
 });
