@@ -1,10 +1,10 @@
 {
-  "version": "1.0.0-0ff3f28",
+  "version": "1.0.0-608b5dd",
   "files": [
     {
       "url": "/css/styles.css",
-      "size": 35312,
-      "sha256": "9d189ee9e828700bd2e38cdb7678c2185a00abbd78c2377d0983cb08b4b954e8"
+      "size": 35929,
+      "sha256": "56b95ea010cf5389b652028d5de1d2c5328a4018277a395c1a341b097d5f535a"
     },
     {
       "url": "/js/api.js",
@@ -38,8 +38,8 @@
     },
     {
       "url": "/js/mapUI.js",
-      "size": 11287,
-      "sha256": "5d0761fca1649fde196a3d2214b2fb92986f8f40985919445399351d9d9a4032"
+      "size": 11917,
+      "sha256": "4ca5a9c21b67cfd94644844980b6dcfe9ee7680b695fb030664db90ec301f37e"
     },
     {
       "url": "/js/nativeBridge.js",
@@ -78,8 +78,8 @@
     },
     {
       "url": "/js/postUI.js",
-      "size": 52299,
-      "sha256": "a2e8f0ffc7559416b0b5bed2359c271ce4c0a8f353a76324344af51378312a05"
+      "size": 52985,
+      "sha256": "c63bb38cfe0b9199129ab46c67b63083a163737176fbf5be5642a945ae8c4912"
     },
     {
       "url": "/js/progressPanel.js",
@@ -143,8 +143,8 @@
     },
     {
       "url": "/ios.css",
-      "size": 12746,
-      "sha256": "3dafc43b5710ce367ae984b5c2308b62d1933effbef32d0e924fb6347ba05bb4"
+      "size": 13560,
+      "sha256": "1b075ab9dfbcf051cc9b326baf04c756e270498883a010ba5114f788cd0da5cd"
     }
   ]
 }
