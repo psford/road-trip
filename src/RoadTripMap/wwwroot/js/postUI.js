@@ -939,6 +939,9 @@ const PostUI = {
             const photoMapSection = document.getElementById('photoMapSection');
 
             if (photos.length === 0) {
+                // Clear skeleton placeholders before returning
+                const c = document.getElementById('photoCarousel');
+                if (c) c.innerHTML = '';
                 photoList.classList.add('empty');
                 photoMapSection.classList.remove('visible');
                 this.hidePhotoMap();

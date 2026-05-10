@@ -420,18 +420,18 @@
   to   { opacity: 1; transform: translateY(0); }
 }
 
-.platform-ios body.page-out {
+body.platform-ios.page-out {
   animation: page-out var(--motion-duration-fast) var(--motion-ease-accelerate) both;
   pointer-events: none; /* prevent accidental taps mid-animation */
 }
 
-.platform-ios body.page-in {
+body.platform-ios.page-in {
   animation: page-in var(--motion-duration-normal) var(--motion-ease-decelerate) both;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .platform-ios body.page-out,
-  .platform-ios body.page-in {
+  body.platform-ios.page-out,
+  body.platform-ios.page-in {
     animation-duration: 0.001ms !important; /* effectively instant; still fires animationend */
   }
 }

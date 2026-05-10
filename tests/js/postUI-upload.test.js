@@ -657,4 +657,20 @@ describe('postUI skeleton placeholders during photo fetch', () => {
         // Assert error was shown
         expect(postUIInstance.showToast).toHaveBeenCalled();
     });
+
+    it('removes skeletons when listPhotos resolves with empty array', async () => {
+        PostService.listPhotos.mockResolvedValue([]);
+
+        // Call loadPhotoList with empty photo list
+        await postUIInstance.loadPhotoList();
+
+        // Assert skeletons are cleared (the new empty-trip fix clears them before returning)
+        const container = document.getElementById('photoCarousel');
+        const skeletons = container.querySelectorAll('.skeleton.skeleton-carousel-item');
+        expect(skeletons).toHaveLength(0);
+
+        // Assert empty state was applied
+        const photoList = document.getElementById('photoList');
+        expect(photoList.classList.contains('empty')).toBe(true);
+    });
 });

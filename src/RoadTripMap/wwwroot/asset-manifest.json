@@ -1,5 +1,5 @@
 {
-  "version": "1.0.0-608b5dd",
+  "version": "1.0.0-ec3f468",
   "files": [
     {
       "url": "/css/styles.css",
@@ -38,8 +38,8 @@
     },
     {
       "url": "/js/mapUI.js",
-      "size": 11917,
-      "sha256": "4ca5a9c21b67cfd94644844980b6dcfe9ee7680b695fb030664db90ec301f37e"
+      "size": 12260,
+      "sha256": "e0494873cfa5c1ed2f321f92a0126bcd9f5fa43ff7519a05de7019641d0ea8a7"
     },
     {
       "url": "/js/nativeBridge.js",
@@ -78,8 +78,8 @@
     },
     {
       "url": "/js/postUI.js",
-      "size": 52985,
-      "sha256": "c63bb38cfe0b9199129ab46c67b63083a163737176fbf5be5642a945ae8c4912"
+      "size": 53158,
+      "sha256": "02bdc3fb979cd62677697d2d4572d9f49c2eb3b42bbc63b0b0e5743ed638f688"
     },
     {
       "url": "/js/progressPanel.js",
@@ -143,8 +143,8 @@
     },
     {
       "url": "/ios.css",
-      "size": 13560,
-      "sha256": "1b075ab9dfbcf051cc9b326baf04c756e270498883a010ba5114f788cd0da5cd"
+      "size": 13556,
+      "sha256": "54a8e7c125755a57937671c47d07f2e82ad4d288434344c6aa5e862ae8ae3fa9"
     }
   ]
 }

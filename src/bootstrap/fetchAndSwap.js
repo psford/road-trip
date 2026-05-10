@@ -85,14 +85,12 @@
     async function _animatePageOut() {
         return new Promise((resolve) => {
             const onEnd = () => {
-                document.body.removeEventListener('animationend', onEnd);
                 document.body.classList.remove('page-out');
                 resolve();
             };
             // Safety net — if animationend doesn't fire (rare browser quirk),
             // resolve after the max expected duration + 50ms buffer.
             const safetyTimeout = setTimeout(() => {
-                document.body.removeEventListener('animationend', onEnd);
                 document.body.classList.remove('page-out');
                 resolve();
             }, 250);
@@ -106,17 +104,17 @@
 
     async function _animatePageIn() {
         return new Promise((resolve) => {
-            const safetyTimeout = setTimeout(() => {
-                document.body.removeEventListener('animationend', onEnd);
-                document.body.classList.remove('page-in');
-                resolve();
-            }, 400);
             const onEnd = () => {
                 clearTimeout(safetyTimeout);
-                document.body.removeEventListener('animationend', onEnd);
                 document.body.classList.remove('page-in');
                 resolve();
             };
+            // Safety net — if animationend doesn't fire (rare browser quirk),
+            // resolve after the max expected duration + 50ms buffer.
+            const safetyTimeout = setTimeout(() => {
+                document.body.classList.remove('page-in');
+                resolve();
+            }, 400);
             document.body.addEventListener('animationend', onEnd, { once: true });
             document.body.classList.add('page-in');
         });

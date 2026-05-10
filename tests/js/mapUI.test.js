@@ -230,5 +230,22 @@ describe('MapUI', () => {
             // Assert error handler was called
             expect(mapUIInstance.showError).toHaveBeenCalled();
         });
+
+        it('mapUI.renderMap removes skeletons when trip has no photos', () => {
+            const mockTrip = { name: 'Empty Trip' };
+            MapService.loadTrip.mockResolvedValue({ trip: mockTrip, photos: [] });
+
+            // Call renderMap with empty photos
+            mapUIInstance.renderMap([]);
+
+            // Assert skeletons are cleared (the new empty-trip fix clears them before returning)
+            const container = document.getElementById('viewCarousel');
+            const skeletons = container.querySelectorAll('.skeleton.skeleton-carousel-item');
+            expect(skeletons).toHaveLength(0);
+
+            // Assert empty message was displayed
+            const emptyMsg = document.getElementById('emptyMessage');
+            expect(emptyMsg.style.display).toBe('block');
+        });
     });
 });

@@ -43,7 +43,9 @@ const MapUI = {
      */
     async init(viewToken) {
         try {
-            // Skeleton placeholders during fetch (Phase 5)
+            // Skeleton placeholders during fetch (Phase 5).
+            // Skeletons are cleared either in renderMap() via PhotoCarousel.init (happy path)
+            // or in renderMap's empty-trip path (line ~106) when photos.length === 0.
             const carousel = document.getElementById('viewCarousel');
             if (carousel) {
                 carousel.innerHTML =
@@ -99,6 +101,9 @@ const MapUI = {
 
         // Handle empty trip
         if (photos.length === 0) {
+            // Clear skeleton placeholders before returning
+            const v = document.getElementById('viewCarousel');
+            if (v) v.innerHTML = '';
             this.map.jumpTo({ center: [-98.6, 39.8], zoom: 4 }); // Center of USA
             const emptyMsg = document.getElementById('emptyMessage');
             if (emptyMsg) {
