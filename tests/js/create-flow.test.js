@@ -23,10 +23,11 @@ const OFFLINE_ERROR_SRC = fs.readFileSync(path.resolve(__dirname, '../../src/Roa
 
 // Shared setup for happy-path tests (no module loads to avoid test isolation)
 const setupHappyPath = () => {
-    // Clear globals
+    // Clear globals and IIFE guard
     delete globalThis.API;
     delete globalThis.TripStorage;
     delete globalThis.FetchAndSwap;
+    delete globalThis._createFormHandlerInstalled;
 
     // Mock DOM
     document.body.innerHTML = `
@@ -41,12 +42,13 @@ const setupHappyPath = () => {
 
 // Setup for offline tests (includes module loads)
 const setupOfflineTests = () => {
-    // Clear globals and module caches
+    // Clear globals, module caches, and IIFE guard
     delete globalThis.API;
     delete globalThis.TripStorage;
     delete globalThis.FetchAndSwap;
     delete globalThis.RoadTrip;
     delete globalThis.OfflineError;
+    delete globalThis._createFormHandlerInstalled;
 
     // Mock DOM with page marker
     document.body.innerHTML = `
@@ -78,6 +80,106 @@ afterEach(() => {
 describe('create-flow', () => {
     describe('happy path', () => {
         beforeEach(() => setupHappyPath());
+
+        it('fires Native.haptic("success") after API.createTrip resolves', async () => {
+            // Arrange: stub Native.haptic
+            const hapticMock = vi.fn().mockResolvedValue(undefined);
+            globalThis.Native = { haptic: hapticMock };
+
+            globalThis.API = {
+                createTrip: vi.fn().mockResolvedValue({
+                    postUrl: '/post/test-token',
+                    viewUrl: '/trips/view-token'
+                })
+            };
+
+            globalThis.TripStorage = {
+                saveTrip: vi.fn().mockResolvedValue(undefined)
+            };
+
+            // FetchAndSwap is NOT defined (browser branch)
+            delete globalThis.FetchAndSwap;
+
+            // Mock window.location.href setter
+            let hrefSetValue = null;
+            const originalDescriptor = Object.getOwnPropertyDescriptor(window, 'location');
+            Object.defineProperty(window, 'location', {
+                configurable: true,
+                value: {
+                    href: 'http://localhost/create',
+                    get href() { return this._href; },
+                    set href(val) { hrefSetValue = val; }
+                }
+            });
+
+            // Eval the script
+            eval(INLINE_SCRIPT);
+
+            // Act: Submit the form
+            const form = document.getElementById('createTripForm');
+            const evt = new SubmitEvent('submit', { bubbles: true, cancelable: true });
+            form.dispatchEvent(evt);
+
+            // Await async operations
+            await new Promise(r => setTimeout(r, 20));
+
+            // Assert: haptic was called exactly once with 'success'
+            expect(hapticMock).toHaveBeenCalledWith('success');
+            expect(hapticMock).toHaveBeenCalledTimes(1);
+
+            // Cleanup
+            Object.defineProperty(window, 'location', {
+                configurable: true,
+                value: originalDescriptor.value
+            });
+        });
+
+        it('does not throw when Native is undefined on success', async () => {
+            // Arrange: Native is undefined (test environment)
+            delete globalThis.Native;
+
+            globalThis.API = {
+                createTrip: vi.fn().mockResolvedValue({
+                    postUrl: '/post/test-token',
+                    viewUrl: '/trips/view-token'
+                })
+            };
+
+            globalThis.TripStorage = {
+                saveTrip: vi.fn().mockResolvedValue(undefined)
+            };
+
+            delete globalThis.FetchAndSwap;
+
+            // Mock window.location.href setter
+            let hrefSetValue = null;
+            const originalDescriptor = Object.getOwnPropertyDescriptor(window, 'location');
+            Object.defineProperty(window, 'location', {
+                configurable: true,
+                value: {
+                    href: 'http://localhost/create',
+                    get href() { return this._href; },
+                    set href(val) { hrefSetValue = val; }
+                }
+            });
+
+            // Act & Assert: eval and submit without throwing
+            eval(INLINE_SCRIPT);
+
+            const form = document.getElementById('createTripForm');
+            const evt = new SubmitEvent('submit', { bubbles: true, cancelable: true });
+            form.dispatchEvent(evt);
+
+            // Await and verify no error is thrown
+            await new Promise(r => setTimeout(r, 20));
+            expect(hrefSetValue).toBe('/post/test-token');
+
+            // Cleanup
+            Object.defineProperty(window, 'location', {
+                configurable: true,
+                value: originalDescriptor.value
+            });
+        });
 
         it('Browser branch (FetchAndSwap undefined) → window.location.href setter called', async () => {
             // Set up API and TripStorage mocks
@@ -294,6 +396,139 @@ describe('create-flow', () => {
         });
     });
 
+    describe('error haptic', () => {
+        beforeEach(() => setupOfflineTests());
+
+        it('fires Native.haptic("error") when API.createTrip rejects', async () => {
+            // Arrange: stub Native.haptic
+            const hapticMock = vi.fn().mockResolvedValue(undefined);
+            globalThis.Native = { haptic: hapticMock };
+
+            // API rejects with a non-offline error
+            globalThis.API = {
+                createTrip: vi.fn().mockRejectedValue(new Error('Server error'))
+            };
+
+            globalThis.TripStorage = {
+                saveTrip: vi.fn().mockResolvedValue(undefined)
+            };
+
+            eval(INLINE_SCRIPT);
+
+            // Act: Submit the form
+            const form = document.getElementById('createTripForm');
+            const evt = new SubmitEvent('submit', { bubbles: true, cancelable: true });
+            form.dispatchEvent(evt);
+
+            // Await async operations
+            await new Promise(r => setTimeout(r, 20));
+
+            // Assert: haptic was called exactly once with 'error'
+            expect(hapticMock).toHaveBeenCalledWith('error');
+            expect(hapticMock).toHaveBeenCalledTimes(1);
+        });
+
+        it('fires Native.haptic("error") when API.createTrip rejects with offline error', async () => {
+            // Arrange: stub Native.haptic
+            const hapticMock = vi.fn().mockResolvedValue(undefined);
+            globalThis.Native = { haptic: hapticMock };
+
+            // API rejects with TypeError (offline shape per offlineError.js)
+            globalThis.API = {
+                createTrip: vi.fn().mockRejectedValue(new TypeError('Load failed'))
+            };
+
+            globalThis.TripStorage = {
+                saveTrip: vi.fn().mockResolvedValue(undefined)
+            };
+
+            eval(INLINE_SCRIPT);
+
+            // Act: Submit the form
+            const form = document.getElementById('createTripForm');
+            const evt = new SubmitEvent('submit', { bubbles: true, cancelable: true });
+            form.dispatchEvent(evt);
+
+            // Await async operations
+            await new Promise(r => setTimeout(r, 20));
+
+            // Assert: haptic was called exactly once with 'error'
+            expect(hapticMock).toHaveBeenCalledWith('error');
+            expect(hapticMock).toHaveBeenCalledTimes(1);
+        });
+
+        it('fires Native.haptic("error") when name is missing (validation error)', async () => {
+            // Arrange: stub Native.haptic
+            const hapticMock = vi.fn().mockResolvedValue(undefined);
+            globalThis.Native = { haptic: hapticMock };
+
+            globalThis.API = {
+                createTrip: vi.fn().mockResolvedValue({
+                    postUrl: '/post/test-token',
+                    viewUrl: '/trips/view-token'
+                })
+            };
+
+            globalThis.TripStorage = {
+                saveTrip: vi.fn().mockResolvedValue(undefined)
+            };
+
+            // Setup with empty name (before eval, so script binds to correct DOM)
+            document.body.innerHTML = `
+                <div id="errorMessage" class="message error hidden"></div>
+                <form id="createTripForm">
+                    <input type="text" id="tripName" name="name" value="" />
+                    <textarea id="tripDescription" name="description"></textarea>
+                    <button type="submit" id="createButton">Create Trip</button>
+                </form>
+            `;
+            document.body.dataset.page = 'create';
+
+            eval(INLINE_SCRIPT);
+
+            // Act: Submit form with empty name (validation throws before API call)
+            const form = document.getElementById('createTripForm');
+            const evt = new SubmitEvent('submit', { bubbles: true, cancelable: true });
+            form.dispatchEvent(evt);
+
+            // Await async operations
+            await new Promise(r => setTimeout(r, 20));
+
+            // Assert: haptic was called exactly once with 'error'
+            expect(hapticMock).toHaveBeenCalledWith('error');
+            expect(hapticMock).toHaveBeenCalledTimes(1);
+
+            // Also verify API.createTrip was NOT called (validation threw first)
+            expect(globalThis.API.createTrip).not.toHaveBeenCalled();
+        });
+
+        it('does not throw when Native is undefined on failure', async () => {
+            // Arrange: Native is undefined (test environment)
+            delete globalThis.Native;
+
+            globalThis.API = {
+                createTrip: vi.fn().mockRejectedValue(new Error('Server error'))
+            };
+
+            globalThis.TripStorage = {
+                saveTrip: vi.fn().mockResolvedValue(undefined)
+            };
+
+            eval(INLINE_SCRIPT);
+
+            // Act: Submit the form
+            const form = document.getElementById('createTripForm');
+            const evt = new SubmitEvent('submit', { bubbles: true, cancelable: true });
+            form.dispatchEvent(evt);
+
+            // Await and verify no error is thrown, error message is shown
+            await new Promise(r => setTimeout(r, 20));
+            const errorEl = document.getElementById('errorMessage');
+            expect(errorEl.classList.contains('hidden')).toBe(false);
+            expect(errorEl.textContent).toBe('Server error');
+        });
+    });
+
     describe('in-shell navigation hardening', () => {
         // If FetchAndSwap.fetchAndSwap rejects mid-swap, or if the shell is
         // active but FetchAndSwap somehow isn't loaded, the old handler fell
@@ -416,6 +651,81 @@ describe('create-flow', () => {
             Object.defineProperty(window, 'location', {
                 configurable: true,
                 value: originalLocation.value
+            });
+        });
+    });
+
+    describe('IIFE idempotency guard', () => {
+        beforeEach(() => setupHappyPath());
+
+        it('re-evaluating the inline script does not double-attach the submit listener', async () => {
+            // Mock API to count how many times createTrip is called
+            let createTripCallCount = 0;
+            globalThis.API = {
+                createTrip: vi.fn(async () => {
+                    createTripCallCount++;
+                    return {
+                        postUrl: '/post/test-token',
+                        viewUrl: '/trips/view-token'
+                    };
+                })
+            };
+
+            globalThis.TripStorage = {
+                saveTrip: vi.fn().mockResolvedValue(undefined)
+            };
+
+            // Mock window.location.href to capture navigation
+            let hrefSetValue = null;
+            const originalDescriptor = Object.getOwnPropertyDescriptor(window, 'location');
+            Object.defineProperty(window, 'location', {
+                configurable: true,
+                value: {
+                    href: 'http://localhost/create',
+                    get href() { return this._href || 'http://localhost/create'; },
+                    set href(val) { hrefSetValue = val; }
+                }
+            });
+
+            // First eval: install the handler (should succeed)
+            eval(INLINE_SCRIPT);
+
+            // Get the form after script is evaluated
+            const form = document.getElementById('createTripForm');
+
+            // Submit the form once after first install
+            const evt = new SubmitEvent('submit', { bubbles: true, cancelable: true });
+            form.dispatchEvent(evt);
+
+            // Await async operations
+            await new Promise(r => setTimeout(r, 20));
+
+            // First submit should have called createTrip exactly once
+            expect(createTripCallCount).toBe(1);
+
+            // Reset the call counter and re-eval the script (simulating iOS shell re-swap)
+            // but keep globalThis intact (idempotency guard should prevent re-attachment)
+            createTripCallCount = 0;
+            eval(INLINE_SCRIPT);
+
+            // Submit the form a second time (still same session, no clear-all-globals)
+            const evt2 = new SubmitEvent('submit', { bubbles: true, cancelable: true });
+            form.dispatchEvent(evt2);
+
+            // Await async operations
+            await new Promise(r => setTimeout(r, 20));
+
+            // Critical assertion: even though we re-eval'd the script, the handler
+            // should only fire ONCE per submit (not twice, which would happen if both
+            // the old and new listeners fired). If the guard failed, createTrip would
+            // be called twice: once from the original attached listener, once from
+            // the newly attached listener.
+            expect(createTripCallCount).toBe(1);
+
+            // Cleanup
+            Object.defineProperty(window, 'location', {
+                configurable: true,
+                value: originalDescriptor.value
             });
         });
     });

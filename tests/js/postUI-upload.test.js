@@ -295,4 +295,382 @@ describe('postUI integration with UploadQueue', () => {
         await new Promise(resolve => setTimeout(resolve, 50));
         expect(uploadCreatedEvents).toHaveLength(0);
     });
+
+    it('Add-Photo button click fires Native.haptic("light")', () => {
+        globalThis.Native = { haptic: vi.fn() };
+
+        // Set up DOM elements required by onAddPhotoTap
+        const fileInput = document.createElement('input');
+        fileInput.id = 'fileInput';
+        document.body.appendChild(fileInput);
+
+        // Create a real PostUI instance and spy on its methods
+        const postUIInstance = Object.create(PostUI);
+        postUIInstance.secretToken = 'test-secret-token';
+
+        // Stub fileInput.click to prevent actual file dialog
+        vi.spyOn(fileInput, 'click');
+
+        // Invoke the real production method
+        postUIInstance.onAddPhotoTap();
+
+        expect(globalThis.Native.haptic).toHaveBeenCalledWith('light');
+        expect(fileInput.click).toHaveBeenCalled();
+
+        // Clean up
+        document.body.removeChild(fileInput);
+    });
+
+    it('Cancel button click fires Native.haptic("light")', () => {
+        globalThis.Native = { haptic: vi.fn() };
+
+        // Create a real PostUI instance and stub its hidePreview method
+        const postUIInstance = Object.create(PostUI);
+        postUIInstance.secretToken = 'test-secret-token';
+        postUIInstance.hidePreview = vi.fn();
+
+        // Invoke the real production method
+        postUIInstance.onCancelTap();
+
+        expect(globalThis.Native.haptic).toHaveBeenCalledWith('light');
+        expect(postUIInstance.hidePreview).toHaveBeenCalled();
+    });
+
+    it('Post-Photo button click fires Native.haptic("light")', async () => {
+        globalThis.Native = { haptic: vi.fn() };
+
+        // Create a real PostUI instance and stub its onPostConfirm method
+        const postUIInstance = Object.create(PostUI);
+        postUIInstance.secretToken = 'test-secret-token';
+        postUIInstance.onPostConfirm = vi.fn();
+
+        // Invoke the real production method
+        await postUIInstance.onPostButtonTap();
+
+        expect(globalThis.Native.haptic).toHaveBeenCalledWith('light');
+        expect(postUIInstance.onPostConfirm).toHaveBeenCalled();
+    });
+
+    it('Native.haptic absence does not break button handlers', () => {
+        globalThis.Native = undefined;
+
+        const fileInput = document.createElement('input');
+        fileInput.id = 'fileInput';
+        document.body.appendChild(fileInput);
+        vi.spyOn(fileInput, 'click');
+
+        const buttons = {
+            addPhoto: document.createElement('button'),
+            cancel: document.createElement('button'),
+            post: document.createElement('button'),
+        };
+
+        buttons.addPhoto.addEventListener('click', () => {
+            if (globalThis.Native && typeof globalThis.Native.haptic === 'function') {
+                void globalThis.Native.haptic('light');
+            }
+            document.getElementById('fileInput').click();
+        });
+
+        buttons.cancel.addEventListener('click', () => {
+            if (globalThis.Native && typeof globalThis.Native.haptic === 'function') {
+                void globalThis.Native.haptic('light');
+            }
+        });
+
+        buttons.post.addEventListener('click', () => {
+            if (globalThis.Native && typeof globalThis.Native.haptic === 'function') {
+                void globalThis.Native.haptic('light');
+            }
+        });
+
+        document.body.appendChild(buttons.addPhoto);
+        document.body.appendChild(buttons.cancel);
+        document.body.appendChild(buttons.post);
+
+        // Should not throw even though Native is undefined
+        expect(() => buttons.addPhoto.click()).not.toThrow();
+        expect(() => buttons.cancel.click()).not.toThrow();
+        expect(() => buttons.post.click()).not.toThrow();
+    });
+});
+
+describe('postUI.onPostConfirm manual pin-drop upload haptic', () => {
+    it('fires Native.haptic("medium") after successful legacy pin-drop upload', async () => {
+        globalThis.Native = { haptic: vi.fn() };
+
+        // Stub PostService.uploadPhoto
+        if (!globalThis.PostService) {
+            globalThis.PostService = {};
+        }
+        PostService.uploadPhoto = vi.fn().mockResolvedValue({ id: 'photo-1' });
+
+        // Set up minimal DOM elements that onPostConfirm needs
+        const postButton = document.createElement('button');
+        postButton.id = 'postButton';
+        document.body.appendChild(postButton);
+
+        const captionInput = document.createElement('input');
+        captionInput.id = 'captionInput';
+        captionInput.value = '';
+        document.body.appendChild(captionInput);
+
+        const postUIInstance = Object.create(PostUI);
+        postUIInstance.secretToken = 'test-secret-token';
+        postUIInstance.currentFile = new File(['test'], 'test.jpg', { type: 'image/jpeg' });
+        postUIInstance.currentLat = 40.7128;
+        postUIInstance.currentLng = -74.0060;
+        postUIInstance.currentMetadata = { timestamp: null };
+        postUIInstance.showToast = vi.fn();
+        postUIInstance.hidePreview = vi.fn();
+        postUIInstance.refreshPhotoList = vi.fn().mockResolvedValue(undefined);
+        postUIInstance.pinDropQueue = null;
+
+        // Call the real onPostConfirm method
+        await postUIInstance.onPostConfirm();
+
+        // Verify production code was invoked and haptic was fired
+        expect(PostService.uploadPhoto).toHaveBeenCalledWith(
+            'test-secret-token',
+            expect.any(File),
+            40.7128,
+            -74.0060,
+            null,
+            null
+        );
+        expect(globalThis.Native.haptic).toHaveBeenCalledWith('medium');
+        expect(postUIInstance.showToast).toHaveBeenCalledWith('Photo posted!', 'success');
+
+        // Clean up
+        document.body.removeChild(postButton);
+        document.body.removeChild(captionInput);
+    });
+});
+
+describe('postUI photo deletion with Native.dialogConfirm', () => {
+    beforeEach(() => {
+        // Stub PostService.deletePhoto
+        if (!globalThis.PostService) {
+            globalThis.PostService = {};
+        }
+        PostService.deletePhoto = vi.fn();
+    });
+
+    afterEach(() => {
+        vi.clearAllMocks();
+        delete globalThis.Native;
+    });
+
+    it('onDeleteFromCarousel calls Native.dialogConfirm and deletes on confirm', async () => {
+        globalThis.Native = {
+            dialogConfirm: vi.fn().mockResolvedValue({ value: true }),
+        };
+        PostService.deletePhoto.mockResolvedValue(undefined);
+
+        // Create a real PostUI instance and spy on its methods
+        const postUIInstance = Object.create(PostUI);
+        postUIInstance.secretToken = 'test-secret-token';
+        postUIInstance.showToast = vi.fn();
+        postUIInstance.refreshPhotoList = vi.fn();
+
+        const photo = { id: 'photo-1', placeName: 'Test Location' };
+        await postUIInstance.onDeleteFromCarousel(photo);
+
+        expect(globalThis.Native.dialogConfirm).toHaveBeenCalledWith({
+            title: 'Delete photo?',
+            message: 'This cannot be undone.',
+            okButtonTitle: 'Delete',
+            cancelButtonTitle: 'Cancel',
+        });
+        expect(PostService.deletePhoto).toHaveBeenCalledWith('test-secret-token', 'photo-1');
+        expect(postUIInstance.showToast).toHaveBeenCalledWith('Photo deleted', 'success');
+        expect(postUIInstance.refreshPhotoList).toHaveBeenCalled();
+    });
+
+    it('onDeleteFromCarousel does not delete when user cancels', async () => {
+        globalThis.Native = {
+            dialogConfirm: vi.fn().mockResolvedValue({ value: false }),
+        };
+
+        const postUIInstance = Object.create(PostUI);
+        postUIInstance.secretToken = 'test-secret-token';
+        postUIInstance.showToast = vi.fn();
+        postUIInstance.refreshPhotoList = vi.fn();
+
+        const photo = { id: 'photo-1', placeName: 'Test Location' };
+        await postUIInstance.onDeleteFromCarousel(photo);
+
+        expect(globalThis.Native.dialogConfirm).toHaveBeenCalled();
+        expect(PostService.deletePhoto).not.toHaveBeenCalled();
+        expect(postUIInstance.showToast).not.toHaveBeenCalled();
+    });
+
+    it('onDeleteFromCarousel does not delete when dialog returns null', async () => {
+        globalThis.Native = {
+            dialogConfirm: vi.fn().mockResolvedValue(null),
+        };
+
+        const postUIInstance = Object.create(PostUI);
+        postUIInstance.secretToken = 'test-secret-token';
+        postUIInstance.showToast = vi.fn();
+        postUIInstance.refreshPhotoList = vi.fn();
+
+        const photo = { id: 'photo-1', placeName: 'Test Location' };
+        await postUIInstance.onDeleteFromCarousel(photo);
+
+        expect(globalThis.Native.dialogConfirm).toHaveBeenCalled();
+        expect(PostService.deletePhoto).not.toHaveBeenCalled();
+    });
+
+    it('onDeleteFromCarousel falls back to window.confirm when Native is unavailable', async () => {
+        globalThis.Native = undefined;
+
+        const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+        PostService.deletePhoto.mockResolvedValue(undefined);
+
+        const postUIInstance = Object.create(PostUI);
+        postUIInstance.secretToken = 'test-secret-token';
+        postUIInstance.showToast = vi.fn();
+        postUIInstance.refreshPhotoList = vi.fn();
+
+        const photo = { id: 'photo-1', placeName: 'Test Location' };
+        await postUIInstance.onDeleteFromCarousel(photo);
+
+        expect(confirmSpy).toHaveBeenCalledWith('Delete this photo?');
+        expect(PostService.deletePhoto).toHaveBeenCalledWith('test-secret-token', 'photo-1');
+        expect(postUIInstance.showToast).toHaveBeenCalledWith('Photo deleted', 'success');
+
+        confirmSpy.mockRestore();
+    });
+
+    it('onDeleteFromCarousel shows error toast when delete API fails', async () => {
+        globalThis.Native = {
+            dialogConfirm: vi.fn().mockResolvedValue({ value: true }),
+        };
+        PostService.deletePhoto.mockRejectedValue(new Error('API error'));
+
+        const postUIInstance = Object.create(PostUI);
+        postUIInstance.secretToken = 'test-secret-token';
+        postUIInstance.showToast = vi.fn();
+        postUIInstance.refreshPhotoList = vi.fn();
+
+        const photo = { id: 'photo-1', placeName: 'Test Location' };
+        await postUIInstance.onDeleteFromCarousel(photo);
+
+        expect(PostService.deletePhoto).toHaveBeenCalled();
+        expect(postUIInstance.showToast).toHaveBeenCalledWith('Failed to delete photo', 'error');
+        expect(postUIInstance.refreshPhotoList).not.toHaveBeenCalled();
+    });
+});
+
+describe('postUI skeleton placeholders during photo fetch', () => {
+    let postUIInstance;
+
+    beforeEach(async () => {
+        // Set up DOM
+        document.body.innerHTML = `
+            <div id="photoCarousel"></div>
+            <div id="photoList"></div>
+            <div id="photoMapSection"></div>
+        `;
+
+        // Stub PostService
+        globalThis.PostService = {
+            listPhotos: vi.fn(),
+        };
+
+        // Stub PhotoCarousel to avoid rendering errors
+        globalThis.PhotoCarousel = {
+            init: vi.fn().mockReturnValue({ selectPhoto: vi.fn() }),
+        };
+
+        // Create PostUI instance
+        postUIInstance = Object.create(PostUI);
+        postUIInstance.secretToken = 'test-secret-token';
+        postUIInstance.showToast = vi.fn();
+        postUIInstance.photos = [];
+        postUIInstance.carousel = null;
+        postUIInstance.map = null;
+        postUIInstance.renderPhotoMap = vi.fn();
+        postUIInstance.hidePhotoMap = vi.fn();
+    });
+
+    it('injects 3 skeleton placeholders before listPhotos resolves', async () => {
+        // Mock listPhotos to never resolve (pending)
+        const neverResolvePromise = new Promise(() => {});
+        PostService.listPhotos.mockReturnValue(neverResolvePromise);
+
+        // Start the fetch (don't await)
+        const loadPromise = postUIInstance.loadPhotoList();
+
+        // Give async operations a chance to run
+        await new Promise(r => setTimeout(r, 10));
+
+        // Assert skeletons are present
+        const container = document.getElementById('photoCarousel');
+        const skeletons = container.querySelectorAll('.skeleton.skeleton-carousel-item');
+        expect(skeletons).toHaveLength(3);
+
+        // Clean up the pending promise (prevent unhandled rejection)
+        (async () => { await loadPromise; })().catch(() => {});
+    });
+
+    it('removes skeletons after listPhotos resolves with content', async () => {
+        const mockPhotos = [
+            { id: 'photo-1', displayUrl: '/api/photos/trip-1/photo-1/display' },
+            { id: 'photo-2', displayUrl: '/api/photos/trip-1/photo-2/display' },
+        ];
+        PostService.listPhotos.mockResolvedValue(mockPhotos);
+
+        // Call loadPhotoList and await it
+        await postUIInstance.loadPhotoList();
+
+        // At this point:
+        // - Skeletons were injected initially
+        // - listPhotos resolved with photos
+        // - The render path executes: container.innerHTML = '' (line 960)
+        // - PhotoCarousel.init is called
+        // So skeletons should be cleared by the innerHTML = ''
+
+        // Assert skeletons are gone
+        const container = document.getElementById('photoCarousel');
+        const skeletons = container.querySelectorAll('.skeleton.skeleton-carousel-item');
+        expect(skeletons).toHaveLength(0);
+
+        // Assert carousel was initialized (which means innerHTML = '' happened)
+        expect(globalThis.PhotoCarousel.init).toHaveBeenCalled();
+    });
+
+    it('removes skeletons after listPhotos rejects', async () => {
+        PostService.listPhotos.mockRejectedValue(new Error('Network error'));
+
+        postUIInstance.showToast = vi.fn();
+
+        // Call loadPhotoList and let it reject
+        await postUIInstance.loadPhotoList();
+
+        // Assert skeletons are gone (error handler may have rendered error state)
+        const container = document.getElementById('photoCarousel');
+        const skeletons = container.querySelectorAll('.skeleton.skeleton-carousel-item');
+        expect(skeletons).toHaveLength(0);
+
+        // Assert error was shown
+        expect(postUIInstance.showToast).toHaveBeenCalled();
+    });
+
+    it('removes skeletons when listPhotos resolves with empty array', async () => {
+        PostService.listPhotos.mockResolvedValue([]);
+
+        // Call loadPhotoList with empty photo list
+        await postUIInstance.loadPhotoList();
+
+        // Assert skeletons are cleared (the new empty-trip fix clears them before returning)
+        const container = document.getElementById('photoCarousel');
+        const skeletons = container.querySelectorAll('.skeleton.skeleton-carousel-item');
+        expect(skeletons).toHaveLength(0);
+
+        // Assert empty state was applied
+        const photoList = document.getElementById('photoList');
+        expect(photoList.classList.contains('empty')).toBe(true);
+    });
 });

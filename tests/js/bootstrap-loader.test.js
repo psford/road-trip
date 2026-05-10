@@ -68,6 +68,20 @@ beforeEach(async () => {
         return result;
     });
 
+    // Phase 5: Stub classList.add to dispatch animationend for page-out/page-in.
+    // jsdom doesn't fire CSS animations, but _animatePageOut/_animatePageIn await
+    // animationend. Manually dispatch after the class is added so the promise resolves.
+    const realClassListAdd = DOMTokenList.prototype.add;
+    vi.spyOn(DOMTokenList.prototype, 'add').mockImplementation(function(...classNames) {
+        const result = realClassListAdd.apply(this, classNames);
+        if ((classNames.includes('page-out') || classNames.includes('page-in')) && this === document.body.classList) {
+            setTimeout(() => {
+                document.body.dispatchEvent(new Event('animationend'));
+            }, 0);
+        }
+        return result;
+    });
+
     document.head.innerHTML = '<title>shell</title>';
     document.body.innerHTML = '<div id="bootstrap-progress">Loading…</div>';
     document.body.classList.remove('platform-ios');
@@ -576,5 +590,62 @@ describe('Phase 4 eager pre-fetch trigger', () => {
 
         await expect(runLoader()).resolves.not.toThrow();
         expect(document.body.textContent).toContain('home');
+    });
+});
+
+describe('Cold-start Native.statusBar', () => {
+    it('calls Native.statusBar("dark") on cold start when Native is available', async () => {
+        globalThis.Native = {
+            statusBar: vi.fn().mockResolvedValue(undefined)
+        };
+
+        globalThis.fetch = vi.fn().mockImplementation(() =>
+            Promise.resolve(
+                new Response('<html><body>page</body></html>', {
+                    status: 200,
+                    headers: { 'Content-Type': 'text/html' }
+                })
+            )
+        );
+
+        await runLoader();
+
+        expect(globalThis.Native.statusBar).toHaveBeenCalledWith('dark');
+    });
+
+    it('does not throw on cold start when Native is undefined', async () => {
+        // Ensure Native is undefined
+        delete globalThis.Native;
+
+        globalThis.fetch = vi.fn().mockImplementation(() =>
+            Promise.resolve(
+                new Response('<html><body>page</body></html>', {
+                    status: 200,
+                    headers: { 'Content-Type': 'text/html' }
+                })
+            )
+        );
+
+        await expect(runLoader()).resolves.not.toThrow();
+        expect(document.body.classList.contains('platform-ios')).toBe(true);
+    });
+
+    it('swallows errors from Native.statusBar to avoid breaking bootstrap', async () => {
+        globalThis.Native = {
+            statusBar: vi.fn().mockRejectedValue(new Error('plugin failure'))
+        };
+
+        globalThis.fetch = vi.fn().mockImplementation(() =>
+            Promise.resolve(
+                new Response('<html><body>page</body></html>', {
+                    status: 200,
+                    headers: { 'Content-Type': 'text/html' }
+                })
+            )
+        );
+
+        await expect(runLoader()).resolves.not.toThrow();
+        expect(document.body.classList.contains('platform-ios')).toBe(true);
+        expect(document.body.textContent).toContain('page');
     });
 });

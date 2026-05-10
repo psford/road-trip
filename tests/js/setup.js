@@ -77,6 +77,7 @@ beforeAll(() => {
 
     // Load modules
     loadGlobal('roadTrip.js');
+    loadGlobal('nativeBridge.js');
     loadGlobal('offlineError.js');
     loadGlobal('featureFlags.js');
     loadGlobal('api.js');
@@ -96,7 +97,10 @@ beforeAll(() => {
     loadGlobal('uploadQueue.js');
     loadGlobal('progressPanel.js');
     loadGlobal('resumeBanner.js');
+    loadGlobal('photoCarousel.js');
     loadGlobal('postUI.js');
+    loadGlobal('mapService.js');
+    loadGlobal('mapUI.js');
 });
 
 /**

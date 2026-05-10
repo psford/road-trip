@@ -4,6 +4,18 @@
         // Set platform-ios class before first paint (preserved from previous loader; AC10.1).
         document.body.classList.add('platform-ios');
 
+        // Cold-start status-bar style: set dark text on light surface as default.
+        // Native is loaded on the first swapped page; this call may be a no-op
+        // but ensures the initial style matches the app's default theme.
+        try {
+            if (globalThis.Native && typeof globalThis.Native.statusBar === 'function') {
+                // Fire-and-forget; do not block bootstrap on plugin readiness
+                void globalThis.Native.statusBar('dark');
+            }
+        } catch (e) {
+            // Status-bar style is cosmetic; never break bootstrap on a plugin error
+        }
+
         // Wrap FetchAndSwap.fetchAndSwap so every swap re-injects ios.css.
         // (document.head.innerHTML is replaced on every swap, removing any prior <link>.)
         // Note: the wrapper kicks in only AFTER loader.js has run. Phase 3/4 unit tests
