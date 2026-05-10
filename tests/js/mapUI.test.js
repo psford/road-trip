@@ -232,14 +232,18 @@ describe('MapUI', () => {
         });
 
         it('mapUI.renderMap removes skeletons when trip has no photos', () => {
-            const mockTrip = { name: 'Empty Trip' };
-            MapService.loadTrip.mockResolvedValue({ trip: mockTrip, photos: [] });
+            // Arrange: pre-inject skeletons (init() would do this normally)
+            const container = document.getElementById('viewCarousel');
+            container.innerHTML =
+                '<div class="skeleton skeleton-carousel-item"></div>' +
+                '<div class="skeleton skeleton-carousel-item"></div>' +
+                '<div class="skeleton skeleton-carousel-item"></div>';
+            expect(container.querySelectorAll('.skeleton').length).toBe(3); // sanity
 
-            // Call renderMap with empty photos
+            // Act
             mapUIInstance.renderMap([]);
 
-            // Assert skeletons are cleared (the new empty-trip fix clears them before returning)
-            const container = document.getElementById('viewCarousel');
+            // Assert: skeletons cleared
             const skeletons = container.querySelectorAll('.skeleton.skeleton-carousel-item');
             expect(skeletons).toHaveLength(0);
 
