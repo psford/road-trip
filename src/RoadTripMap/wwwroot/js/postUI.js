@@ -29,6 +29,9 @@ const PostUI = {
 
         // Wire up event listeners
         document.getElementById('addPhotoButton').addEventListener('click', () => {
+            if (globalThis.Native && typeof globalThis.Native.haptic === 'function') {
+                void globalThis.Native.haptic('light');
+            }
             document.getElementById('fileInput').click();
         });
 
@@ -44,10 +47,16 @@ const PostUI = {
         });
 
         document.getElementById('cancelButton').addEventListener('click', () => {
+            if (globalThis.Native && typeof globalThis.Native.haptic === 'function') {
+                void globalThis.Native.haptic('light');
+            }
             this.hidePreview();
         });
 
         document.getElementById('postButton').addEventListener('click', () => {
+            if (globalThis.Native && typeof globalThis.Native.haptic === 'function') {
+                void globalThis.Native.haptic('light');
+            }
             this.onPostConfirm();
         });
 

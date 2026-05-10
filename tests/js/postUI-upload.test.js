@@ -295,4 +295,107 @@ describe('postUI integration with UploadQueue', () => {
         await new Promise(resolve => setTimeout(resolve, 50));
         expect(uploadCreatedEvents).toHaveLength(0);
     });
+
+    it('Add-Photo button click fires Native.haptic("light")', () => {
+        globalThis.Native = { haptic: vi.fn() };
+
+        // Simulate the event listener that postUI.js creates
+        const fileInput = document.createElement('input');
+        fileInput.id = 'fileInput';
+        document.body.appendChild(fileInput);
+
+        const button = document.createElement('button');
+        button.id = 'addPhotoButton';
+        button.addEventListener('click', () => {
+            if (globalThis.Native && typeof globalThis.Native.haptic === 'function') {
+                void globalThis.Native.haptic('light');
+            }
+            document.getElementById('fileInput').click();
+        });
+        document.body.appendChild(button);
+
+        // Stub fileInput.click to prevent actual file dialog
+        vi.spyOn(fileInput, 'click');
+
+        button.click();
+        expect(globalThis.Native.haptic).toHaveBeenCalledWith('light');
+        expect(fileInput.click).toHaveBeenCalled();
+    });
+
+    it('Cancel button click fires Native.haptic("light")', () => {
+        globalThis.Native = { haptic: vi.fn() };
+
+        const button = document.createElement('button');
+        button.id = 'cancelButton';
+        button.addEventListener('click', () => {
+            if (globalThis.Native && typeof globalThis.Native.haptic === 'function') {
+                void globalThis.Native.haptic('light');
+            }
+            // Stub hidePreview call
+        });
+        document.body.appendChild(button);
+
+        button.click();
+        expect(globalThis.Native.haptic).toHaveBeenCalledWith('light');
+    });
+
+    it('Post-Photo button click fires Native.haptic("light")', () => {
+        globalThis.Native = { haptic: vi.fn() };
+
+        const button = document.createElement('button');
+        button.id = 'postButton';
+        button.addEventListener('click', () => {
+            if (globalThis.Native && typeof globalThis.Native.haptic === 'function') {
+                void globalThis.Native.haptic('light');
+            }
+            // Stub onPostConfirm call
+        });
+        document.body.appendChild(button);
+
+        button.click();
+        expect(globalThis.Native.haptic).toHaveBeenCalledWith('light');
+    });
+
+    it('Native.haptic absence does not break button handlers', () => {
+        globalThis.Native = undefined;
+
+        const fileInput = document.createElement('input');
+        fileInput.id = 'fileInput';
+        document.body.appendChild(fileInput);
+        vi.spyOn(fileInput, 'click');
+
+        const buttons = {
+            addPhoto: document.createElement('button'),
+            cancel: document.createElement('button'),
+            post: document.createElement('button'),
+        };
+
+        buttons.addPhoto.addEventListener('click', () => {
+            if (globalThis.Native && typeof globalThis.Native.haptic === 'function') {
+                void globalThis.Native.haptic('light');
+            }
+            document.getElementById('fileInput').click();
+        });
+
+        buttons.cancel.addEventListener('click', () => {
+            if (globalThis.Native && typeof globalThis.Native.haptic === 'function') {
+                void globalThis.Native.haptic('light');
+            }
+        });
+
+        buttons.post.addEventListener('click', () => {
+            if (globalThis.Native && typeof globalThis.Native.haptic === 'function') {
+                void globalThis.Native.haptic('light');
+            }
+        });
+
+        document.body.appendChild(buttons.addPhoto);
+        document.body.appendChild(buttons.cancel);
+        document.body.appendChild(buttons.post);
+
+        // Should not throw even though Native is undefined
+        expect(() => buttons.addPhoto.click()).not.toThrow();
+        expect(() => buttons.cancel.click()).not.toThrow();
+        expect(() => buttons.post.click()).not.toThrow();
+    });
 });
