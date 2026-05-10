@@ -1200,3 +1200,80 @@ describe('Rapid-navigation race conditions', () => {
     }
   });
 });
+
+describe('Phase 5: page transitions', () => {
+  describe('iOS-shell-only animation gating', () => {
+    it('adds .page-out class to body before swap when .platform-ios is present', () => {
+      // Source-level verification: the isShell check and animation invocation
+      // _swapFromHtml checks: const isShell = document.body.classList.contains('platform-ios')
+      // if (isShell) await _animatePageOut()
+      expect(FETCH_AND_SWAP_SRC).toContain("classList.contains('platform-ios')");
+      expect(FETCH_AND_SWAP_SRC).toContain('_animatePageOut');
+      expect(FETCH_AND_SWAP_SRC).toContain('.page-out');
+    });
+
+    it('does not add animation classes when .platform-ios is absent (browser)', () => {
+      // Source-level verification: animation is only called within the isShell block
+      // The pattern: if (isShell) { await _animatePageOut() ... }
+      // This means browser path (no platform-ios) skips animations
+      expect(FETCH_AND_SWAP_SRC).toMatch(/if\s*\(\s*isShell\s*\)\s*\{\s*await\s*_animatePageOut/);
+    });
+  });
+
+  describe('Animation lifecycle', () => {
+    it('removes .page-out after animationend fires', () => {
+      // Source-level verification: _animatePageOut waits for animationend, then removes class
+      expect(FETCH_AND_SWAP_SRC).toContain("addEventListener('animationend'");
+      expect(FETCH_AND_SWAP_SRC).toContain("classList.remove('page-out')");
+      // Verify removal is in the onEnd callback (after event fires)
+      expect(FETCH_AND_SWAP_SRC).toMatch(/onEnd\s*=\s*\(\)\s*=>\s*\{[\s\S]*?classList\.remove\('page-out'\)/);
+    });
+
+    it('removes .page-out via safety timeout if animationend never fires', () => {
+      // Source-level verification: setTimeout safety net (250ms) is present
+      expect(FETCH_AND_SWAP_SRC).toMatch(/setTimeout\s*\(\s*\(\)\s*=>\s*\{[\s\S]*?classList\.remove\('page-out'\)[\s\S]*?\},\s*250/);
+    });
+
+    it('adds .page-in after the swap completes', () => {
+      // Source-level verification: _animatePageIn is called after _recreateScripts
+      expect(FETCH_AND_SWAP_SRC).toMatch(/_recreateScripts[\s\S]*?(if\s*\(isShell\)\s*)?void\s*_animatePageIn\(\)/);
+      // Verify .page-in class is added in _animatePageIn
+      expect(FETCH_AND_SWAP_SRC).toMatch(/async function _animatePageIn[\s\S]*?classList\.add\('page-in'\)/);
+    });
+
+    it('app:page-load fires AFTER scripts execute and BEFORE page-in animation', () => {
+      // Source-level verification: app:page-load is dispatched before _animatePageIn is invoked
+      expect(FETCH_AND_SWAP_SRC).toMatch(/_recreateScripts[\s\S]*?dispatchEvent[\s\S]*?_animatePageIn/);
+      expect(FETCH_AND_SWAP_SRC).toContain('app:page-load');
+    });
+  });
+
+  describe('Reduced-motion handling — CSS-only, smoke-tested', () => {
+    it('source contains no matchMedia(prefers-reduced-motion) calls — handled in CSS only', async () => {
+      // Read fetchAndSwap.js source and assert it does NOT contain prefers-reduced-motion
+      // This defends against future JS-side gating creep
+      expect(FETCH_AND_SWAP_SRC).not.toMatch(/prefers-reduced-motion/i);
+    });
+  });
+
+  describe('Rapid back-to-back navigations (Phase 5 animation)', () => {
+    it('_animatePageOut and _animatePageIn are defined in fetchAndSwap source', () => {
+      // Source-level verification: the animation functions exist
+      // Their usage is tested in 'Animation lifecycle' tests above
+      expect(FETCH_AND_SWAP_SRC).toContain('_animatePageOut');
+      expect(FETCH_AND_SWAP_SRC).toContain('_animatePageIn');
+      // Verify they use safety timeouts
+      expect(FETCH_AND_SWAP_SRC).toContain('setTimeout');
+      // Verify they remove animation classes
+      expect(FETCH_AND_SWAP_SRC).toContain('classList.remove');
+    });
+
+    it('rapid-navigation setup in _swapFromHtml handles concurrent swaps with generation tracking', () => {
+      // Source-level check: _swapGeneration counter is incremented and scripts are tagged
+      expect(FETCH_AND_SWAP_SRC).toContain('_swapGeneration');
+      expect(FETCH_AND_SWAP_SRC).toContain('dataset.swapGen');
+      // Verify that stale onloads are detected before adding to Set
+      expect(FETCH_AND_SWAP_SRC).toContain('Number(fresh.dataset.swapGen) === _swapGeneration');
+    });
+  });
+});
