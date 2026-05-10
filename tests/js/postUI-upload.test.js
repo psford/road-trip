@@ -299,61 +299,56 @@ describe('postUI integration with UploadQueue', () => {
     it('Add-Photo button click fires Native.haptic("light")', () => {
         globalThis.Native = { haptic: vi.fn() };
 
-        // Simulate the event listener that postUI.js creates
+        // Set up DOM elements required by onAddPhotoTap
         const fileInput = document.createElement('input');
         fileInput.id = 'fileInput';
         document.body.appendChild(fileInput);
 
-        const button = document.createElement('button');
-        button.id = 'addPhotoButton';
-        button.addEventListener('click', () => {
-            if (globalThis.Native && typeof globalThis.Native.haptic === 'function') {
-                void globalThis.Native.haptic('light');
-            }
-            document.getElementById('fileInput').click();
-        });
-        document.body.appendChild(button);
+        // Create a real PostUI instance and spy on its methods
+        const postUIInstance = Object.create(PostUI);
+        postUIInstance.secretToken = 'test-secret-token';
 
         // Stub fileInput.click to prevent actual file dialog
         vi.spyOn(fileInput, 'click');
 
-        button.click();
+        // Invoke the real production method
+        postUIInstance.onAddPhotoTap();
+
         expect(globalThis.Native.haptic).toHaveBeenCalledWith('light');
         expect(fileInput.click).toHaveBeenCalled();
+
+        // Clean up
+        document.body.removeChild(fileInput);
     });
 
     it('Cancel button click fires Native.haptic("light")', () => {
         globalThis.Native = { haptic: vi.fn() };
 
-        const button = document.createElement('button');
-        button.id = 'cancelButton';
-        button.addEventListener('click', () => {
-            if (globalThis.Native && typeof globalThis.Native.haptic === 'function') {
-                void globalThis.Native.haptic('light');
-            }
-            // Stub hidePreview call
-        });
-        document.body.appendChild(button);
+        // Create a real PostUI instance and stub its hidePreview method
+        const postUIInstance = Object.create(PostUI);
+        postUIInstance.secretToken = 'test-secret-token';
+        postUIInstance.hidePreview = vi.fn();
 
-        button.click();
+        // Invoke the real production method
+        postUIInstance.onCancelTap();
+
         expect(globalThis.Native.haptic).toHaveBeenCalledWith('light');
+        expect(postUIInstance.hidePreview).toHaveBeenCalled();
     });
 
-    it('Post-Photo button click fires Native.haptic("light")', () => {
+    it('Post-Photo button click fires Native.haptic("light")', async () => {
         globalThis.Native = { haptic: vi.fn() };
 
-        const button = document.createElement('button');
-        button.id = 'postButton';
-        button.addEventListener('click', () => {
-            if (globalThis.Native && typeof globalThis.Native.haptic === 'function') {
-                void globalThis.Native.haptic('light');
-            }
-            // Stub onPostConfirm call
-        });
-        document.body.appendChild(button);
+        // Create a real PostUI instance and stub its onPostConfirm method
+        const postUIInstance = Object.create(PostUI);
+        postUIInstance.secretToken = 'test-secret-token';
+        postUIInstance.onPostConfirm = vi.fn();
 
-        button.click();
+        // Invoke the real production method
+        await postUIInstance.onPostButtonTap();
+
         expect(globalThis.Native.haptic).toHaveBeenCalledWith('light');
+        expect(postUIInstance.onPostConfirm).toHaveBeenCalled();
     });
 
     it('Native.haptic absence does not break button handlers', () => {

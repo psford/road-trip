@@ -24,16 +24,32 @@ const PostUI = {
     photos: [],
     _refreshTimer: null,
 
+    onAddPhotoTap() {
+        if (globalThis.Native && typeof globalThis.Native.haptic === 'function') {
+            void globalThis.Native.haptic('light');
+        }
+        document.getElementById('fileInput').click();
+    },
+
+    onCancelTap() {
+        if (globalThis.Native && typeof globalThis.Native.haptic === 'function') {
+            void globalThis.Native.haptic('light');
+        }
+        this.hidePreview();
+    },
+
+    onPostButtonTap() {
+        if (globalThis.Native && typeof globalThis.Native.haptic === 'function') {
+            void globalThis.Native.haptic('light');
+        }
+        this.onPostConfirm();
+    },
+
     init(secretToken) {
         this.secretToken = secretToken;
 
         // Wire up event listeners
-        document.getElementById('addPhotoButton').addEventListener('click', () => {
-            if (globalThis.Native && typeof globalThis.Native.haptic === 'function') {
-                void globalThis.Native.haptic('light');
-            }
-            document.getElementById('fileInput').click();
-        });
+        document.getElementById('addPhotoButton').addEventListener('click', () => this.onAddPhotoTap());
 
         document.getElementById('fileInput').addEventListener('change', (e) => {
             const files = e.target.files;
@@ -46,19 +62,9 @@ const PostUI = {
             e.target.value = '';
         });
 
-        document.getElementById('cancelButton').addEventListener('click', () => {
-            if (globalThis.Native && typeof globalThis.Native.haptic === 'function') {
-                void globalThis.Native.haptic('light');
-            }
-            this.hidePreview();
-        });
+        document.getElementById('cancelButton').addEventListener('click', () => this.onCancelTap());
 
-        document.getElementById('postButton').addEventListener('click', () => {
-            if (globalThis.Native && typeof globalThis.Native.haptic === 'function') {
-                void globalThis.Native.haptic('light');
-            }
-            this.onPostConfirm();
-        });
+        document.getElementById('postButton').addEventListener('click', () => this.onPostButtonTap());
 
         // Save trip to localStorage for My Trips
         TripStorage.saveFromPostPage(this.secretToken);
