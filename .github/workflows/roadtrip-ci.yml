@@ -93,3 +93,50 @@ jobs:
             echo "build-and-test failed"
             exit 1
           fi
+
+  # Enforces the develop → main merge strategy (regular merge only, no squash).
+  # Background: docs/issues/2026-05-09-rca-git-flow-catastrophe.md.
+  # The check: HEAD on main must be a merge commit (≥2 parents). A 1-parent
+  # commit on main means someone squash-merged a develop → main PR (or pushed
+  # directly), which causes phantom-commit drift on the next develop → main
+  # merge attempt.
+  git-flow-guard:
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - name: Checkout main with full history
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: main
+
+      - name: Assert HEAD on main has ≥2 parents (regular merge, not squash)
+        run: |
+          HEAD_SHA=$(git rev-parse HEAD)
+          HEAD_PARENTS=$(git log -1 --format='%P' "$HEAD_SHA" | wc -w | tr -d ' ')
+          HEAD_MSG=$(git log -1 --format='%s' "$HEAD_SHA")
+          echo "HEAD on main: $HEAD_SHA"
+          echo "  message: $HEAD_MSG"
+          echo "  parents: $HEAD_PARENTS"
+          if [ "$HEAD_PARENTS" -lt 2 ]; then
+            cat <<EOF
+          ::error::HEAD on main ($HEAD_SHA) has $HEAD_PARENTS parent(s); expected ≥2.
+
+          This means a develop → main PR was squash-merged (or someone pushed
+          directly to main). The repo's policy is "Create a merge commit"
+          for develop → main — squash-merge causes phantom-commit drift on
+          the next develop → main PR.
+
+          To fix:
+            1. Revert the squash commit on main (gh pr revert / git revert)
+            2. Re-merge the original PR with "Create a merge commit"
+            3. Resync develop: git checkout develop && git fetch origin
+                              && git reset --hard origin/main
+                              && git push --force-with-lease origin develop
+
+          Background: docs/issues/2026-05-09-rca-git-flow-catastrophe.md
+          Strategy: docs/issues/2026-05-09-prevention-git-flow.md
+          EOF
+            exit 1
+          fi
+          echo "✓ HEAD on main is a regular merge commit ($HEAD_PARENTS parents)"
