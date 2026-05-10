@@ -1,5 +1,5 @@
 {
-  "version": "1.0.0-4827e13",
+  "version": "1.0.0-344bafd",
   "files": [
     {
       "url": "/css/styles.css",
@@ -78,8 +78,8 @@
     },
     {
       "url": "/js/postUI.js",
-      "size": 52230,
-      "sha256": "b685fc5f9966553ab82121e494502833ae4ef0252110b1c38c13a9a05d6715f3"
+      "size": 52299,
+      "sha256": "a2e8f0ffc7559416b0b5bed2359c271ce4c0a8f353a76324344af51378312a05"
     },
     {
       "url": "/js/progressPanel.js",
