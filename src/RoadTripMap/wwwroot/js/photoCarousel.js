@@ -280,6 +280,35 @@ const PhotoCarousel = {
     },
 
     /**
+     * Close the fullscreen overlay with try/finally status-bar restore.
+     * Re-entry safe: if called twice, second call is harmless.
+     * The handleEscape listener is stored on the overlay for cleanup.
+     * Errors in removal are swallowed so the finally block always runs.
+     * @param {HTMLElement} overlay - The overlay element to close
+     */
+    closeOverlay(overlay) {
+        try {
+            try {
+                if (overlay.parentNode) {
+                    overlay.parentNode.removeChild(overlay);
+                }
+                // Remove the Escape key listener that was attached in showFullscreen
+                if (overlay._handleEscape) {
+                    document.removeEventListener('keydown', overlay._handleEscape);
+                }
+            } catch (err) {
+                // Swallow DOM errors so the finally block still runs
+                console.warn('Error removing overlay:', err);
+            }
+        } finally {
+            // Always restore status bar to dark, even if removal threw
+            if (globalThis.Native && typeof globalThis.Native.statusBar === 'function') {
+                void globalThis.Native.statusBar('dark');
+            }
+        }
+    },
+
+    /**
      * Show a fullscreen image viewer overlay
      * @param {Object} photo - Photo object with displayUrl and originalUrl
      */
@@ -326,7 +355,7 @@ const PhotoCarousel = {
             editLocBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>';
             editLocBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
-                overlay.remove();
+                PhotoCarousel.closeOverlay(overlay);
                 if (this.config.onEditLocation) {
                     this.config.onEditLocation(photo);
                 }
@@ -341,7 +370,7 @@ const PhotoCarousel = {
             deleteBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>';
             deleteBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
-                overlay.remove();
+                PhotoCarousel.closeOverlay(overlay);
                 if (this.config.onDelete) {
                     this.config.onDelete(photo);
                 }
@@ -349,32 +378,41 @@ const PhotoCarousel = {
             actions.appendChild(deleteBtn);
         }
 
+        // Explicit close button (Task 4: since tap-on-overlay no longer dismisses)
+        const closeBtn = document.createElement('button');
+        closeBtn.className = 'fullscreen-close';
+        closeBtn.setAttribute('aria-label', 'Close');
+        closeBtn.textContent = '×';
+        closeBtn.addEventListener('click', () => PhotoCarousel.closeOverlay(overlay));
+
         // Assemble overlay
         overlay.appendChild(img);
+        overlay.appendChild(closeBtn);
         overlay.appendChild(actions);
-
-        // Handle close on background click (not on image or save button)
-        const closeOverlay = () => {
-            overlay.remove();
-            document.removeEventListener('keydown', handleEscape);
-        };
-
-        overlay.addEventListener('click', (e) => {
-            // Only close if clicking on the overlay background itself (not children)
-            if (e.target === overlay) {
-                closeOverlay();
-            }
-        });
-
-        // Handle close on Escape key
-        const handleEscape = (e) => {
-            if (e.key === 'Escape') {
-                closeOverlay();
-            }
-        };
-        document.addEventListener('keydown', handleEscape);
 
         // Add to DOM
         document.body.appendChild(overlay);
+
+        // Flip status bar to light when opening (iOS only)
+        if (globalThis.Native && typeof globalThis.Native.statusBar === 'function') {
+            void globalThis.Native.statusBar('light');
+        }
+
+        // Handle tap-to-toggle-chrome on overlay background or image (not on chrome buttons)
+        overlay.addEventListener('click', (e) => {
+            // Only respond to taps on the overlay or image (not on chrome buttons)
+            if (e.target === overlay || e.target.tagName === 'IMG') {
+                overlay.classList.toggle('chrome-hidden');
+            }
+        });
+
+        // Handle close on Escape key (store reference on overlay for cleanup)
+        const handleEscape = (e) => {
+            if (e.key === 'Escape') {
+                PhotoCarousel.closeOverlay(overlay);
+            }
+        };
+        overlay._handleEscape = handleEscape;
+        document.addEventListener('keydown', handleEscape);
     }
 };
