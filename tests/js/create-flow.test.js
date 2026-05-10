@@ -23,10 +23,11 @@ const OFFLINE_ERROR_SRC = fs.readFileSync(path.resolve(__dirname, '../../src/Roa
 
 // Shared setup for happy-path tests (no module loads to avoid test isolation)
 const setupHappyPath = () => {
-    // Clear globals
+    // Clear globals and IIFE guard
     delete globalThis.API;
     delete globalThis.TripStorage;
     delete globalThis.FetchAndSwap;
+    delete globalThis._createFormHandlerInstalled;
 
     // Mock DOM
     document.body.innerHTML = `
@@ -41,12 +42,13 @@ const setupHappyPath = () => {
 
 // Setup for offline tests (includes module loads)
 const setupOfflineTests = () => {
-    // Clear globals and module caches
+    // Clear globals, module caches, and IIFE guard
     delete globalThis.API;
     delete globalThis.TripStorage;
     delete globalThis.FetchAndSwap;
     delete globalThis.RoadTrip;
     delete globalThis.OfflineError;
+    delete globalThis._createFormHandlerInstalled;
 
     // Mock DOM with page marker
     document.body.innerHTML = `
@@ -416,6 +418,81 @@ describe('create-flow', () => {
             Object.defineProperty(window, 'location', {
                 configurable: true,
                 value: originalLocation.value
+            });
+        });
+    });
+
+    describe('IIFE idempotency guard', () => {
+        beforeEach(() => setupHappyPath());
+
+        it('re-evaluating the inline script does not double-attach the submit listener', async () => {
+            // Mock API to count how many times createTrip is called
+            let createTripCallCount = 0;
+            globalThis.API = {
+                createTrip: vi.fn(async () => {
+                    createTripCallCount++;
+                    return {
+                        postUrl: '/post/test-token',
+                        viewUrl: '/trips/view-token'
+                    };
+                })
+            };
+
+            globalThis.TripStorage = {
+                saveTrip: vi.fn().mockResolvedValue(undefined)
+            };
+
+            // Mock window.location.href to capture navigation
+            let hrefSetValue = null;
+            const originalDescriptor = Object.getOwnPropertyDescriptor(window, 'location');
+            Object.defineProperty(window, 'location', {
+                configurable: true,
+                value: {
+                    href: 'http://localhost/create',
+                    get href() { return this._href || 'http://localhost/create'; },
+                    set href(val) { hrefSetValue = val; }
+                }
+            });
+
+            // First eval: install the handler (should succeed)
+            eval(INLINE_SCRIPT);
+
+            // Get the form after script is evaluated
+            const form = document.getElementById('createTripForm');
+
+            // Submit the form once after first install
+            const evt = new SubmitEvent('submit', { bubbles: true, cancelable: true });
+            form.dispatchEvent(evt);
+
+            // Await async operations
+            await new Promise(r => setTimeout(r, 20));
+
+            // First submit should have called createTrip exactly once
+            expect(createTripCallCount).toBe(1);
+
+            // Reset the call counter and re-eval the script (simulating iOS shell re-swap)
+            // but keep globalThis intact (idempotency guard should prevent re-attachment)
+            createTripCallCount = 0;
+            eval(INLINE_SCRIPT);
+
+            // Submit the form a second time (still same session, no clear-all-globals)
+            const evt2 = new SubmitEvent('submit', { bubbles: true, cancelable: true });
+            form.dispatchEvent(evt2);
+
+            // Await async operations
+            await new Promise(r => setTimeout(r, 20));
+
+            // Critical assertion: even though we re-eval'd the script, the handler
+            // should only fire ONCE per submit (not twice, which would happen if both
+            // the old and new listeners fired). If the guard failed, createTrip would
+            // be called twice: once from the original attached listener, once from
+            // the newly attached listener.
+            expect(createTripCallCount).toBe(1);
+
+            // Cleanup
+            Object.defineProperty(window, 'location', {
+                configurable: true,
+                value: originalDescriptor.value
             });
         });
     });
