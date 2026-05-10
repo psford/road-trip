@@ -456,13 +456,17 @@ const PhotoCarousel = {
                     // closeOverlay handles status-bar restore + DOM removal in try/finally.
                     // Use the transition-end event so the user sees the animation complete
                     // before the overlay disappears.
+                    let safetyTimer = null;
                     const onEnd = () => {
                         overlay.removeEventListener('transitionend', onEnd);
+                        if (safetyTimer !== null) {
+                            clearTimeout(safetyTimer);
+                        }
                         PhotoCarousel.closeOverlay(overlay);
                     };
                     overlay.addEventListener('transitionend', onEnd);
                     // Safety net: if transitionend doesn't fire (browser quirk), still close.
-                    setTimeout(() => {
+                    safetyTimer = setTimeout(() => {
                         if (overlay.parentNode) PhotoCarousel.closeOverlay(overlay);
                     }, 400);
                 } else {
