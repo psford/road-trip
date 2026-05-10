@@ -127,25 +127,28 @@ const PhotoCarousel = {
      * Handle save button click with Web Share API or download fallback
      * @param {Object} photo - Photo object
      */
-    handleSave(photo) {
-        if (typeof navigator.share === 'function') {
-            navigator.share({
-                title: photo.placeName || 'Photo',
-                url: photo.originalUrl
-            }).catch(err => {
+    async handleSave(photo) {
+        const url = photo.originalUrl;
+        const title = photo.placeName || 'Photo';
+
+        if (globalThis.Native && typeof globalThis.Native.share === 'function') {
+            try {
+                await globalThis.Native.share({ title, url });
+            } catch (err) {
                 if (err.name !== 'AbortError') {
                     console.warn('Share failed:', err);
                 }
-            });
-        } else {
-            // Fallback: download the original image
-            const link = document.createElement('a');
-            link.href = photo.originalUrl;
-            link.download = `photo-${photo.id}`;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
+            }
+            return;
         }
+
+        // Fallback: download the original image (for test environments without Native)
+        const link = document.createElement('a');
+        link.href = photo.originalUrl;
+        link.download = `photo-${photo.id}`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
     },
 
     /**

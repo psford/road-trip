@@ -97,6 +97,7 @@ beforeAll(() => {
     loadGlobal('uploadQueue.js');
     loadGlobal('progressPanel.js');
     loadGlobal('resumeBanner.js');
+    loadGlobal('photoCarousel.js');
     loadGlobal('postUI.js');
 });
 
