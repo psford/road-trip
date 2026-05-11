@@ -24,13 +24,32 @@ const PostUI = {
     photos: [],
     _refreshTimer: null,
 
+    onAddPhotoTap() {
+        if (globalThis.Native && typeof globalThis.Native.haptic === 'function') {
+            void globalThis.Native.haptic('light');
+        }
+        document.getElementById('fileInput').click();
+    },
+
+    onCancelTap() {
+        if (globalThis.Native && typeof globalThis.Native.haptic === 'function') {
+            void globalThis.Native.haptic('light');
+        }
+        this.hidePreview();
+    },
+
+    onPostButtonTap() {
+        if (globalThis.Native && typeof globalThis.Native.haptic === 'function') {
+            void globalThis.Native.haptic('light');
+        }
+        this.onPostConfirm();
+    },
+
     init(secretToken) {
         this.secretToken = secretToken;
 
         // Wire up event listeners
-        document.getElementById('addPhotoButton').addEventListener('click', () => {
-            document.getElementById('fileInput').click();
-        });
+        document.getElementById('addPhotoButton').addEventListener('click', () => this.onAddPhotoTap());
 
         document.getElementById('fileInput').addEventListener('change', (e) => {
             const files = e.target.files;
@@ -43,13 +62,9 @@ const PostUI = {
             e.target.value = '';
         });
 
-        document.getElementById('cancelButton').addEventListener('click', () => {
-            this.hidePreview();
-        });
+        document.getElementById('cancelButton').addEventListener('click', () => this.onCancelTap());
 
-        document.getElementById('postButton').addEventListener('click', () => {
-            this.onPostConfirm();
-        });
+        document.getElementById('postButton').addEventListener('click', () => this.onPostButtonTap());
 
         // Save trip to localStorage for My Trips
         TripStorage.saveFromPostPage(this.secretToken);
@@ -765,6 +780,10 @@ const PostUI = {
                 takenAt
             );
 
+            if (globalThis.Native && typeof globalThis.Native.haptic === 'function') {
+                void globalThis.Native.haptic('medium');
+            }
+
             this.showToast('Photo posted!', 'success');
             this.hidePreview();
             await this.refreshPhotoList();
@@ -897,6 +916,15 @@ const PostUI = {
 
     async loadPhotoList() {
         try {
+            // Skeleton placeholders during fetch (Phase 5)
+            const carouselContainer = document.getElementById('photoCarousel');
+            if (carouselContainer) {
+                carouselContainer.innerHTML =
+                    '<div class="skeleton skeleton-carousel-item"></div>' +
+                    '<div class="skeleton skeleton-carousel-item"></div>' +
+                    '<div class="skeleton skeleton-carousel-item"></div>';
+            }
+
             const photos = await PostService.listPhotos(this.secretToken);
             this.photos = photos;
 
@@ -911,6 +939,9 @@ const PostUI = {
             const photoMapSection = document.getElementById('photoMapSection');
 
             if (photos.length === 0) {
+                // Clear skeleton placeholders before returning
+                const c = document.getElementById('photoCarousel');
+                if (c) c.innerHTML = '';
                 photoList.classList.add('empty');
                 photoMapSection.classList.remove('visible');
                 this.hidePhotoMap();
@@ -939,6 +970,11 @@ const PostUI = {
         } catch (err) {
             console.error('Error loading photos:', err);
             this.showToast(OfflineError.friendlyMessage(err, 'photos'), 'error');
+            // Clear skeletons on error
+            const carouselContainer = document.getElementById('photoCarousel');
+            if (carouselContainer) {
+                carouselContainer.innerHTML = '';
+            }
         }
     },
 
@@ -1141,7 +1177,19 @@ const PostUI = {
     },
 
     async onDeleteFromCarousel(photo) {
-        if (!confirm('Delete this photo?')) return;
+        if (!globalThis.Native || typeof globalThis.Native.dialogConfirm !== 'function') {
+            // Native wrapper missing (e.g., test env that didn't load nativeBridge);
+            // fall back to window.confirm so the safety check is preserved.
+            if (!window.confirm('Delete this photo?')) return;
+        } else {
+            const result = await globalThis.Native.dialogConfirm({
+                title: 'Delete photo?',
+                message: 'This cannot be undone.',
+                okButtonTitle: 'Delete',
+                cancelButtonTitle: 'Cancel',
+            });
+            if (!result || result.value !== true) return;
+        }
         try {
             await PostService.deletePhoto(this.secretToken, photo.id);
             this.showToast('Photo deleted', 'success');

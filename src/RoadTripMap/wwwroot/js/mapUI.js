@@ -15,6 +15,17 @@ const MapUI = {
     markerLookup: null,
 
     /**
+     * Handle photo popup image tap: haptic + fullscreen viewer
+     * @param {Object} photo - PhotoResponse object
+     */
+    _onPhotoPopupImageTap(photo) {
+        if (globalThis.Native && typeof globalThis.Native.haptic === 'function') {
+            void globalThis.Native.haptic('light');
+        }
+        PhotoCarousel.showFullscreen(photo);
+    },
+
+    /**
      * Escape HTML special characters to prevent XSS
      * @param {string} text - Text to escape
      * @returns {string} - Escaped text safe for HTML
@@ -32,6 +43,17 @@ const MapUI = {
      */
     async init(viewToken) {
         try {
+            // Skeleton placeholders during fetch (Phase 5).
+            // Skeletons are cleared either in renderMap() via PhotoCarousel.init (happy path)
+            // or in renderMap's empty-trip path (line ~106) when photos.length === 0.
+            const carousel = document.getElementById('viewCarousel');
+            if (carousel) {
+                carousel.innerHTML =
+                    '<div class="skeleton skeleton-carousel-item"></div>' +
+                    '<div class="skeleton skeleton-carousel-item"></div>' +
+                    '<div class="skeleton skeleton-carousel-item"></div>';
+            }
+
             const { trip, photos } = await MapService.loadTrip(viewToken);
 
             // Update page header with trip name
@@ -39,12 +61,21 @@ const MapUI = {
             if (tripNameEl) {
                 tripNameEl.textContent = trip.name;
             }
+            const largeTitleEl = document.getElementById('tripNameLarge');
+            if (largeTitleEl) {
+                largeTitleEl.textContent = trip.name;
+            }
 
             // Render map
             this.renderMap(photos);
         } catch (error) {
             console.error('Failed to initialize map:', error);
             this.showError('Failed to load trip');
+            // Clear skeletons on error
+            const carousel = document.getElementById('viewCarousel');
+            if (carousel) {
+                carousel.innerHTML = '';
+            }
         }
     },
 
@@ -70,6 +101,9 @@ const MapUI = {
 
         // Handle empty trip
         if (photos.length === 0) {
+            // Clear skeleton placeholders before returning
+            const v = document.getElementById('viewCarousel');
+            if (v) v.innerHTML = '';
             this.map.jumpTo({ center: [-98.6, 39.8], zoom: 4 }); // Center of USA
             const emptyMsg = document.getElementById('emptyMessage');
             if (emptyMsg) {
@@ -107,7 +141,7 @@ const MapUI = {
                         img.style.cursor = 'pointer';
                         img.addEventListener('click', (e) => {
                             e.stopPropagation();
-                            PhotoCarousel.showFullscreen(photo);
+                            MapUI._onPhotoPopupImageTap(photo);
                         });
                     }
                     // Pan map to keep popup in view
@@ -186,12 +220,17 @@ const MapUI = {
     },
 
     async sharePhoto(url, title) {
-        try {
-            const fullUrl = RoadTrip.appOrigin() + url;
-            await navigator.share({ title: title || 'Photo', url: fullUrl });
-        } catch (err) {
-            if (err.name !== 'AbortError') console.warn('Share failed:', err);
+        const safeTitle = title || 'Photo';
+        const fullUrl = url.startsWith('http') ? url : (RoadTrip.appOrigin() + url);
+        if (globalThis.Native && typeof globalThis.Native.share === 'function') {
+            await globalThis.Native.share({ title: safeTitle, url: fullUrl });
+            return;
         }
+        if (typeof navigator.share === 'function') {
+            await navigator.share({ title: safeTitle, url: fullUrl });
+        }
+        // No silent fallback — if neither Native nor navigator.share exists, the
+        // calling button shouldn't have been rendered (createSaveButton checks).
     },
 
     /**

@@ -12,11 +12,19 @@
     // local and have no identity to dedup against).
     const _executedScriptSrcs = new Set();
 
+    // Phase 5: swap-generation counter. Each call to _swapFromHtml increments this
+    // and passes the generation to _recreateScripts. Scripts are tagged with
+    // dataset.swapGen. When a script's onload fires, we check if its generation
+    // still matches the current _swapGeneration. Stale onloads (from earlier swaps)
+    // don't mutate _executedScriptSrcs, preventing the Set from being poisoned
+    // by rapid navigation.
+    let _swapGeneration = 0;
+
     function _absolutizeSrc(src) {
         try { return new URL(src, APP_BASE).href; } catch { return src; }
     }
 
-    async function _recreateScripts(scriptsInOrder, parentNode) {
+    async function _recreateScripts(scriptsInOrder, parentNode, myGen) {
         for (const oldScript of scriptsInOrder) {
             const rawSrc = oldScript.getAttribute('src');
 
@@ -42,11 +50,18 @@
                 if (oldScript.dataset.assetCacheOrigin) {
                     fresh.dataset.assetCacheOrigin = oldScript.dataset.assetCacheOrigin;
                 }
+                // Phase 5: tag the script with its swap generation so we can detect
+                // stale onload callbacks firing after later swaps.
+                fresh.dataset.swapGen = String(myGen);
                 await new Promise((resolve) => {
                     fresh.onload = () => {
-                        // Only add on successful load. onerror does not guarantee the
-                        // script's top-level declarations executed, so we allow retry.
-                        _executedScriptSrcs.add(dedupKey);
+                        // Phase 5: only add to _executedScriptSrcs if this script's
+                        // generation still matches the current generation. Stale onloads
+                        // (from earlier swaps whose generation is now < _swapGeneration)
+                        // silently resolve without polluting the Set.
+                        if (Number(fresh.dataset.swapGen) === _swapGeneration) {
+                            _executedScriptSrcs.add(dedupKey);
+                        }
                         resolve();
                     };
                     fresh.onerror = () => resolve();
@@ -67,7 +82,59 @@
         }
     }
 
+    async function _animatePageOut() {
+        return new Promise((resolve) => {
+            const onEnd = () => {
+                document.body.classList.remove('page-out');
+                resolve();
+            };
+            // Safety net — if animationend doesn't fire (rare browser quirk),
+            // resolve after the max expected duration + 50ms buffer.
+            const safetyTimeout = setTimeout(() => {
+                document.body.classList.remove('page-out');
+                resolve();
+            }, 250);
+            document.body.addEventListener('animationend', () => {
+                clearTimeout(safetyTimeout);
+                onEnd();
+            }, { once: true });
+            document.body.classList.add('page-out');
+        });
+    }
+
+    async function _animatePageIn() {
+        return new Promise((resolve) => {
+            const onEnd = () => {
+                clearTimeout(safetyTimeout);
+                document.body.classList.remove('page-in');
+                resolve();
+            };
+            // Safety net — if animationend doesn't fire (rare browser quirk),
+            // resolve after the max expected duration + 50ms buffer.
+            const safetyTimeout = setTimeout(() => {
+                document.body.classList.remove('page-in');
+                resolve();
+            }, 400);
+            document.body.addEventListener('animationend', onEnd, { once: true });
+            document.body.classList.add('page-in');
+        });
+    }
+
     async function _swapFromHtml(html, url) {
+        // Phase 5: increment generation counter and capture it for this swap's lifecycle.
+        _swapGeneration += 1;
+        const myGen = _swapGeneration;
+
+        // Skip animation entirely if NOT in the iOS shell — browsers get the
+        // existing behavior (instant swap). The .platform-ios class is the
+        // gate, but we also need to skip the JS animation choreography for
+        // browsers to avoid unnecessary class-add/remove churn.
+        const isShell = document.body.classList.contains('platform-ios');
+
+        if (isShell) {
+            await _animatePageOut(); // adds .page-out, awaits animationend, removes class
+        }
+
         const parsed = new DOMParser().parseFromString(html, 'text/html');
 
         // Inject <base href> if not already present (AC1.4)
@@ -123,7 +190,8 @@
         // shape differs from the fetched page (head-origin scripts live in body
         // post-swap); this is acceptable for the offline-shell's current consumers
         // (postUI.js, mapUI.js) which do not query `head > script`.
-        await _recreateScripts(scriptsInOrder, document.body);
+        // Phase 5: pass myGen so scripts can be tagged and stale onloads detected.
+        await _recreateScripts(scriptsInOrder, document.body, myGen);
 
         // Clear lifecycle handlers accumulated from prior swaps BEFORE dispatching the
         // new page-load event, so a stale handler does not fire on the new page body.
@@ -151,6 +219,13 @@
             } catch (err) {
                 // Swallow — leak is preferable to throwing during the render path.
             }
+        }
+
+        if (isShell) {
+            // Fire-and-forget — don't await page-in. onPageLoad handlers can
+            // start their own work in parallel; the user sees the fade-in
+            // overlapping with content rendering, which feels native.
+            void _animatePageIn();
         }
     }
 

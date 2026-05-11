@@ -56,6 +56,20 @@ async function setupTest() {
         return result;
     });
 
+    // Phase 5: Stub classList.add to dispatch animationend for page-out/page-in.
+    // jsdom doesn't fire CSS animations, but _animatePageOut/_animatePageIn await
+    // animationend. Manually dispatch after the class is added so the promise resolves.
+    const realClassListAdd = DOMTokenList.prototype.add;
+    vi.spyOn(DOMTokenList.prototype, 'add').mockImplementation(function(...classNames) {
+        const result = realClassListAdd.apply(this, classNames);
+        if ((classNames.includes('page-out') || classNames.includes('page-in')) && this === document.body.classList) {
+            setTimeout(() => {
+                document.body.dispatchEvent(new Event('animationend'));
+            }, 0);
+        }
+        return result;
+    });
+
     // Delete module globals first so the IIFE's auto-install() runs fresh on eval (install() is idempotent-by-flag, not re-wrap-safe)
     delete globalThis.CachedFetch;
     delete globalThis.FetchAndSwap;
@@ -1017,5 +1031,289 @@ describe('Phase 3: rewriteAssetTags hook in _swapFromHtml', () => {
     } finally {
       teardownTest();
     }
+  });
+});
+
+describe('Rapid-navigation race conditions', () => {
+  it('a stale-swap script onload does not pollute _executedScriptSrcs', async () => {
+    await setupTest();
+    try {
+      // HTML for post page with postUI.js script
+      const postHtml = '<html><head><script src="/js/postUI.js"></script></head><body>post</body></html>';
+      // HTML for create page (different content)
+      const createHtml = '<html><head><script src="/js/createUI.js"></script></head><body>create</body></html>';
+
+      // Capture scripts and their pending onloads
+      let swap1ScriptElement = null;
+      const capturedScripts = [];
+
+      // Restore the appendChild mock and install a custom one that captures scripts
+      Node.prototype.appendChild.mockRestore();
+      const realAppendChild = Node.prototype.appendChild;
+      vi.spyOn(Node.prototype, 'appendChild').mockImplementation(function(node) {
+        const result = realAppendChild.call(this, node);
+        if (node && node.tagName === 'SCRIPT' && node.getAttribute && node.getAttribute('src')) {
+          capturedScripts.push({ element: node, src: node.getAttribute('src') });
+          // For swap 1 only (first postUI.js), fire onload manually later
+          if (node.getAttribute('src') === '/js/postUI.js' && !swap1ScriptElement) {
+            swap1ScriptElement = node;
+          } else {
+            // For other scripts, fire onload immediately via setTimeout
+            setTimeout(() => { if (node.onload) node.onload(); }, 0);
+          }
+        }
+        return result;
+      });
+
+      // Swap 1: post
+      const swap1Promise = FetchAndSwap._swapFromHtml(postHtml, 'https://app-roadtripmap-prod.azurewebsites.net/post/abc');
+
+      // Swap 2: create (while swap 1 is still in flight, waiting for manual onload)
+      globalThis.fetch = vi.fn().mockResolvedValue(
+        new Response(createHtml, {
+          status: 200,
+          headers: { 'Content-Type': 'text/html' }
+        })
+      );
+      const swap2Promise = FetchAndSwap.fetchAndSwap('/create');
+      await swap2Promise;
+
+      // Now manually fire swap 1's stale onload callback
+      // This simulates the race: swap 1's onload fires AFTER swap 2 has replaced the body
+      if (swap1ScriptElement && swap1ScriptElement.onload) {
+        swap1ScriptElement.onload();
+      }
+
+      // Now await swap 1 so its promise resolves
+      await swap1Promise;
+
+      // Reset capturedScripts for swap 3
+      capturedScripts.length = 0;
+
+      // Swap 3: post again
+      globalThis.fetch = vi.fn().mockResolvedValue(
+        new Response(postHtml, {
+          status: 200,
+          headers: { 'Content-Type': 'text/html' }
+        })
+      );
+      await FetchAndSwap.fetchAndSwap('/post/abc');
+
+      // Verify that postUI.js WAS re-injected in swap 3
+      // (not skipped because the stale onload from swap 1 didn't pollute the Set)
+      const swap3PostUICount = capturedScripts.filter(s => s.src === '/js/postUI.js').length;
+      expect(swap3PostUICount).toBeGreaterThan(0);
+    } finally {
+      teardownTest();
+    }
+  });
+
+  it('current-generation onload still adds to _executedScriptSrcs (dedup still works)', async () => {
+    await setupTest();
+    try {
+      const postHtml = '<html><head><script src="/js/postUI.js"></script></head><body>post</body></html>';
+
+      // Track script appends
+      const appendedScripts = [];
+      Node.prototype.appendChild.mockRestore();
+      const realAppendChild = Node.prototype.appendChild;
+      vi.spyOn(Node.prototype, 'appendChild').mockImplementation(function(node) {
+        const result = realAppendChild.call(this, node);
+        if (node && node.tagName === 'SCRIPT' && node.getAttribute && node.getAttribute('src')) {
+          appendedScripts.push(node.getAttribute('src'));
+          // Fire onload immediately
+          setTimeout(() => { if (node.onload) node.onload(); }, 0);
+        }
+        return result;
+      });
+
+      // First swap of post.html
+      globalThis.fetch = vi.fn().mockResolvedValue(
+        new Response(postHtml, {
+          status: 200,
+          headers: { 'Content-Type': 'text/html' }
+        })
+      );
+      await FetchAndSwap.fetchAndSwap('/post/abc');
+
+      // Verify postUI.js is in the Set
+      expect(FetchAndSwap._executedScriptSrcs.has(
+        'https://app-roadtripmap-prod.azurewebsites.net/js/postUI.js'
+      )).toBe(true);
+
+      const swap1Count = appendedScripts.filter(s => s === '/js/postUI.js').length;
+      expect(swap1Count).toBe(1);
+
+      // Second swap of the SAME post.html
+      appendedScripts.length = 0;
+      globalThis.fetch = vi.fn().mockResolvedValue(
+        new Response(postHtml, {
+          status: 200,
+          headers: { 'Content-Type': 'text/html' }
+        })
+      );
+      await FetchAndSwap.fetchAndSwap('/post/abc');
+
+      // Verify postUI.js was NOT re-injected (still in Set, dedup working)
+      const swap2Count = appendedScripts.filter(s => s === '/js/postUI.js').length;
+      expect(swap2Count).toBe(0);
+    } finally {
+      teardownTest();
+    }
+  });
+
+  it('three rapid swaps complete without crashing', async () => {
+    await setupTest();
+    try {
+      const htmlA = '<html><head><script src="/js/a.js"></script></head><body>A</body></html>';
+      const htmlB = '<html><head><script src="/js/b.js"></script></head><body>B</body></html>';
+      const htmlC = '<html><head><script src="/js/c.js"></script></head><body>C</body></html>';
+
+      // Mock fetch to return appropriate HTML based on URL
+      globalThis.fetch = vi.fn((url) => {
+        let html;
+        if (url.includes('/a')) html = htmlA;
+        else if (url.includes('/b')) html = htmlB;
+        else if (url.includes('/c')) html = htmlC;
+        else html = '<html><head></head><body>unknown</body></html>';
+
+        return Promise.resolve(new Response(html, { status: 200, headers: { 'Content-Type': 'text/html' } }));
+      });
+
+      // Fire three swaps without awaiting them individually
+      const swap1 = FetchAndSwap.fetchAndSwap('/a');
+      const swap2 = FetchAndSwap.fetchAndSwap('/b');
+      const swap3 = FetchAndSwap.fetchAndSwap('/c');
+
+      // Wait for all three to settle
+      const results = await Promise.allSettled([swap1, swap2, swap3]);
+
+      // All should have resolved (no crashes/rejections)
+      results.forEach((result, index) => {
+        if (result.status === 'rejected') {
+          console.error(`Swap ${index + 1} rejected:`, result.reason);
+        }
+        expect(result.status).toBe('fulfilled');
+      });
+    } finally {
+      teardownTest();
+    }
+  });
+});
+
+describe('Phase 5: page transitions', () => {
+  describe('Reduced-motion handling — CSS-only, smoke-tested', () => {
+    it('source contains no matchMedia(prefers-reduced-motion) calls — handled in CSS only', async () => {
+      // Read fetchAndSwap.js source and assert it does NOT contain prefers-reduced-motion
+      // This defends against future JS-side gating creep
+      expect(FETCH_AND_SWAP_SRC).not.toMatch(/prefers-reduced-motion/i);
+    });
+  });
+
+  describe('Phase 5 animation lifecycle (source-level + structure checks)', () => {
+    it('animation functions exist and use safety timeouts', () => {
+      // Verify _animatePageOut and _animatePageIn are defined
+      expect(FETCH_AND_SWAP_SRC).toContain('async function _animatePageOut()');
+      expect(FETCH_AND_SWAP_SRC).toContain('async function _animatePageIn()');
+      // Both use setTimeout for safety
+      expect(FETCH_AND_SWAP_SRC).toMatch(/function _animatePageOut[\s\S]*?setTimeout/);
+      expect(FETCH_AND_SWAP_SRC).toMatch(/function _animatePageIn[\s\S]*?setTimeout/);
+    });
+
+    it('_animatePageOut: adds and removes .page-out, listens for animationend', () => {
+      expect(FETCH_AND_SWAP_SRC).toMatch(/async function _animatePageOut[\s\S]*?classList\.add\('page-out'\)/);
+      expect(FETCH_AND_SWAP_SRC).toMatch(/async function _animatePageOut[\s\S]*?addEventListener\('animationend'/);
+      expect(FETCH_AND_SWAP_SRC).toMatch(/async function _animatePageOut[\s\S]*?classList\.remove\('page-out'\)/);
+      // Safety timeout of 250ms
+      expect(FETCH_AND_SWAP_SRC).toMatch(/setTimeout[\s\S]*?250/);
+    });
+
+    it('_animatePageIn: adds and removes .page-in, listens for animationend', () => {
+      expect(FETCH_AND_SWAP_SRC).toMatch(/async function _animatePageIn[\s\S]*?classList\.add\('page-in'\)/);
+      expect(FETCH_AND_SWAP_SRC).toMatch(/async function _animatePageIn[\s\S]*?addEventListener\('animationend'/);
+      expect(FETCH_AND_SWAP_SRC).toMatch(/async function _animatePageIn[\s\S]*?classList\.remove\('page-in'\)/);
+      // Safety timeout of 400ms
+      expect(FETCH_AND_SWAP_SRC).toMatch(/setTimeout[\s\S]*?400/);
+    });
+
+    it('isShell gate: animations only run when .platform-ios is present', () => {
+      expect(FETCH_AND_SWAP_SRC).toMatch(/const isShell = document\.body\.classList\.contains\('platform-ios'\)/);
+      expect(FETCH_AND_SWAP_SRC).toMatch(/if \(isShell\) \{\s*await _animatePageOut/);
+      expect(FETCH_AND_SWAP_SRC).toMatch(/if \(isShell\) \{\s*\/\/[\s\S]*?void _animatePageIn/);
+    });
+
+    it('app:page-load fires after scripts, before page-in animation', () => {
+      expect(FETCH_AND_SWAP_SRC).toMatch(/_recreateScripts[\s\S]*?dispatchEvent[\s\S]*?_animatePageIn/);
+      expect(FETCH_AND_SWAP_SRC).toContain('app:page-load');
+    });
+
+    it('generation tracking prevents stale script onloads', () => {
+      expect(FETCH_AND_SWAP_SRC).toContain('_swapGeneration += 1');
+      expect(FETCH_AND_SWAP_SRC).toContain('fresh.dataset.swapGen = String(myGen)');
+      expect(FETCH_AND_SWAP_SRC).toContain('Number(fresh.dataset.swapGen) === _swapGeneration');
+    });
+  });
+
+  describe('Runtime: animation execution with setupTest harness', () => {
+    it('break-test: remove .page-out clear to verify test catches it', async () => {
+      await setupTest();
+      try {
+        // This test verifies that removing the classList.remove('page-out') call
+        // would cause our test checks to fail. We'll simulate that scenario.
+
+        document.body.classList.add('platform-ios');
+        const removeSpy = vi.spyOn(document.body.classList, 'remove');
+
+        // Call the swap which triggers page-out animation
+        globalThis.fetch = vi.fn().mockResolvedValue(
+          new Response('<html><head><title>T</title></head><body>content</body></html>', {
+            status: 200,
+            headers: { 'Content-Type': 'text/html' }
+          })
+        );
+
+        // Mock CachedFetch to avoid IDB delays
+        if (globalThis.CachedFetch) {
+          CachedFetch._internals._closeDb();
+        }
+
+        // Stub CachedFetch temporarily to just call fetch directly
+        const originalCachedFetch = globalThis.CachedFetch?.cachedFetch;
+        if (globalThis.CachedFetch) {
+          globalThis.CachedFetch.cachedFetch = async (url, opts) => ({
+            response: globalThis.fetch(url)
+          });
+        }
+
+        try {
+          await FetchAndSwap._swapFromHtml('<html><head></head><body>test</body></html>', 'https://test.com/');
+        } catch (e) {
+          // Ignore errors from parsing/rendering
+        }
+
+        // Give animations a moment to settle
+        await new Promise(r => setTimeout(r, 500));
+
+        // Verify that .page-out was added and then removed
+        const removeCallsPageOut = removeSpy.mock.calls.filter(c => c[0] === 'page-out');
+        expect(removeCallsPageOut.length).toBeGreaterThan(0);
+
+        if (originalCachedFetch) {
+          globalThis.CachedFetch.cachedFetch = originalCachedFetch;
+        }
+      } finally {
+        teardownTest();
+      }
+    });
+  });
+
+  describe('Rapid back-to-back navigations (Phase 5 generation tracking)', () => {
+    it('rapid-navigation setup in _swapFromHtml handles concurrent swaps with generation tracking', () => {
+      // Source-level check: _swapGeneration counter is incremented and scripts are tagged
+      expect(FETCH_AND_SWAP_SRC).toContain('_swapGeneration');
+      expect(FETCH_AND_SWAP_SRC).toContain('dataset.swapGen');
+      // Verify that stale onloads are detected before adding to Set
+      expect(FETCH_AND_SWAP_SRC).toContain('Number(fresh.dataset.swapGen) === _swapGeneration');
+    });
   });
 });

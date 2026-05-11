@@ -1,10 +1,10 @@
 {
-  "version": "1.0.0-4061eb8",
+  "version": "1.0.0-ec3f468",
   "files": [
     {
       "url": "/css/styles.css",
-      "size": 29910,
-      "sha256": "a6eacfec5380fa21997819a7c7168edfa131a4d91b9e59c5579533dea281d32b"
+      "size": 35929,
+      "sha256": "56b95ea010cf5389b652028d5de1d2c5328a4018277a395c1a341b097d5f535a"
     },
     {
       "url": "/js/api.js",
@@ -38,8 +38,13 @@
     },
     {
       "url": "/js/mapUI.js",
-      "size": 10389,
-      "sha256": "d150faef66a903f0cd489c6953a64024ec4030d0b46676ec9e27131231a02537"
+      "size": 12260,
+      "sha256": "e0494873cfa5c1ed2f321f92a0126bcd9f5fa43ff7519a05de7019641d0ea8a7"
+    },
+    {
+      "url": "/js/nativeBridge.js",
+      "size": 6416,
+      "sha256": "89fd9f69446edabd3376d0ad811df08c70ceeb1231d7412aa5dd180f265c5002"
     },
     {
       "url": "/js/offlineError.js",
@@ -58,8 +63,8 @@
     },
     {
       "url": "/js/photoCarousel.js",
-      "size": 13567,
-      "sha256": "7373e521b8c8a7bffe6b985f4b0f5166580b9476857e2bbfe80c27b19ea79371"
+      "size": 18770,
+      "sha256": "7c8c0a1fd245ea5ce2aaf1ebadbb8b76baf7b50fbc6c1de24af7f23374670cef"
     },
     {
       "url": "/js/poiLayer.js",
@@ -73,8 +78,8 @@
     },
     {
       "url": "/js/postUI.js",
-      "size": 50990,
-      "sha256": "1fbca487320e5b644d7212412f8ac3cd453715929f207445682b73dbb0fd8a6e"
+      "size": 53158,
+      "sha256": "02bdc3fb979cd62677697d2d4572d9f49c2eb3b42bbc63b0b0e5743ed638f688"
     },
     {
       "url": "/js/progressPanel.js",
@@ -108,8 +113,8 @@
     },
     {
       "url": "/js/uploadQueue.js",
-      "size": 25760,
-      "sha256": "dd708646825409777a8741c80114f3e8f87ae0b792bb639489f1626990a95b9c"
+      "size": 26053,
+      "sha256": "3593049f9a129562d2caf71e4041fc2e04689680de0c70993dd27a1182dc44b0"
     },
     {
       "url": "/js/uploadSemaphore.js",
@@ -138,8 +143,8 @@
     },
     {
       "url": "/ios.css",
-      "size": 4900,
-      "sha256": "bbc23e69bde2963a1f87193f0929fa5d8c35c0e9b2c1ac22903b4230fccd8959"
+      "size": 13556,
+      "sha256": "54a8e7c125755a57937671c47d07f2e82ad4d288434344c6aa5e862ae8ae3fa9"
     }
   ]
 }

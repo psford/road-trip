@@ -892,4 +892,171 @@ describe('UploadQueue', () => {
             });
         });
     });
+
+    describe('Task 3 & 4: Haptic feedback on upload state transitions', () => {
+        it('emits Native.haptic("medium") when an upload commits successfully', async () => {
+            globalThis.Native = { haptic: vi.fn() };
+
+            const uploadId = 'haptic-medium-test';
+            const photoId = 'photo-123';
+            const tripToken = 'test-trip-token';
+            const sasUrl = 'https://test.blob.core.windows.net/test?sv=...';
+            const file = new File(['test'], 'test.jpg', { type: 'image/jpeg' });
+
+            // Mock API calls
+            API.requestUpload.mockResolvedValue({
+                photoId,
+                blobPath: '/test/blob',
+                sasUrl,
+            });
+
+            UploadTransport.uploadFile.mockResolvedValue(['blockId0']);
+            API.commit.mockResolvedValue({ id: photoId });
+
+            // Start upload
+            await UploadQueue.start(tripToken, [{
+                file,
+                metadata: {},
+                uploadId,
+            }], {});
+
+            await UploadQueueTestHelper.waitForAll();
+
+            // Verify haptic('medium') was called on successful commit
+            expect(globalThis.Native.haptic).toHaveBeenCalledWith('medium');
+            expect(globalThis.Native.haptic).toHaveBeenCalledTimes(1);
+        });
+
+        it('emits Native.haptic("error") when an upload fails permanently', async () => {
+            globalThis.Native = { haptic: vi.fn() };
+
+            const uploadId = 'haptic-error-test';
+            const tripToken = 'test-trip-token';
+            const file = new File(['test'], 'test.jpg', { type: 'image/jpeg' });
+
+            // Mock API to reject
+            API.requestUpload.mockRejectedValue(new Error('Network error'));
+
+            // Start upload (will fail)
+            await UploadQueue.start(tripToken, [{
+                file,
+                metadata: {},
+                uploadId,
+            }], {});
+
+            await UploadQueueTestHelper.waitForAll();
+
+            // Verify haptic('error') was called on permanent failure
+            expect(globalThis.Native.haptic).toHaveBeenCalledWith('error');
+        });
+
+        it('Native.haptic absence does not interfere with the state machine', async () => {
+            globalThis.Native = undefined;
+
+            const uploadId = 'haptic-absence-test';
+            const photoId = 'photo-456';
+            const tripToken = 'test-trip-token';
+            const sasUrl = 'https://test.blob.core.windows.net/test?sv=...';
+            const file = new File(['test'], 'test.jpg', { type: 'image/jpeg' });
+
+            // Mock API calls
+            API.requestUpload.mockResolvedValue({
+                photoId,
+                blobPath: '/test/blob',
+                sasUrl,
+            });
+
+            UploadTransport.uploadFile.mockResolvedValue(['blockId0']);
+            API.commit.mockResolvedValue({ id: photoId });
+
+            // Start upload without Native defined
+            await UploadQueue.start(tripToken, [{
+                file,
+                metadata: {},
+                uploadId,
+            }], {});
+
+            await UploadQueueTestHelper.waitForAll();
+
+            // Verify the upload still completes successfully
+            const item = await StorageAdapter.getItem(uploadId);
+            expect(item.status).toBe('committed');
+        });
+    });
+
+    describe('User-initiated cancellation (abort/discardAll) does not fire error haptic', () => {
+        it('user-initiated abort does not fire Native.haptic', async () => {
+            globalThis.Native = { haptic: vi.fn() };
+
+            const tripToken = 'test-token';
+            const uploadId = 'upload-1';
+
+            // Create a pending upload in storage
+            await StorageAdapter.putItem({
+                upload_id: uploadId,
+                trip_token: tripToken,
+                filename: 'test.jpg',
+                size: 1024,
+                content_type: 'image/jpeg',
+                status: 'pending',
+                created_at: new Date().toISOString(),
+                last_activity_at: new Date().toISOString(),
+            });
+
+            API.abort.mockResolvedValue(undefined);
+
+            // User initiates abort
+            await UploadQueue.abort(uploadId);
+
+            // Haptic should NOT have been called (user cancel is not a failure)
+            expect(globalThis.Native.haptic).not.toHaveBeenCalled();
+
+            // Verify upload was deleted from storage
+            const item = await StorageAdapter.getItem(uploadId);
+            expect(item).toBeFalsy(); // null or undefined, both indicate deletion
+        });
+
+        it('user-initiated discardAll does not fire Native.haptic', async () => {
+            globalThis.Native = { haptic: vi.fn() };
+
+            const tripToken = 'test-token';
+            const uploadId1 = 'upload-1';
+            const uploadId2 = 'upload-2';
+
+            // Create pending uploads in storage
+            await StorageAdapter.putItem({
+                upload_id: uploadId1,
+                trip_token: tripToken,
+                filename: 'test1.jpg',
+                size: 1024,
+                status: 'pending',
+                created_at: new Date().toISOString(),
+                last_activity_at: new Date().toISOString(),
+            });
+
+            await StorageAdapter.putItem({
+                upload_id: uploadId2,
+                trip_token: tripToken,
+                filename: 'test2.jpg',
+                size: 2048,
+                status: 'pending',
+                created_at: new Date().toISOString(),
+                last_activity_at: new Date().toISOString(),
+            });
+
+            API.abort.mockResolvedValue(undefined);
+
+            // User initiates discardAll
+            await UploadQueue.discardAll(tripToken);
+
+            // Haptic should NOT have been called
+            expect(globalThis.Native.haptic).not.toHaveBeenCalled();
+
+            // Verify uploads were removed
+            const item1 = await StorageAdapter.getItem(uploadId1);
+            const item2 = await StorageAdapter.getItem(uploadId2);
+            expect(item1).toBeFalsy(); // null or undefined
+            expect(item2).toBeFalsy(); // null or undefined
+        });
+    });
 });
