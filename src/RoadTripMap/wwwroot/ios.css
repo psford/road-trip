@@ -422,15 +422,20 @@
   letter-spacing: 0.04em;
 }
 
-/* Phase 5: page transitions — iOS shell only */
+/* Phase 5: page transitions — iOS shell only.
+   Opacity-only: any non-`none` transform on body (even an identity matrix from
+   the animation's `to` state) creates a containing block for descendants,
+   which breaks position: sticky on .page-header and position: fixed on chrome
+   like .toast-container. The visual lift was a nice-to-have; sticky chrome
+   is load-bearing. */
 @keyframes page-out {
-  from { opacity: 1; transform: translateY(0); }
-  to   { opacity: 0; transform: translateY(-8px); }
+  from { opacity: 1; }
+  to   { opacity: 0; }
 }
 
 @keyframes page-in {
-  from { opacity: 0; transform: translateY(8px); }
-  to   { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }
 
 body.platform-ios.page-out {
