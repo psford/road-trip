@@ -1,6 +1,19 @@
 // pattern: Imperative Shell
 (function () {
-    const APP_BASE = 'https://app-roadtripmap-prod.azurewebsites.net';
+    // App Service origin. Defaults to prod; dev-only override via
+    // `<meta name="app-base-override">` (see scripts/dev-ios-on.js).
+    const PROD_APP_BASE = 'https://app-roadtripmap-prod.azurewebsites.net';
+    function _resolveAppBase() {
+        try {
+            const meta = document.querySelector('meta[name="app-base-override"]');
+            const override = meta && meta.getAttribute('content');
+            if (override && /^https?:\/\//.test(override)) {
+                return override.replace(/\/$/, '');
+            }
+        } catch (e) { /* fall through */ }
+        return PROD_APP_BASE;
+    }
+    const APP_BASE = _resolveAppBase();
 
     // Resolve a possibly-relative URL to absolute App Service form before fetch().
     // The iOS shell runs at capacitor://localhost/, so relative URLs would resolve
