@@ -1,9 +1,22 @@
 // pattern: Imperative Shell
 (function () {
-    // Prod App Service origin. The iOS shell only ships against prod; dev/staging
-    // variants are out of scope for the offline-shell design (see plan Phase 3 §
-    // Module contract). Exposed as _APP_BASE for test inspection, not configuration.
-    const APP_BASE = 'https://app-roadtripmap-prod.azurewebsites.net/';
+    // App Service origin. Defaults to prod; a dev-only override may be injected
+    // via `<meta name="app-base-override" content="http://...">` in the bootstrap
+    // shell's index.html (see scripts/dev-ios-on.js). Trailing slash is normalized
+    // so URL resolution works the same as the original constant.
+    // Exposed as _APP_BASE for test inspection, not for runtime reconfiguration.
+    const PROD_APP_BASE = 'https://app-roadtripmap-prod.azurewebsites.net/';
+    function _resolveAppBase() {
+        try {
+            const meta = document.querySelector('meta[name="app-base-override"]');
+            const override = meta && meta.getAttribute('content');
+            if (override && /^https?:\/\//.test(override)) {
+                return override.endsWith('/') ? override : override + '/';
+            }
+        } catch (e) { /* fall through to prod */ }
+        return PROD_APP_BASE;
+    }
+    const APP_BASE = _resolveAppBase();
 
     // Module-scoped registry of external script srcs that have been injected
     // into this JS realm. Phase 3 (ios-shell-hardening.AC1) — prevents duplicate-
