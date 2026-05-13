@@ -159,9 +159,22 @@
 
 /* Phase 2: post.html chrome (also applies to create.html when Phase 4 lands) */
 .platform-ios .page-header {
+  /* iOS Safari needs the -webkit-sticky prefix to be the FIRST position declaration
+     so the unprefixed `sticky` can override it on engines that support both. Modern
+     iOS supports unprefixed, but the prefix is harmless and defends against any
+     older WebKit version that only honors the prefixed form. */
+  position: -webkit-sticky;
   position: sticky;
   top: 0;
   z-index: 10;
+  /* styles.css applies `margin: calc(-1 * var(--space-sm))` to .page-header for a
+     "full-bleed inside padded container" effect. Negative top margin pulls the
+     element's box outside its containing block (.container), which interferes
+     with position: sticky's natural-position calculation in iOS Safari and
+     prevents the sticky pin from engaging. Reset margin to 0 here; the
+     full-bleed left/right look is recovered via padding-inline below if needed.
+     The body's own padding becomes the small horizontal offset on iOS. */
+  margin: 0;
   background-color: var(--material-bg-light);
   backdrop-filter: var(--material-blur-regular);
   -webkit-backdrop-filter: var(--material-blur-regular);
