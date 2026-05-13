@@ -159,7 +159,7 @@ Mobile-first road trip photo sharing app. Users create a trip, get two secret li
 
 ## Gotchas
 
-- **develop → main merge strategy is "Create a merge commit", never squash.** Squash-merging develop → main creates phantom-commit drift that breaks the next develop → main PR with conflicts. See `docs/issues/2026-05-09-rca-git-flow-catastrophe.md` for the full incident report. The CI step `git-flow-guard` in `.github/workflows/roadtrip-ci.yml` enforces this — it fails on the next push to main if a squash-merge is detected (HEAD on main with only 1 parent).
+- **All merges in this repo are regular merge commits, never squash.** Per Patrick's directive (2026-05-12), squash-merges are reserved for catastrophic-error recovery only and are not part of normal workflow. The CI step `git-flow-guard` in `.github/workflows/roadtrip-ci.yml` enforces the develop → main side — it fails on the next push to main if HEAD has fewer than 2 parents. Squash-merge commands are also blocked locally by `~/.claude/hooks/no-squash-merge.sh` (Claude's tool layer). See `docs/issues/2026-05-09-rca-git-flow-catastrophe.md` for the original develop → main incident.
 - Schema changes use EF Core migrations only (never raw SQL migration scripts). Migrations auto-apply on app startup; for prod they are also applied manually via the deployment runbook before the App Service deploy.
 - Deploy is Docker-based (App Service with containerized builds)
 - Port 5100 locally (distinct from other .NET apps)
@@ -206,16 +206,15 @@ develop (work here) → PR → main (production)
 - **Direct on develop** for: small fixes, tweaks, internal docs
 - **NEVER** commit directly to main, merge to main via CLI, or deploy without explicit approval
 
-### Merge strategies (mandatory — enforced by CI)
+### Merge strategy
 
-| Source → target | Strategy | Why |
-|-----------------|----------|-----|
-| feature branch → develop | **Squash and merge** | Feature branches have intermediate commits we don't want in long-term history |
-| develop → main | **Create a merge commit** (regular merge) | Keeps develop and main structurally in sync. Squash-merge here causes phantom-commit drift on the next develop → main PR. See `docs/issues/2026-05-09-rca-git-flow-catastrophe.md`. |
+All merges in this repo use "Create a merge commit" (regular merge), for both feature → develop and develop → main. Squash-merge is reserved for catastrophic-error recovery only; it is not part of normal workflow. Per Patrick's directive (2026-05-12), Claude does not recommend squash-merge for any merge here.
 
-**Rebase-and-merge is not used** anywhere in this repo. It produces the same phantom-commit drift as squash for develop → main without the tidy-commit benefit, and adds nothing for feature → develop.
+Rebase-and-merge is not used in this repo either.
 
-These are not preferences. The CI workflow `roadtrip-ci.yml` includes a `git-flow-guard` step that fails if the latest commit on `main` has fewer than 2 parents (i.e., if anyone squash-merged develop → main). If you find yourself wanting to deviate, stop and read the RCA document linked above first.
+The CI step `git-flow-guard` in `roadtrip-ci.yml` enforces the develop → main side — it fails on push to `main` if the latest commit has fewer than 2 parents (which would indicate a squash). Squash-merge commands at Claude's tool layer are blocked by `~/.claude/hooks/no-squash-merge.sh`.
+
+See `docs/issues/2026-05-09-rca-git-flow-catastrophe.md` for the original develop → main incident report that triggered this rule's CI enforcement.
 
 ### Forbidden Operations (on develop)
 
@@ -252,12 +251,12 @@ The "ask first" rule for develop-targeted actions still applies — Claude shoul
 **After Creating a PR targeting `develop`:**
 1. Wait for CI to pass (roadtrip-ci.yml)
 2. Claude may merge via `gh pr merge` after asking for approval
-3. Use `--squash` for feature branches → develop. This is the standard. Per the merge-strategies table above.
+3. Use the default "Create a merge commit" option. Squash-merge is reserved for catastrophic-error recovery only — see the Merge strategy section above.
 
 **After Creating a PR targeting `main`:**
 1. Wait for CI to pass (roadtrip-ci.yml)
 2. Patrick approves manually by merging through the GitHub web UI
-3. **Use "Create a merge commit" (regular merge), NOT "Squash and merge" or "Rebase and merge".** Per the merge-strategies table above. CI will fail on main's next push if this is violated.
+3. **Use "Create a merge commit" (regular merge), NOT "Squash and merge" or "Rebase and merge".** Per the Merge strategy section above. CI will fail on main's next push if this is violated.
 4. Claude must NEVER use `gh pr merge` against main
 
 **Merged PRs:** Once closed, a PR is DEAD. After any merge:
