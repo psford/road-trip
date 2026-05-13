@@ -51,6 +51,24 @@ const PostUI = {
         // Wire up event listeners
         document.getElementById('addPhotoButton').addEventListener('click', () => this.onAddPhotoTap());
 
+        // iOS WKWebView quirk (verified 2026-05-13 via on-device Web Inspector):
+        // <input type="file"> elements that arrive in the DOM via DOMParser /
+        // innerHTML during a fetchAndSwap document swap are not bound to
+        // WKWebView's internal file-picker delegate — the picker opens and the
+        // user can select, but the `change` event never fires. A freshly
+        // document.createElement-ed input works. Replace the parsed node with a
+        // fresh clone before wiring the change listener. No-op in regular
+        // browsers (replacing the element with an equivalent one is harmless).
+        const parsedInput = document.getElementById('fileInput');
+        if (parsedInput && parsedInput.parentNode) {
+            const freshInput = document.createElement('input');
+            freshInput.type = 'file';
+            freshInput.id = 'fileInput';
+            freshInput.accept = parsedInput.accept || 'image/*';
+            if (parsedInput.multiple) freshInput.multiple = true;
+            parsedInput.parentNode.replaceChild(freshInput, parsedInput);
+        }
+
         document.getElementById('fileInput').addEventListener('change', (e) => {
             const files = e.target.files;
             if (files.length === 0) return;
