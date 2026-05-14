@@ -54,9 +54,15 @@ describe('iOS Safe Area (static file assertions)', () => {
     const iosCssPath = path.join(projectRoot, 'src/RoadTripMap/wwwroot/ios.css');
     const content = fs.readFileSync(iosCssPath, 'utf8');
 
+    // `.platform-ios .page-header` deliberately omitted: capacitor.config.js sets
+    // ios.contentInset: "always", which pushes content below the device safe-area
+    // at the WebView layer. Adding env(safe-area-inset-top) on top of that on a
+    // sticky-positioned header double-counts the notch and produces a visible
+    // empty gap above the header (observed iPhone 16 Pro, 2026-05-13). The
+    // page-header rule now uses a design-token-only padding-top; the WebView's
+    // content inset handles the safe-area.
     const topInsetSelectors = [
       '.platform-ios .map-header',
-      '.platform-ios .page-header',
       '.platform-ios .hero',
       '.platform-ios .resume-banner',
     ];
@@ -75,9 +81,11 @@ describe('iOS Safe Area (static file assertions)', () => {
       });
     });
 
-    it('ios.css contains at least 5 env(safe-area-inset-top) declarations (4 top-inset + 1 modal)', () => {
+    it('ios.css contains at least 4 env(safe-area-inset-top) declarations (3 top-inset + 1 modal)', () => {
+      // .page-header was removed from the top-inset list (see comment above);
+      // its env() declaration was the 5th, so the floor drops to 4.
       const matches = content.match(/env\(safe-area-inset-top\)/g) || [];
-      expect(matches.length).toBeGreaterThanOrEqual(5);
+      expect(matches.length).toBeGreaterThanOrEqual(4);
     });
   });
 

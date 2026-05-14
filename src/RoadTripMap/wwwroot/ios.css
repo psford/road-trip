@@ -104,8 +104,12 @@
 }
 
 .platform-ios .page-header {
-    /* Non-fixed header; additive to the existing padding in styles.css. */
-    padding-top: calc(var(--space-xs) + env(safe-area-inset-top));
+    /* Non-fixed header. capacitor.config.js sets `ios.contentInset: "always"`, so
+       WKWebView already pushes content below the device safe-area at the WebView
+       layer. Adding env(safe-area-inset-top) here on top of that double-counts
+       the notch space and leaves a large empty gap above the header on real
+       hardware (iPhone 16 Pro, 2026-05-13). Use just the design-token space. */
+    padding-top: var(--space-xs);
 }
 
 .platform-ios .hero {
@@ -167,19 +171,24 @@
   position: sticky;
   top: 0;
   z-index: 10;
-  /* styles.css applies `margin: calc(-1 * var(--space-sm))` to .page-header for a
-     "full-bleed inside padded container" effect. Negative top margin pulls the
-     element's box outside its containing block (.container), which interferes
-     with position: sticky's natural-position calculation in iOS Safari and
-     prevents the sticky pin from engaging. Reset margin to 0 here; the
-     full-bleed left/right look is recovered via padding-inline below if needed.
-     The body's own padding becomes the small horizontal offset on iOS. */
-  margin: 0;
+  /* Keep the negative margin from styles.css (`margin: calc(-1 * var(--space-sm))`)
+     intact — it pulls the header out of the body's padding so it sits flush at
+     viewport edges, full-bleed left/right. The earlier `margin: 0` override here
+     was based on a wrong diagnosis that negative margin broke sticky; the actual
+     cause was a transform on body from the page-in animation, which has since
+     been replaced with opacity-only keyframes. With that gone, sticky engages
+     correctly even with the negative margin, and the iOS-native flush-edge look
+     is restored. */
   background-color: var(--material-bg-light);
   backdrop-filter: var(--material-blur-regular);
   -webkit-backdrop-filter: var(--material-blur-regular);
   border-bottom: 0.5px solid var(--color-separator);
-  padding-top: calc(env(safe-area-inset-top, 0px) + var(--space-sm));
+  /* capacitor.config.js ios.contentInset: "always" already pushes content
+     below the device safe-area at the WebView layer. Adding
+     env(safe-area-inset-top) on top of that double-counts the notch and
+     produces a large empty gap above the sticky header on real hardware
+     (verified iPhone 16 Pro, 2026-05-13). Use design-token space only. */
+  padding-top: var(--space-sm);
   padding-bottom: var(--space-sm);
 }
 
