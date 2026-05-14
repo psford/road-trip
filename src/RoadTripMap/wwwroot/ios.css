@@ -104,8 +104,12 @@
 }
 
 .platform-ios .page-header {
-    /* Non-fixed header; additive to the existing padding in styles.css. */
-    padding-top: calc(var(--space-xs) + env(safe-area-inset-top));
+    /* Non-fixed header. capacitor.config.js sets `ios.contentInset: "always"`, so
+       WKWebView already pushes content below the device safe-area at the WebView
+       layer. Adding env(safe-area-inset-top) here on top of that double-counts
+       the notch space and leaves a large empty gap above the header on real
+       hardware (iPhone 16 Pro, 2026-05-13). Use just the design-token space. */
+    padding-top: var(--space-xs);
 }
 
 .platform-ios .hero {
@@ -179,7 +183,12 @@
   backdrop-filter: var(--material-blur-regular);
   -webkit-backdrop-filter: var(--material-blur-regular);
   border-bottom: 0.5px solid var(--color-separator);
-  padding-top: calc(env(safe-area-inset-top, 0px) + var(--space-sm));
+  /* capacitor.config.js ios.contentInset: "always" already pushes content
+     below the device safe-area at the WebView layer. Adding
+     env(safe-area-inset-top) on top of that double-counts the notch and
+     produces a large empty gap above the sticky header on real hardware
+     (verified iPhone 16 Pro, 2026-05-13). Use design-token space only. */
+  padding-top: var(--space-sm);
   padding-bottom: var(--space-sm);
 }
 
