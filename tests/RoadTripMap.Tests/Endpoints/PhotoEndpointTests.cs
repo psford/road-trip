@@ -655,7 +655,7 @@ public class PhotoEndpointTests
     }
 
     [Fact]
-    public async Task GetPhotosEndpoint_WithNullTakenAt_SortsNullsLast()
+    public async Task GetPhotosEndpoint_WithNullTakenAt_SortsByTakenAtOrCreatedAt()
     {
         // Set required environment variables for ValidateAll()
         Environment.SetEnvironmentVariable("WSL_SQL_CONNECTION", "Data Source=:memory:");
@@ -762,20 +762,24 @@ public class PhotoEndpointTests
         using var doc = JsonDocument.Parse(json);
         var photos = doc.RootElement.EnumerateArray().ToList();
 
-        // Verify photos are ordered correctly
+        // Verify photos are ordered by COALESCE(takenAt, createdAt) ascending.
+        // Effective sort keys for the test data:
+        //   photo1 -> now-5d (TakenAt)        — "Photo with old date"
+        //   photo2 -> now-3d (CreatedAt fallback) — "Photo with null takenAt"
+        //   photo3 -> now-1d (TakenAt)        — "Photo with recent date"
+        //   photo4 -> now   (CreatedAt fallback) — "Another photo with null takenAt"
         photos.Should().HaveCount(4);
 
-        // First two should have non-null takenAt values, ordered chronologically (oldest first)
         photos[0].GetProperty("caption").GetString().Should().Be("Photo with old date");
         photos[0].GetProperty("takenAt").ValueKind.Should().NotBe(JsonValueKind.Null);
 
-        photos[1].GetProperty("caption").GetString().Should().Be("Photo with recent date");
-        photos[1].GetProperty("takenAt").ValueKind.Should().NotBe(JsonValueKind.Null);
+        photos[1].GetProperty("caption").GetString().Should().Be("Photo with null takenAt");
+        photos[1].GetProperty("takenAt").ValueKind.Should().Be(JsonValueKind.Null);
 
-        // Last two should have null takenAt values (order among nulls is not guaranteed)
-        photos[2].GetProperty("takenAt").ValueKind.Should().Be(JsonValueKind.Null);
+        photos[2].GetProperty("caption").GetString().Should().Be("Photo with recent date");
+        photos[2].GetProperty("takenAt").ValueKind.Should().NotBe(JsonValueKind.Null);
+
+        photos[3].GetProperty("caption").GetString().Should().Be("Another photo with null takenAt");
         photos[3].GetProperty("takenAt").ValueKind.Should().Be(JsonValueKind.Null);
-        var nullCaptions = new[] { photos[2].GetProperty("caption").GetString(), photos[3].GetProperty("caption").GetString() };
-        nullCaptions.Should().Contain(new[] { "Photo with null takenAt", "Another photo with null takenAt" });
     }
 }
