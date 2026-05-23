@@ -29,7 +29,7 @@ Mobile-first road trip photo sharing app. Users create a trip, get two secret li
   - Photos stored in 3 tiers: original (full quality), display (1920px), thumb (300px)
   - Original media never degraded (re-encoded at quality 100, EXIF stripped)
   - `TakenAt` is nullable -- null means no EXIF date was available; upload no longer defaults to `DateTime.UtcNow`
-  - Photo endpoints return photos ordered by `TakenAt` ascending (nulls sort last)
+  - Photo endpoints return photos ordered by `COALESCE(TakenAt, CreatedAt)` ascending — EXIF capture time when present, upload time as fallback (so real-time captures without `DateTimeOriginal` still sort by upload chronology)
   - Two-token auth: SecretToken (upload + view), ViewToken (view only) — both GUIDs in URL path, no accounts/cookies
   - All responses include `X-Robots-Tag: noindex, nofollow`
   - All responses include `x-server-version` and `x-client-min-version` headers (resilient-uploads client protocol gate)

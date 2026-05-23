@@ -118,7 +118,8 @@ public class PhotoReadServiceTests
             p.OriginalUrl.Should().StartWith($"/api/photos/{trip.Id}/");
         });
 
-        // Verify chronological ordering (by TakenAt ascending, nulls last)
+        // Verify chronological ordering (by TakenAt ascending; in this fixture every
+        // photo has a TakenAt, so the COALESCE fallback to CreatedAt is irrelevant here).
         var nonNullPhotos = photos.Where(p => p.TakenAt.HasValue).ToList();
         if (nonNullPhotos.Count > 1)
         {
@@ -337,6 +338,7 @@ public class PhotoReadServiceTests
             PlaceName = "New York",
             Caption = "With Date",
             TakenAt = new DateTime(2026, 1, 15, 10, 0, 0, DateTimeKind.Utc),
+            CreatedAt = new DateTime(2026, 1, 15, 10, 5, 0, DateTimeKind.Utc),
             BlobPath = "1/1.jpg",
             Status = "committed",
             StorageTier = "legacy",
@@ -350,6 +352,7 @@ public class PhotoReadServiceTests
             PlaceName = "Los Angeles",
             Caption = "Without Date",
             TakenAt = null,
+            CreatedAt = new DateTime(2026, 2, 1, 12, 0, 0, DateTimeKind.Utc),
             BlobPath = "1/2.jpg",
             Status = "committed",
             StorageTier = "per-trip",
@@ -361,9 +364,144 @@ public class PhotoReadServiceTests
         // Act
         var photos = await service.GetPhotosForTripAsync(secretToken, CancellationToken.None);
 
-        // Assert
+        // Assert: both photos returned, null TakenAt preserved in response (not coerced)
         photos.Should().HaveCount(2);
-        photos[0].TakenAt.Should().NotBeNull();
-        photos[1].TakenAt.Should().BeNull();
+        photos.Should().ContainSingle(p => p.Caption == "With Date" && p.TakenAt.HasValue);
+        photos.Should().ContainSingle(p => p.Caption == "Without Date" && !p.TakenAt.HasValue);
+    }
+
+    [Fact]
+    public async Task GetPhotosForTripAsync_OrdersByTakenAtThenCreatedAt_WhenTakenAtIsNull()
+    {
+        // Regression test for: photos uploaded in real-time via browser camera capture
+        // have null TakenAt (no EXIF DateTimeOriginal), while photos picked from the
+        // library have TakenAt populated. The first-posted photo (low CreatedAt, null
+        // TakenAt) was being banished to the end of the carousel by a "nulls last" sort.
+        // Expected: order by COALESCE(TakenAt, CreatedAt) so upload chronology is the
+        // fallback when EXIF capture time is missing.
+
+        // Arrange
+        using var db = CreateInMemoryContext();
+        var service = CreateService(db);
+
+        var secretToken = "mixed-exif-secret"; // pragma: allowlist secret
+        var trip = new TripEntity
+        {
+            Slug = "mixed-exif-trip",
+            Name = "Mixed EXIF Trip",
+            SecretToken = secretToken,
+            ViewToken = Guid.NewGuid().ToString()
+        };
+        await db.Trips.AddAsync(trip);
+        await db.SaveChangesAsync();
+
+        // Posted FIRST in real-time, but EXIF DateTimeOriginal is missing (camera capture).
+        var firstPostedNoExif = new PhotoEntity
+        {
+            TripId = trip.Id,
+            Latitude = 44.5,
+            Longitude = -67.85,
+            PlaceName = "I-95 (first posted, no EXIF)",
+            Caption = "First posted",
+            TakenAt = null,
+            CreatedAt = new DateTime(2026, 5, 16, 15, 20, 0, DateTimeKind.Utc),
+            BlobPath = "1/1.jpg",
+            Status = "committed",
+            StorageTier = "legacy",
+            UploadId = Guid.NewGuid()
+        };
+
+        // Posted LATER from the user's library; EXIF says it was taken a day after the first photo.
+        var laterPostedWithExif = new PhotoEntity
+        {
+            TripId = trip.Id,
+            Latitude = 44.46,
+            Longitude = -67.83,
+            PlaceName = "Milbridge (later post, with EXIF)",
+            Caption = "Later post",
+            TakenAt = new DateTime(2026, 5, 17, 20, 57, 0, DateTimeKind.Utc),
+            CreatedAt = new DateTime(2026, 5, 18, 16, 3, 0, DateTimeKind.Utc),
+            BlobPath = "1/2.jpg",
+            Status = "committed",
+            StorageTier = "legacy",
+            UploadId = Guid.NewGuid()
+        };
+
+        await db.Photos.AddRangeAsync(laterPostedWithExif, firstPostedNoExif);
+        await db.SaveChangesAsync();
+
+        // Act
+        var photos = await service.GetPhotosForTripAsync(secretToken, CancellationToken.None);
+
+        // Assert: the first-posted (lower CreatedAt) photo comes first, even though the
+        // other photo has a non-null TakenAt.
+        photos.Should().HaveCount(2);
+        photos[0].Caption.Should().Be("First posted");
+        photos[1].Caption.Should().Be("Later post");
+    }
+
+    [Fact]
+    public async Task GetPhotosForTripAsync_OrdersTakenAtBeforeLaterCreatedAt()
+    {
+        // The other direction of the same property: a photo TAKEN earlier but UPLOADED
+        // later (typical "got home from the trip, then uploaded the library") should
+        // still appear before a photo whose CreatedAt is earlier but TakenAt is later.
+        // Confirms TakenAt remains the primary sort key when present.
+
+        // Arrange
+        using var db = CreateInMemoryContext();
+        var service = CreateService(db);
+
+        var secretToken = "taken-vs-uploaded-secret"; // pragma: allowlist secret
+        var trip = new TripEntity
+        {
+            Slug = "taken-vs-uploaded-trip",
+            Name = "Taken vs Uploaded Trip",
+            SecretToken = secretToken,
+            ViewToken = Guid.NewGuid().ToString()
+        };
+        await db.Trips.AddAsync(trip);
+        await db.SaveChangesAsync();
+
+        var takenEarlyUploadedLate = new PhotoEntity
+        {
+            TripId = trip.Id,
+            Latitude = 44.5,
+            Longitude = -67.85,
+            PlaceName = "Taken early, uploaded late",
+            Caption = "Taken early",
+            TakenAt = new DateTime(2026, 5, 14, 9, 0, 0, DateTimeKind.Utc),
+            CreatedAt = new DateTime(2026, 5, 20, 9, 0, 0, DateTimeKind.Utc),
+            BlobPath = "1/1.jpg",
+            Status = "committed",
+            StorageTier = "legacy",
+            UploadId = Guid.NewGuid()
+        };
+
+        var takenLateUploadedEarly = new PhotoEntity
+        {
+            TripId = trip.Id,
+            Latitude = 44.46,
+            Longitude = -67.83,
+            PlaceName = "Taken late, uploaded early",
+            Caption = "Taken late",
+            TakenAt = new DateTime(2026, 5, 19, 9, 0, 0, DateTimeKind.Utc),
+            CreatedAt = new DateTime(2026, 5, 19, 10, 0, 0, DateTimeKind.Utc),
+            BlobPath = "1/2.jpg",
+            Status = "committed",
+            StorageTier = "legacy",
+            UploadId = Guid.NewGuid()
+        };
+
+        await db.Photos.AddRangeAsync(takenLateUploadedEarly, takenEarlyUploadedLate);
+        await db.SaveChangesAsync();
+
+        // Act
+        var photos = await service.GetPhotosForTripAsync(secretToken, CancellationToken.None);
+
+        // Assert: photo TAKEN earlier appears first, even though it was uploaded later.
+        photos.Should().HaveCount(2);
+        photos[0].Caption.Should().Be("Taken early");
+        photos[1].Caption.Should().Be("Taken late");
     }
 }

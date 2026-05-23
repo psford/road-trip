@@ -14,6 +14,6 @@ public interface IPhotoReadService
     /// </summary>
     /// <param name="secretToken">The secret token identifying the trip</param>
     /// <param name="ct">Cancellation token</param>
-    /// <returns>List of PhotoResponse objects, ordered by TakenAt (chronological)</returns>
+    /// <returns>List of PhotoResponse objects, ordered by COALESCE(TakenAt, CreatedAt) ascending</returns>
     Task<List<PhotoResponse>> GetPhotosForTripAsync(string secretToken, CancellationToken ct);
 }
