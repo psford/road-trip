@@ -11,6 +11,7 @@
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "test:layout": "playwright test --config=tests/playwright-layout/playwright.config.js",
+    "test:simulator": "bash tests/maestro/scripts/run.sh",
     "build:bundle": "node scripts/build-bundle.js",
     "prepare:ios-shell": "cp src/RoadTripMap/wwwroot/js/tripStorage.js src/bootstrap/tripStorage.js"
   },
