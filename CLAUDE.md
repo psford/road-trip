@@ -228,19 +228,22 @@ If main and develop diverge in *content*, merge develop into main via PR — nev
 
 ### Who can do what (Claude vs Patrick)
 
-The rules differ depending on whether the change is going **to develop** or **to main**.
+The rules differ depending on whether the change is going **to develop / feature branches** or **to main**.
 
-| Action | Claude (after asking) | Patrick (final approval) |
-|--------|-----------------------|--------------------------|
-| Direct commit to develop (small fixes) | ✓ Ask first, then commit | — |
-| Open feature branch + PR → develop | ✓ Ask first, then `gh pr create` | — |
-| Merge a feature-branch PR into develop | ✓ Ask first, then `gh pr merge` | — |
-| Open develop → main PR | ✓ Ask first, then `gh pr create` | — |
-| Merge develop → main | ✗ Never | ✓ Patrick merges manually via GitHub web UI |
+| Action | Claude | Patrick |
+|--------|--------|---------|
+| Direct commit to develop (small fixes) | ✓ Commit without asking | — |
+| Open feature branch + PR → develop | ✓ Open without asking | — |
+| Merge a feature-branch PR into develop | ✓ Merge without asking (regular merge commit) | — |
+| Commit / push to feature branches | ✓ Without asking | — |
+| Open develop → main PR | ✓ Open without asking | — |
+| Merge develop → main | ✗ Never. Period. | ✓ Patrick alone, through the GitHub or VS Code UI |
 | Run `deploy.yml` workflow | ✗ Never | ✓ Patrick triggers, then runs cap sync as needed |
 | Run `npx cap sync ios` / Xcode build | ✗ Never | ✓ Patrick runs locally |
 
-The "ask first" rule for develop-targeted actions still applies — Claude should describe what's about to happen and wait for explicit approval before any commit or merge. The point is to remove the busy-work of Patrick re-doing every develop merge through the GitHub UI, not to remove the human-in-the-loop check.
+Develop and feature branches are Claude's working space — no approval gate. The point of the gitflow rule is to keep main protected: every change that lands on main passes through Patrick's hands at the merge step. CI guards (`git-flow-guard`) and tool-layer deny rules (`Bash(gh workflow run *deploy*)`, `Bash(npx cap sync*)`, etc., in `~/.claude/settings.json`) enforce the main-protection side mechanically.
+
+Policy updated 2026-05-24 from the earlier "ask first" model — that produced too much approval-pinging for routine develop merges and lost track of releases when develop accumulated.
 
 ### PR Rules
 

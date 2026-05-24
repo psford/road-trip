@@ -66,6 +66,9 @@ const PostUI = {
             freshInput.id = 'fileInput';
             freshInput.accept = parsedInput.accept || 'image/*';
             if (parsedInput.multiple) freshInput.multiple = true;
+            // Marker for regression tests (tests/playwright-layout/layout.spec.js):
+            // proves the recreate-for-WKWebView fix actually ran on this page.
+            freshInput.dataset.iosWkwebviewRecreated = '1';
             parsedInput.parentNode.replaceChild(freshInput, parsedInput);
         }
 

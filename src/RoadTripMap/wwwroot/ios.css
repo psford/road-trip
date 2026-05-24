@@ -169,7 +169,16 @@
      older WebKit version that only honors the prefixed form. */
   position: -webkit-sticky;
   position: sticky;
-  top: 0;
+  /* Pin BELOW the device safe-area, not behind it. `top: 0` would pin at the
+     scroll view's top edge — which is at device y=0 even under Capacitor's
+     `contentInset: "always"` (the WebView's contentInset adjustment shifts the
+     initial render position, but position: sticky's pin point in WebKit is the
+     unshifted scroll-view edge). Using env(safe-area-inset-top) puts the
+     pinned header just below the status bar / Dynamic Island on iPhones with
+     a notch, and at 0 on devices without one. Verified 2026-05-14: with
+     `top: 0` the pinned header was visibly overlapping the status bar
+     (time/battery icons drawing on top of "← Back / [trip name]"). */
+  top: env(safe-area-inset-top, 0px);
   z-index: 10;
   /* Keep the negative margin from styles.css (`margin: calc(-1 * var(--space-sm))`)
      intact — it pulls the header out of the body's padding so it sits flush at
