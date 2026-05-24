@@ -10,6 +10,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
+    "test:layout": "playwright test --config=tests/playwright-layout/playwright.config.js",
     "build:bundle": "node scripts/build-bundle.js",
     "prepare:ios-shell": "cp src/RoadTripMap/wwwroot/js/tripStorage.js src/bootstrap/tripStorage.js"
   },
