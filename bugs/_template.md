@@ -11,25 +11,25 @@ regression-from:            # PR / commit / version where this last worked, if k
 regression-test:            # path to the test that guards this once fixed (e.g. tests/playwright-layout/sticky-header.spec.js)
 ---
 
-## Summary
+## Bug
 
 One paragraph. What's broken from a user's perspective?
 
-## Repro steps
+## Steps to reproduce
 
-Numbered, with exact URLs / taps / scrolls. Claude cannot reproduce from prose; it needs a recipe.
+**This is the most important field in the report.** Assume the person reading it is on a different computer with no memory of the original session — they have to follow these steps verbatim to see the bug. Numbered, in execution order. Exact URLs / tokens / gestures (no "the test trip," no "scroll a bit"). State established up front. The final step produces a single observable outcome that matches "Actual results." See bugs/README.md → "Steps to reproduce: the most important field" for the full rubric.
 
 1. ...
 2. ...
 3. ...
 
-## Expected behavior
+## Expected results
 
-What should happen at step N.
+What should happen at the final step.
 
-## Actual behavior
+## Actual results
 
-What does happen at step N.
+What does happen at the final step.
 
 ## Environment
 

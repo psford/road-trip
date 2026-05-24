@@ -11,26 +11,26 @@ regression-from: PR #89 (sticky-pin fix). Before #89 the header pinned behind th
 regression-test:                   # blocked until design decision lands
 ---
 
-## Summary
+## Bug
 
 On any iOS-shell page with the sticky `.page-header` (post.html, trips.html, create.html), page content visibly scrolls behind the pinned header. The header has `backdrop-filter: var(--material-blur-regular)` set, but the visual result feels wrong — content underneath is still legible and the layering looks like "content punching through a half-transparent wall" rather than "content blurred behind a frosted iOS nav bar."
 
 This is a polish / design issue, not a functional one. Filing for explicit resolution rather than letting it drift.
 
-## Repro steps
+## Steps to reproduce
 
 1. Open the iOS app, navigate to any trip's `/trips/<viewToken>` or `/post/<secretToken>`.
 2. Scroll down past where the sticky header has engaged.
 3. Observe the area where content passes behind the header.
 
-## Expected behavior
+## Expected results
 
 One of (pick one as part of design):
 
 - (a) **Translucent + blur** (iOS-native, as currently attempted): the header has a translucent material-blur background; content scrolling behind is muted by the blur but still partially visible. The current CSS aims at this — figure out why it doesn't render as expected (blur strength too weak? bg color too transparent? backdrop-filter not supported by the WebView version?).
 - (b) **Opaque header**: drop the translucent material; use a solid background so content visually stops at the header edge. Simpler, less iOS-native but consistent.
 
-## Actual behavior
+## Actual results
 
 Content scrolls visibly behind the header, neither fully blurred (option a done well) nor cleanly blocked (option b). The middle ground reads as a bug rather than a design.
 

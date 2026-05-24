@@ -19,9 +19,32 @@ State lives in frontmatter. No `open/` vs `closed/` directories — moving files
 ## Filing a new bug
 
 1. Copy `_template.md` to `bugs/NNN-short-slug.md`. NNN is the next free 3-digit id (ls the directory, take max + 1).
-2. Fill in the frontmatter and body. **Repro steps are mandatory** — Claude can't reproduce from "it doesn't work."
+2. Fill in the frontmatter and body. **Steps to reproduce are the single most important field — see the next section.**
 3. Drop screenshots / videos under `bugs/assets/` and reference them by relative path.
 4. Commit on develop (or a branch + PR per the gitflow rules in CLAUDE.md). One bug = one file = one commit is the easiest unit.
+
+### Steps to reproduce: the most important field
+
+Steps to reproduce are the heart of a bug report. Without precise repro steps, the bug is effectively unfixable from any context other than the original session that filed it. **Assume the reader is a future agent (or a future you) opening this file on a different computer, after a session-clear, or weeks later with no memory of the original report.** They need to follow the steps verbatim and trigger the bug — no extra knowledge, no guesswork, no "you know what I mean."
+
+A bug with strong repro is debuggable across context boundaries and across people. A bug with weak repro dies with the session that filed it.
+
+**Good repro steps:**
+
+- **Numbered**, in execution order. Not bullet points, not prose.
+- **URLs / tokens are explicit** — paste the actual `/post/<token>` URL you used, or say "use any trip with at least N photos" when the token doesn't matter. Don't write "the test trip."
+- **Trigger gestures are precise** — "scroll down 200 px," "tap Add Photo, pick the first photo in the picker, hit OK." Not "scroll a bit." Not "do the thing."
+- **State is established up front** — "Open the app from a cold launch" vs. "Already navigated to /trips/X." Different starting states often produce different bugs.
+- **Device / build / browser are recorded** in the Environment section so the reader knows what to match (iPhone 16 Pro vs. Simulator vs. desktop Safari is not the same surface).
+- **The final step produces a single, observable outcome** that matches what "Actual results" describes. If the final step has multiple possible outcomes, split it into more steps.
+
+If the repro requires test data, fixtures, or a particular trip state, drop the fixture into `bugs/assets/<id>-*.json` (or a curl command to re-create it) so the reader doesn't have to guess.
+
+If you can't reliably reproduce the bug yet, file it with `status: needs-clarification` and write what you tried. Don't make up steps that look plausible — those are worse than no steps, because they send the reader down a confidently wrong path.
+
+### Use the traditional bug-report headings
+
+Bodies use the canonical QA / QE bug-report shape: **Bug**, **Steps to reproduce**, **Expected results**, **Actual results**, **Environment**, **Screenshots / video**, **Notes for Claude**. The template has them in that order. Use those headings when they apply — they're standard for a reason and they make bugs trivially scannable by anyone (human or agent) who's read a bug report before. The "Notes for Claude" trailing section is the only deviation; it's where fix-surface pointers, related code links, and design-question flags live.
 
 ## Bug lifecycle
 

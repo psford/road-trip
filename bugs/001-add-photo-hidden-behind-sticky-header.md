@@ -11,18 +11,18 @@ regression-from: PR #89 (sticky-pin fix). Before #89 the sticky header pinned at
 regression-test: tests/playwright-layout/sticky-header-doesnt-cover-controls.spec.js   # not yet written
 ---
 
-## Summary
+## Bug
 
 On the iOS app's post page, after scrolling the photo list, the sticky page header (Back / [trip name]) covers the "Add Photo" button — making it unreachable until the user scrolls all the way back to the top. The Add Photo button needs to remain accessible regardless of scroll position, since "add a photo" is the primary action of this page.
 
-## Repro steps
+## Steps to reproduce
 
 1. Open the iOS app on an iPhone with a notch / Dynamic Island (verified iPhone 16 Pro).
 2. Navigate to a trip with at least one existing photo (e.g., the "Test" trip — `/post/<secretToken>`).
 3. Scroll down enough that the existing photo list / map fills the viewport (so the sticky header has actually engaged).
 4. Try to tap "Add Photo".
 
-## Expected behavior
+## Expected results
 
 The Add Photo button is reachable in any scroll state. Options for the resolution (pick one as part of the design decision — this can be re-classified as `needs-design` if there's disagreement):
 
@@ -30,7 +30,7 @@ The Add Photo button is reachable in any scroll state. Options for the resolutio
 - (b) Move Add Photo into the header itself (right-aligned next to the trip name, iOS-native compose-icon pattern).
 - (c) Keep Add Photo in the page body but adjust page-header z-index / layout so the body content is never visually overlapped by the pinned header (i.e., add `scroll-padding-top: env(safe-area-inset-top)` or equivalent so scroll position never parks anything under the pinned region).
 
-## Actual behavior
+## Actual results
 
 After scroll, the Add Photo button is occluded by the now-visible sticky header. Tapping where it logically is yields the header's tap handler (Back link, etc.) instead.
 
