@@ -79,65 +79,60 @@ test.describe('iOS shell layout — post page', () => {
     await stubApi(page);
   });
 
-  test('header sits near the viewport top — no phantom gap', async ({ page }) => {
+  test('pinned-stack sits at viewport top — no phantom gap', async ({ page }) => {
     await page.goto('/post/layout-test-token-1');
     await applyIosShell(page);
 
-    const headerTop = await page.evaluate(() => {
-      const h = document.querySelector('.page-header');
-      return h ? h.getBoundingClientRect().top : null;
+    const pinnedStackTop = await page.evaluate(() => {
+      const ps = document.querySelector('.pinned-stack');
+      return ps ? ps.getBoundingClientRect().top : null;
     });
 
-    expect(headerTop, '.page-header element not found').not.toBeNull();
-    // env(safe-area-inset-top) is 0 in Playwright. With our fix the header
-    // should sit very close to viewport top. A gap > 30px means something
-    // (a phantom env(), an empty element above, a stray padding) regressed.
-    expect(headerTop).toBeGreaterThanOrEqual(-1);
-    expect(headerTop).toBeLessThan(30);
+    expect(pinnedStackTop, '.pinned-stack element not found').not.toBeNull();
+    // .pinned-stack is position: fixed with top: 0px, so it must sit exactly
+    // at the viewport top. The pinned-stack contains the page-header inside it,
+    // which is offset by padding-top: env(safe-area-inset-top, 0px).
+    expect(pinnedStackTop).toBe(0);
   });
 
-  test('.page-header is position: sticky with computed top: 0px (env fallback)', async ({ page }) => {
+  test('.pinned-stack is position: fixed with computed top: 0px', async ({ page }) => {
     await page.goto('/post/layout-test-token-2');
     await applyIosShell(page);
 
     const computed = await page.evaluate(() => {
-      const h = document.querySelector('.page-header');
-      const cs = getComputedStyle(h);
+      const ps = document.querySelector('.pinned-stack');
+      const cs = getComputedStyle(ps);
       return { position: cs.position, top: cs.top };
     });
 
-    expect(computed.position).toBe('sticky');
-    // CSS rule is `top: env(safe-area-inset-top, 0px)`. In Playwright (no
-    // notch), env() resolves to the 0px fallback. On a real iPhone, env()
-    // returns the actual safe-area inset (~59px on iPhone 16 Pro). The
-    // structural assertion that env() is REFERENCED lives in
-    // tests/js/ios-safe-area.test.js.
+    expect(computed.position).toBe('fixed');
+    // position: fixed with top: 0px means the pinned-stack is locked to the
+    // viewport top and never scrolls.
     expect(computed.top).toBe('0px');
   });
 
-  test('header remains pinned (rect.top stays at pin point) after scroll', async ({ page }) => {
+  test('pinned-stack remains fixed (rect.top stays at 0) after .scroll-content scroll', async ({ page }) => {
     await page.goto('/post/layout-test-token-3');
     await applyIosShell(page);
 
-    // Force scrollable content so sticky actually has something to stick
-    // against — the photo list is empty in this stub.
+    // Force scrollable content so .scroll-content has something to scroll
+    // — the photo list is empty in this stub.
     await page.evaluate(() => {
       const spacer = document.createElement('div');
       spacer.style.height = '3000px';
       spacer.id = 'layout-test-spacer';
-      document.querySelector('.container').appendChild(spacer);
+      document.querySelector('.scroll-content').appendChild(spacer);
     });
 
-    const beforeTop = await page.evaluate(() => document.querySelector('.page-header').getBoundingClientRect().top);
-    await page.evaluate(() => window.scrollTo(0, 800));
+    const beforeTop = await page.evaluate(() => document.querySelector('.pinned-stack').getBoundingClientRect().top);
+    await page.evaluate(() => document.querySelector('.scroll-content').scrollTo(0, 800));
     await page.waitForTimeout(80);
-    const afterTop = await page.evaluate(() => document.querySelector('.page-header').getBoundingClientRect().top);
+    const afterTop = await page.evaluate(() => document.querySelector('.pinned-stack').getBoundingClientRect().top);
 
-    // Sticky must keep the header in view. rect.top going significantly
-    // negative means the header scrolled away (sticky broken).
-    expect(beforeTop).toBeGreaterThanOrEqual(-1);
-    expect(afterTop).toBeGreaterThanOrEqual(-1);
-    expect(afterTop).toBeLessThan(30); // pinned near top, not below it
+    // .pinned-stack is position: fixed, so rect.top must always be 0 regardless
+    // of .scroll-content's scroll position.
+    expect(beforeTop).toBe(0);
+    expect(afterTop).toBe(0);
   });
 
   test('PostUI.init replaces #fileInput with a freshly-created element (WKWebView workaround)', async ({ page }) => {
@@ -171,6 +166,127 @@ test.describe('iOS shell layout — post page', () => {
     expect(tagged.type).toBe('file');
     expect(tagged.id).toBe('fileInput');
   });
+
+  test('body has overflow: hidden on post page', async ({ page }) => {
+    await page.goto('/post/layout-test-token-overflow');
+    await applyIosShell(page);
+    const overflow = await page.evaluate(() => getComputedStyle(document.body).overflow);
+    expect(overflow).toBe('hidden');
+  });
+
+  test('Add Photo button reachable after 800px scroll of .scroll-content', async ({ page }) => {
+    await page.goto('/post/layout-test-token-reach');
+    await applyIosShell(page);
+    await page.evaluate(() => {
+      const spacer = document.createElement('div');
+      spacer.style.height = '3000px';
+      document.querySelector('.scroll-content').appendChild(spacer);
+    });
+    await page.evaluate(() => {
+      document.querySelector('.scroll-content').scrollTo({ top: 800 });
+    });
+    await page.waitForTimeout(80);
+    // Verify button is visible and within viewport bounds after scroll.
+    // Since .pinned-stack is fixed (position: fixed, top: 0), it stays
+    // at viewport top regardless of .scroll-content scroll position.
+    const buttonVisible = await page.evaluate(() => {
+      const btn = document.getElementById('addPhotoButton');
+      if (!btn) return false;
+      const r = btn.getBoundingClientRect();
+      // Button must be within viewport bounds (y between 0 and viewport height)
+      return r.top >= 0 && r.bottom <= window.innerHeight && r.left >= 0 && r.right <= window.innerWidth;
+    });
+    expect(buttonVisible).toBe(true);
+  });
+
+  test('--pinned-stack-height is set to a px value on load', async ({ page }) => {
+    await page.goto('/post/layout-test-token-var');
+    await applyIosShell(page);
+    await page.waitForFunction(() => {
+      const v = document.documentElement.style.getPropertyValue('--pinned-stack-height');
+      return /^\d+px$/.test(v);
+    }, null, { timeout: 5000 });
+  });
+
+  test('.scroll-content padding-top equals --pinned-stack-height', async ({ page }) => {
+    await page.goto('/post/layout-test-token-padding');
+    await applyIosShell(page);
+    await page.waitForFunction(() => /^\d+px$/.test(document.documentElement.style.getPropertyValue('--pinned-stack-height')));
+    const equal = await page.evaluate(() => {
+      const v = document.documentElement.style.getPropertyValue('--pinned-stack-height');
+      const pt = getComputedStyle(document.querySelector('.scroll-content')).paddingTop;
+      return v === pt;
+    });
+    expect(equal).toBe(true);
+  });
+
+  test('.scroll-content mask-image is a linear-gradient referencing pinned-stack-height', async ({ page }) => {
+    await page.goto('/post/layout-test-token-mask');
+    await applyIosShell(page);
+    await page.waitForFunction(() => /^\d+px$/.test(document.documentElement.style.getPropertyValue('--pinned-stack-height')));
+    const mask = await page.evaluate(() => {
+      const cs = getComputedStyle(document.querySelector('.scroll-content'));
+      return cs.maskImage || cs.webkitMaskImage;
+    });
+    expect(mask).toMatch(/linear-gradient/);
+    // Browser resolves var() before exposing computed style — assert the
+    // resolved px value (matching --pinned-stack-height) appears in the gradient.
+    const resolved = await page.evaluate(() => document.documentElement.style.getPropertyValue('--pinned-stack-height'));
+    expect(mask).toContain(resolved);
+  });
+
+  test('banner containers and errorMessage live inside .scroll-content (not .pinned-stack)', async ({ page }) => {
+    await page.goto('/post/layout-test-token-banners');
+    await applyIosShell(page);
+    const placements = await page.evaluate(() => {
+      const ids = ['resumeBannerContainer', 'progressPanelContainer', 'errorMessage'];
+      return ids.map((id) => {
+        const el = document.getElementById(id);
+        return {
+          id,
+          inScroll: !!(el && el.closest('.scroll-content')),
+          inPinned: !!(el && el.closest('.pinned-stack')),
+        };
+      });
+    });
+    for (const p of placements) {
+      expect(p.inScroll, `${p.id} should be in .scroll-content`).toBe(true);
+      expect(p.inPinned, `${p.id} should NOT be in .pinned-stack`).toBe(false);
+    }
+  });
+
+  test('--pinned-stack-height updates when pinned-stack height changes', async ({ page }) => {
+    await page.goto('/post/layout-test-token-resize');
+    await applyIosShell(page);
+    await page.waitForFunction(() => /^\d+px$/.test(document.documentElement.style.getPropertyValue('--pinned-stack-height')));
+    const before = await page.evaluate(() => document.documentElement.style.getPropertyValue('--pinned-stack-height'));
+    await page.evaluate(() => {
+      const tn = document.getElementById('tripName');
+      if (tn) tn.textContent = 'A much longer trip name that wraps to multiple lines so the header definitely grows in rendered height';
+    });
+    // Two animation frames is enough for ResizeObserver to fire and the
+    // style write to land.
+    await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+    const after = await page.evaluate(() => document.documentElement.style.getPropertyValue('--pinned-stack-height'));
+    expect(after).not.toBe(before);
+  });
+
+  test('--pinned-stack-height is unchanged when a banner mounts in .scroll-content', async ({ page }) => {
+    await page.goto('/post/layout-test-token-banner-mount');
+    await applyIosShell(page);
+    await page.waitForFunction(() => /^\d+px$/.test(document.documentElement.style.getPropertyValue('--pinned-stack-height')));
+    const before = await page.evaluate(() => document.documentElement.style.getPropertyValue('--pinned-stack-height'));
+    await page.evaluate(() => {
+      const banner = document.createElement('div');
+      banner.id = 'fakeResumeBanner';
+      banner.style.height = '120px';
+      banner.style.background = 'red';
+      document.getElementById('resumeBannerContainer').appendChild(banner);
+    });
+    await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+    const after = await page.evaluate(() => document.documentElement.style.getPropertyValue('--pinned-stack-height'));
+    expect(after).toBe(before);
+  });
 });
 
 test.describe('iOS shell layout — create page', () => {
@@ -178,17 +294,67 @@ test.describe('iOS shell layout — create page', () => {
     await stubApi(page);
   });
 
-  test('create page header sits near viewport top (no phantom gap)', async ({ page }) => {
+  test('create page pinned-stack sits at viewport top (no phantom gap)', async ({ page }) => {
     await page.goto('/create');
     await applyIosShell(page);
 
-    const headerTop = await page.evaluate(() => {
-      const h = document.querySelector('.page-header');
-      return h ? h.getBoundingClientRect().top : null;
+    const pinnedStackTop = await page.evaluate(() => {
+      const ps = document.querySelector('.pinned-stack');
+      return ps ? ps.getBoundingClientRect().top : null;
     });
 
-    expect(headerTop, '.page-header element not found on create.html').not.toBeNull();
-    expect(headerTop).toBeGreaterThanOrEqual(-1);
-    expect(headerTop).toBeLessThan(30);
+    expect(pinnedStackTop, '.pinned-stack element not found on create.html').not.toBeNull();
+    expect(pinnedStackTop).toBe(0);
+  });
+
+  test('body has overflow: hidden on create page', async ({ page }) => {
+    await page.goto('/create');
+    await applyIosShell(page);
+    const overflow = await page.evaluate(() => getComputedStyle(document.body).overflow);
+    expect(overflow).toBe('hidden');
+  });
+});
+
+test.describe('scroll-fade — plain browser (no platform-ios)', () => {
+  test.beforeEach(async ({ page }) => {
+    await stubApi(page);
+  });
+
+  test('AC2.2: .pinned-stack uses light --color-bg in light scheme (no platform-ios)', async ({ page }) => {
+    await page.emulateMedia({ colorScheme: 'light' });
+    await page.goto('/post/layout-test-token-plain-light');
+    // Do NOT call applyIosShell — we want the plain-browser path.
+    const bg = await page.evaluate(() => getComputedStyle(document.querySelector('.pinned-stack')).backgroundColor);
+    expect(bg).toBe('rgb(250, 249, 247)'); // light --color-bg from styles.css:13
+  });
+
+  test('AC2.1: .pinned-stack uses dark --color-bg in dark scheme (no platform-ios)', async ({ page }) => {
+    await page.emulateMedia({ colorScheme: 'dark' });
+    await page.goto('/post/layout-test-token-plain-dark');
+    // Do NOT call applyIosShell — we want the plain-browser path.
+    const bg = await page.evaluate(() => getComputedStyle(document.querySelector('.pinned-stack')).backgroundColor);
+    expect(bg).toBe('rgb(0, 0, 0)'); // dark --color-bg override from styles.css:82
+  });
+});
+
+test.describe('scroll-fade — iOS chrome (.platform-ios)', () => {
+  test.beforeEach(async ({ page }) => {
+    await stubApi(page);
+  });
+
+  test('AC5 (iOS chrome): .platform-ios .pinned-stack uses --material-bg-light in light scheme', async ({ page }) => {
+    await page.emulateMedia({ colorScheme: 'light' });
+    await page.goto('/post/layout-test-token-ios-light');
+    await applyIosShell(page);
+    const bg = await page.evaluate(() => getComputedStyle(document.querySelector('.pinned-stack')).backgroundColor);
+    expect(bg).toBe('rgba(255, 255, 255, 0.72)'); // --material-bg-light from styles.css:61
+  });
+
+  test('AC5 (iOS chrome): .platform-ios .pinned-stack uses --material-bg-dark in dark scheme', async ({ page }) => {
+    await page.emulateMedia({ colorScheme: 'dark' });
+    await page.goto('/post/layout-test-token-ios-dark');
+    await applyIosShell(page);
+    const bg = await page.evaluate(() => getComputedStyle(document.querySelector('.pinned-stack')).backgroundColor);
+    expect(bg).toBe('rgba(28, 28, 30, 0.72)'); // --material-bg-dark from styles.css:62
   });
 });

@@ -156,15 +156,19 @@ describe('iOS HIG Compliance (static file assertions)', () => {
 
       const phase7Section = content.substring(phase7StartIndex);
 
-      // Extract all lines that start with . (selector lines, skipping comments and properties)
-      const selectorLines = phase7Section
+      // Strip out multi-line comment blocks before parsing selectors
+      const withoutComments = phase7Section
+        .replace(/\/\*[\s\S]*?\*\//g, ''); // Remove /* ... */ blocks
+
+      // Extract all lines that start with . (selector lines)
+      const selectorLines = withoutComments
         .split('\n')
         .filter((line) => line.trim().startsWith('.'));
 
       // Each selector line should start with .platform-ios
       selectorLines.forEach((line) => {
         const trimmed = line.trim();
-        if (trimmed && !trimmed.startsWith('/*')) {
+        if (trimmed) {
           expect(trimmed).toMatch(/^\.platform-ios/);
         }
       });

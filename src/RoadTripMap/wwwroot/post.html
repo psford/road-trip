@@ -10,94 +10,109 @@
     <script src="/js/roadTrip.js"></script>
     <script src="/js/offlineError.js"></script>
     <script src="/js/nativeBridge.js"></script>
+    <script src="/js/pinnedStack.js"></script>
     <title>Post Photo - Road Trip Map</title>
     <link rel="stylesheet" href="/css/styles.css?v=4">
     <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.21.0/dist/maplibre-gl.css"
         integrity="sha256-dhoRMPCWDqNp2RfshD99GvXKHc8ncBrvHZ1Zghs7qyU=" crossorigin="anonymous">
 </head>
 <body data-page="post">
-    <div class="container">
-        <!-- Header with trip name -->
-        <div class="page-header">
-            <nav class="nav">
-                <a href="/">← Back</a>
-            </nav>
-            <h1 id="tripName">Loading...</h1>
-            <p id="tripDescription"></p>
-        </div>
-
-        <!-- Error message -->
-        <div id="errorMessage" class="message error hidden"></div>
-
-        <!-- Resume Banner (paused uploads notification) -->
-        <div id="resumeBannerContainer"></div>
-
-        <!-- Progress Panel (upload progress and actions) -->
-        <div id="progressPanelContainer"></div>
-
-        <!-- Add Photo Button -->
-        <button id="addPhotoButton" class="button button-primary add-photo-button">
-            📷 Add Photo
-        </button>
-        <input type="file" id="fileInput" accept="image/*" multiple>
-
-        <!-- Photo Preview Section (hidden until photo selected) -->
-        <div id="previewSection" class="card preview-section">
-            <img id="photoThumbnail" class="photo-thumbnail" alt="Photo preview">
-
-            <!-- Place Name Display -->
-            <div id="placeNameDisplay" class="place-name-display"></div>
-
-            <!-- Pin-drop Map (shown when no GPS) -->
-            <div id="mapSection" class="map-section">
-                <p class="map-instruction">Tap the map to set your photo location</p>
-                <div id="pinDropMap"></div>
+    <div class="pinned-stack">
+        <div class="container">
+            <!-- Header with trip name -->
+            <div class="page-header">
+                <nav class="nav">
+                    <a href="/">← Back</a>
+                </nav>
+                <h1 id="tripName">Loading...</h1>
+                <p id="tripDescription"></p>
             </div>
 
-            <!-- Caption Input -->
-            <input type="text" id="captionInput" class="caption-input"
-                placeholder="Add a caption (optional)"
-                autocorrect="on" autocapitalize="sentences">
-
-            <!-- Post Button Group -->
-            <div class="post-button-group">
-                <button id="cancelButton" class="button button-secondary">Cancel</button>
-                <button id="postButton" class="button button-primary">Post Photo</button>
-            </div>
-        </div>
-
-        <!-- Photo Map -->
-        <div id="photoMapSection" class="photo-map-section">
-            <h3>Map</h3>
-            <div id="photoMap" class="post-photo-map"></div>
-            <div class="map-toggle-row" style="display:flex;gap:8px;margin-top:var(--space-sm);">
-                <button id="routeToggle" class="button button-secondary" style="display:none;flex:1;">Show Route</button>
-                <button id="poiToggle" class="button button-secondary" style="flex:1;">Hide POIs</button>
-            </div>
-        </div>
-
-        <!-- Posted Photos List -->
-        <div id="photoList" class="photo-list">
-            <h3>Photos</h3>
-            <div id="photoCarousel"></div>
-        </div>
-
-        <!-- Share View Link -->
-        <div id="viewLinkSection" class="card view-link-section" style="display:none;">
-            <h3>Share This Trip</h3>
-            <p>Send this link to anyone who should see the map:</p>
-            <div class="result-value">
-                <span id="viewUrlValue"></span>
-                <button class="button button-secondary copy-button" id="copyViewLink">Copy</button>
-            </div>
-        </div>
-
-        <div id="homescreenLink" class="homescreen-link" style="display:none;">
-            <a href="#" id="homescreenLinkBtn">Save to Home Screen</a>
+            <!-- Add Photo Button -->
+            <button id="addPhotoButton" class="button button-primary add-photo-button">
+                📷 Add Photo
+            </button>
         </div>
     </div>
 
-    <!-- Toast notification area -->
+    <main class="scroll-content">
+        <div class="container">
+            <!-- Error message -->
+            <div id="errorMessage" class="message error hidden"></div>
+
+            <!-- Resume Banner (paused uploads notification) -->
+            <div id="resumeBannerContainer"></div>
+
+            <!-- Progress Panel (upload progress and actions) -->
+            <div id="progressPanelContainer"></div>
+
+            <!-- File input stays in the scroll-content's .container.
+                 postUI.js triggers it via document.getElementById (no
+                 sibling/ancestor assumption — verified by codebase
+                 investigator) and calls parentNode.replaceChild on it,
+                 which requires only a writable parent. .container is
+                 writable. -->
+            <input type="file" id="fileInput" accept="image/*" multiple>
+
+            <!-- Photo Preview Section (hidden until photo selected) -->
+            <div id="previewSection" class="card preview-section">
+                <img id="photoThumbnail" class="photo-thumbnail" alt="Photo preview">
+
+                <!-- Place Name Display -->
+                <div id="placeNameDisplay" class="place-name-display"></div>
+
+                <!-- Pin-drop Map (shown when no GPS) -->
+                <div id="mapSection" class="map-section">
+                    <p class="map-instruction">Tap the map to set your photo location</p>
+                    <div id="pinDropMap"></div>
+                </div>
+
+                <!-- Caption Input -->
+                <input type="text" id="captionInput" class="caption-input"
+                    placeholder="Add a caption (optional)"
+                    autocorrect="on" autocapitalize="sentences">
+
+                <!-- Post Button Group -->
+                <div class="post-button-group">
+                    <button id="cancelButton" class="button button-secondary">Cancel</button>
+                    <button id="postButton" class="button button-primary">Post Photo</button>
+                </div>
+            </div>
+
+            <!-- Photo Map -->
+            <div id="photoMapSection" class="photo-map-section">
+                <h3>Map</h3>
+                <div id="photoMap" class="post-photo-map"></div>
+                <div class="map-toggle-row" style="display:flex;gap:8px;margin-top:var(--space-sm);">
+                    <button id="routeToggle" class="button button-secondary" style="display:none;flex:1;">Show Route</button>
+                    <button id="poiToggle" class="button button-secondary" style="flex:1;">Hide POIs</button>
+                </div>
+            </div>
+
+            <!-- Posted Photos List -->
+            <div id="photoList" class="photo-list">
+                <h3>Photos</h3>
+                <div id="photoCarousel"></div>
+            </div>
+
+            <!-- Share View Link -->
+            <div id="viewLinkSection" class="card view-link-section" style="display:none;">
+                <h3>Share This Trip</h3>
+                <p>Send this link to anyone who should see the map:</p>
+                <div class="result-value">
+                    <span id="viewUrlValue"></span>
+                    <button class="button button-secondary copy-button" id="copyViewLink">Copy</button>
+                </div>
+            </div>
+
+            <div id="homescreenLink" class="homescreen-link" style="display:none;">
+                <a href="#" id="homescreenLinkBtn">Save to Home Screen</a>
+            </div>
+        </div>
+    </main>
+
+    <!-- Toast notification area stays body-attached so it escapes the
+         scroll container (toasts are position: fixed). Unchanged. -->
     <div id="toastContainer" class="toast-container"></div>
 
     <!-- Scripts -->

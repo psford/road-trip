@@ -105,6 +105,67 @@ body {
   padding: var(--space-sm);
 }
 
+/* Scroll-fade pattern — body is the locked viewport, .scroll-content scrolls.
+   The `100svh` (small viewport height) fallback handles iOS 15.4+ address-bar
+   dynamic-viewport changes; WKWebView doesn't reliably update
+   window.innerHeight when the address bar collapses. Padding is reset to 0
+   because the .scroll-content child is position: absolute; inset: 0 — body
+   padding would be invisible but creates space the layout doesn't expect.
+   The body-padding default for other pages comes from styles.css:104-106. */
+body[data-page="post"],
+body[data-page="create"] {
+  overflow: hidden;
+  height: 100vh;
+  height: 100svh;
+  margin: 0;
+  padding: 0;
+}
+
+/* Scroll-fade pattern — pinned stack (fixed front layer) and scrollable
+   content (back layer). PinnedStack JS publishes --pinned-stack-height on
+   :root; both the scroll-content padding and the mask anchor read from it.
+   120px fallback covers the brief window before first measurement lands. */
+.pinned-stack {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1001;
+  background-color: var(--color-bg);
+  /* iOS 26 WebKit Bug #297779 — fixed elements can jitter on scroll-direction
+     change. will-change: transform promotes to a GPU compositing layer. */
+  will-change: transform;
+}
+
+.scroll-content {
+  position: absolute;
+  inset: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding-top: var(--pinned-stack-height, 120px);
+  /* Fade content to fully transparent before it reaches the pinned-stack's
+     bottom edge. 8px feather zone produces the soft transition. Because the
+     masked region is fully transparent (not just opacity-reduced), no
+     backdrop-filter is needed on .pinned-stack — there is nothing visible
+     behind the solid background to blur. */
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    transparent calc(var(--pinned-stack-height, 120px) - 8px),
+    black var(--pinned-stack-height, 120px),
+    black 100%
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    transparent calc(var(--pinned-stack-height, 120px) - 8px),
+    black var(--pinned-stack-height, 120px),
+    black 100%
+  );
+  /* GPU hint — the mask is GPU-composited on both Blink and WebKit. */
+  will-change: mask-image;
+}
+
 /* Typography */
 h1 {
   font-size: 2rem;
