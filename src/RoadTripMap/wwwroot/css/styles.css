@@ -105,6 +105,22 @@ body {
   padding: var(--space-sm);
 }
 
+/* Scroll-fade pattern — body is the locked viewport, .scroll-content scrolls.
+   The `100svh` (small viewport height) fallback handles iOS 15.4+ address-bar
+   dynamic-viewport changes; WKWebView doesn't reliably update
+   window.innerHeight when the address bar collapses. Padding is reset to 0
+   because the .scroll-content child is position: absolute; inset: 0 — body
+   padding would be invisible but creates space the layout doesn't expect.
+   The body-padding default for other pages comes from styles.css:104-106. */
+body[data-page="post"],
+body[data-page="create"] {
+  overflow: hidden;
+  height: 100vh;
+  height: 100svh;
+  margin: 0;
+  padding: 0;
+}
+
 /* Typography */
 h1 {
   font-size: 2rem;
