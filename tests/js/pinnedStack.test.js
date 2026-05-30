@@ -7,6 +7,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const SOURCE = fs.readFileSync(path.resolve(__dirname, '../../src/RoadTripMap/wwwroot/js/pinnedStack.js'), 'utf8');
 
+// pinnedStack.js uses native `globalThis.PinnedStack ??= {}` so we can eval
+// the raw source without setup.js's loadGlobal const→globalThis transform.
 beforeEach(() => {
     // Reset globalThis.PinnedStack completely - delete it so eval can reinstall fresh
     delete globalThis.PinnedStack;
@@ -18,11 +20,11 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-    delete globalThis.PinnedStack;
-    // Clean up any observers
+    // Clean up any observers BEFORE deleting the global
     if (globalThis.PinnedStack && globalThis.PinnedStack._ro) {
         globalThis.PinnedStack._ro.disconnect();
     }
+    delete globalThis.PinnedStack;
 });
 
 describe('PinnedStack', () => {

@@ -335,6 +335,12 @@ test.describe('scroll-fade — plain browser (no platform-ios)', () => {
     const bg = await page.evaluate(() => getComputedStyle(document.querySelector('.pinned-stack')).backgroundColor);
     expect(bg).toBe('rgb(0, 0, 0)'); // dark --color-bg override from styles.css:82
   });
+});
+
+test.describe('scroll-fade — iOS chrome (.platform-ios)', () => {
+  test.beforeEach(async ({ page }) => {
+    await stubApi(page);
+  });
 
   test('AC5 (iOS chrome): .platform-ios .pinned-stack uses --material-bg-light in light scheme', async ({ page }) => {
     await page.emulateMedia({ colorScheme: 'light' });
