@@ -25,9 +25,26 @@ globalThis.PinnedStack ??= {};
     if (P._installed) return;
     P._installed = true;
 
-    // Stub for now; replaced by Task 2
     P.install = function install() {
-        /* Task 2 */
+        // Short-circuit on missing element (AC1.6)
+        const el = document.querySelector('.pinned-stack');
+        if (!el) return;
+
+        // Writes initial height synchronously before first paint
+        const writeHeight = function () {
+            const h = Math.round(el.getBoundingClientRect().height);
+            document.documentElement.style.setProperty('--pinned-stack-height', h + 'px');
+        };
+        writeHeight();
+
+        // Attaches ResizeObserver once (AC4.6 — P._ro is owned by the module and not recreated)
+        if (P._ro) {
+            P._ro.disconnect();
+            P._ro.observe(el);
+            return;
+        }
+        P._ro = new ResizeObserver(function () { writeHeight(); });
+        P._ro.observe(el);
     };
 
     // Register with RoadTrip.onPageLoad if available
