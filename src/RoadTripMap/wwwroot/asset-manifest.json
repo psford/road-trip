@@ -1,10 +1,10 @@
 {
-  "version": "1.0.0-29d787d",
+  "version": "1.0.0-47511f3",
   "files": [
     {
       "url": "/css/styles.css",
-      "size": 35929,
-      "sha256": "56b95ea010cf5389b652028d5de1d2c5328a4018277a395c1a341b097d5f535a"
+      "size": 38209,
+      "sha256": "a32274f8a41b8d884ab85c655a1e5db6ef64e1fb3396a6e1584d562db1766ae7"
     },
     {
       "url": "/js/api.js",
@@ -148,8 +148,8 @@
     },
     {
       "url": "/ios.css",
-      "size": 16039,
-      "sha256": "d98837fbf8bd84d3ebe7e3f3d6d73d91bbd71f962a50c5cdc5731b58453d5f96"
+      "size": 16282,
+      "sha256": "a7672f8481cdf5badd33808d43ae311da2b54391f26dd26e72688ff6bf0029bb"
     }
   ]
 }
