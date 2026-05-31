@@ -340,12 +340,12 @@ app.MapGet("/api/trips/view/{viewToken}/photos", async (string viewToken, RoadTr
     if (trip == null)
         return Results.NotFound(new { error = "Trip not found" });
 
-    // Order by EXIF capture time when available, falling back to upload time, so the
-    // route line connects photos in chronological order even when DateTimeOriginal is
-    // missing (camera capture). Mirrors PhotoReadService.GetPhotosForTripAsync.
+    // Query photos ordered by TakenAt ascending (chronological for route line)
+    // Nulls sort last: OrderBy(p => p.TakenAt == null) returns false (0) for non-null, true (1) for null
     var photos = await db.Photos
         .Where(p => p.TripId == trip.Id)
-        .OrderBy(p => p.TakenAt ?? p.CreatedAt)
+        .OrderBy(p => p.TakenAt == null)
+        .ThenBy(p => p.TakenAt)
         .Select(p => new PhotoResponse
         {
             Id = p.Id,

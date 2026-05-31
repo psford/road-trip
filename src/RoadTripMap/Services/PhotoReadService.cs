@@ -33,13 +33,12 @@ public class PhotoReadService : IPhotoReadService
         if (trip == null)
             throw new KeyNotFoundException($"Trip not found");
 
-        // Order by EXIF capture time when available, falling back to upload time.
-        // Real-time browser camera captures lack DateTimeOriginal, so a pure TakenAt
-        // sort with nulls-last banishes the earliest-posted photos to the end of the
-        // carousel even when their upload timestamps clearly precede later library uploads.
+        // Query photos with "committed" status, ordered by TakenAt (chronological)
+        // Nulls sort last: OrderBy(p => p.TakenAt == null) returns false (0) for non-null, true (1) for null
         var photos = await _db.Photos
             .Where(p => p.TripId == trip.Id && p.Status == "committed")
-            .OrderBy(p => p.TakenAt ?? p.CreatedAt)
+            .OrderBy(p => p.TakenAt == null)
+            .ThenBy(p => p.TakenAt)
             .ToListAsync(ct);
 
         // Transform to PhotoResponse, using storage tier to determine URL scheme

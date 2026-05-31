@@ -81,26 +81,27 @@ describe('iOS Safe Area (static file assertions)', () => {
       });
     });
 
-    it('.platform-ios .pinned-stack uses padding-top: env(safe-area-inset-top)', () => {
-      // Scroll-fade Task 8 (2026-05-30): Position sticky moved from .page-header to
-      // .pinned-stack, which uses fixed positioning (Task 9 HTML restructure). The
-      // pinned-stack carries the safe-area padding that was previously on the sticky
-      // pin point. env(safe-area-inset-top) ensures the header sits below the status
-      // bar / Dynamic Island on notched devices, and falls back to 0 on devices without
-      // a notch.
+    it('.platform-ios .page-header sticky pin uses top: env(safe-area-inset-top), not top: 0', () => {
+      // Regression guard (2026-05-14): With Capacitor's contentInset: "always",
+      // position: sticky's pin point is the unshifted scroll-view edge (device
+      // y=0, behind the status bar) — NOT the inset-adjusted top. Pinning at
+      // top: 0 makes the status bar icons overlap the header when scrolled.
+      // Use top: env(safe-area-inset-top) so the pinned header sits just below
+      // the Dynamic Island / notch. Fallback to 0 on devices without a notch.
       const ruleMatch = content.match(
-        /\.platform-ios \.pinned-stack\s*\{[^}]*?padding-top:\s*env\(safe-area-inset-top[^}]*\}/s
+        /\.platform-ios \.page-header\s*\{[^}]*?position:\s*sticky[^}]*\}/s
       );
-      expect(ruleMatch, '.platform-ios .pinned-stack rule with padding-top: env(safe-area-inset-top) not found').not.toBeNull();
-      expect(ruleMatch[0]).toMatch(/padding-top:\s*env\(safe-area-inset-top/);
+      expect(ruleMatch, 'sticky .platform-ios .page-header rule not found').not.toBeNull();
+      expect(ruleMatch[0]).toMatch(/top:\s*env\(safe-area-inset-top/);
+      expect(ruleMatch[0]).not.toMatch(/top:\s*0\s*;/);
     });
 
-    it('ios.css contains at least 6 env(safe-area-inset-top) declarations (3 top-inset + 1 modal + 1 pinned-stack + 1 resume-banner)', () => {
-      // Scroll-fade Task 8: .pinned-stack now carries env(safe-area-inset-top) on
-      // padding-top. With 3 top-inset rules + 1 modal + 1 pinned-stack + 1 resume-banner,
-      // the floor is at least 6.
+    it('ios.css contains at least 5 env(safe-area-inset-top) declarations (3 top-inset + 1 modal + 1 page-header pin)', () => {
+      // .page-header padding-top was removed from the top-inset list, but a new
+      // env() use was added to its `top` (sticky pin point). Net: floor stays
+      // at 5 — 3 top-inset rules + 1 modal + 1 page-header sticky pin.
       const matches = content.match(/env\(safe-area-inset-top\)/g) || [];
-      expect(matches.length).toBeGreaterThanOrEqual(6);
+      expect(matches.length).toBeGreaterThanOrEqual(5);
     });
   });
 
@@ -186,12 +187,8 @@ describe('iOS Safe Area (static file assertions)', () => {
 
       const phase6Section = content.substring(phase6StartIndex);
 
-      // Strip out multi-line comment blocks before parsing selectors
-      const withoutComments = phase6Section
-        .replace(/\/\*[\s\S]*?\*\//g, ''); // Remove /* ... */ blocks
-
       // Extract all lines that start with . (selector lines)
-      const selectorLines = withoutComments
+      const selectorLines = phase6Section
         .split('\n')
         .filter((line) => line.trim().startsWith('.'));
 

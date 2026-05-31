@@ -1,10 +1,10 @@
 {
-  "version": "1.0.0-60be9be",
+  "version": "1.0.0-3ac7b10",
   "files": [
     {
       "url": "/css/styles.css",
-      "size": 38209,
-      "sha256": "a32274f8a41b8d884ab85c655a1e5db6ef64e1fb3396a6e1584d562db1766ae7"
+      "size": 35929,
+      "sha256": "56b95ea010cf5389b652028d5de1d2c5328a4018277a395c1a341b097d5f535a"
     },
     {
       "url": "/js/api.js",
@@ -67,11 +67,6 @@
       "sha256": "7c8c0a1fd245ea5ce2aaf1ebadbb8b76baf7b50fbc6c1de24af7f23374670cef"
     },
     {
-      "url": "/js/pinnedStack.js",
-      "size": 1878,
-      "sha256": "36cfc0b146adb518a8f8ae135fd884e4dfe78f7e0b88747c01b62e4c571671d2"
-    },
-    {
       "url": "/js/poiLayer.js",
       "size": 9020,
       "sha256": "609c71ea733c4171dbb23503cfa5deae34a5c69eef3325e4a8c5ac5c45a848ed"
@@ -83,8 +78,8 @@
     },
     {
       "url": "/js/postUI.js",
-      "size": 54488,
-      "sha256": "09872ad09854dc480ba8358bef71e5a6727398115f2864e9d8e0b7ea2d228d34"
+      "size": 53158,
+      "sha256": "02bdc3fb979cd62677697d2d4572d9f49c2eb3b42bbc63b0b0e5743ed638f688"
     },
     {
       "url": "/js/progressPanel.js",
@@ -148,8 +143,8 @@
     },
     {
       "url": "/ios.css",
-      "size": 16282,
-      "sha256": "a7672f8481cdf5badd33808d43ae311da2b54391f26dd26e72688ff6bf0029bb"
+      "size": 14681,
+      "sha256": "d8a9afda6774186f9b01737f9e3c777c78e5e42aaa349116cd03a8e56f4e627e"
     }
   ]
 }

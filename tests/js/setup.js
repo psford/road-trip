@@ -75,20 +75,10 @@ beforeAll(() => {
         return import(specifier);
     };
 
-    // jsdom does not ship ResizeObserver. PinnedStack constructs one on install.
-    if (!globalThis.ResizeObserver) {
-        globalThis.ResizeObserver = class {
-            observe() {}
-            unobserve() {}
-            disconnect() {}
-        };
-    }
-
     // Load modules
     loadGlobal('roadTrip.js');
     loadGlobal('nativeBridge.js');
     loadGlobal('offlineError.js');
-    loadGlobal('pinnedStack.js');
     loadGlobal('featureFlags.js');
     loadGlobal('api.js');
     loadGlobal('mapCache.js');

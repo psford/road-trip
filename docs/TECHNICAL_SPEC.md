@@ -295,7 +295,7 @@ Returns `TripResponse` (`name`, `description`, `photoCount`, `createdAt`). No au
 
 #### GET /api/trips/view/{viewToken}/photos — Get Trip Photos (public)
 
-Returns array of `PhotoResponse` ordered by `COALESCE(TakenAt, CreatedAt)` ascending (EXIF capture time when available; falls back to upload time so real-time captures missing `DateTimeOriginal` still sort by upload chronology). No auth required.
+Returns array of `PhotoResponse` ordered by `TakenAt` ascending. No auth required.
 
 #### DELETE /api/trips/{secretToken} — Delete Trip (cascade)
 
@@ -527,7 +527,7 @@ SkiaSharp-based image pipeline: decode → EXIF-rotate → re-encode three tiers
 
 ### 8.3 IPhotoReadService & PhotoReadService
 
-Dual-read abstraction for the photo list endpoint. Queries `Photos` filtered by `Status="committed"`, ordered by `COALESCE(TakenAt, CreatedAt)` ascending so photos with no EXIF capture time still fall into upload chronology. For `StorageTier="per-trip"` photos the blob lives in `trip-{secretToken}/<uploadId>_*.jpg`; for `StorageTier="legacy"` it lives in `road-trip-photos/{tripId}/{photoId}.jpg`. Callers do not need to know which tier.
+Dual-read abstraction for the photo list endpoint. Queries `Photos` filtered by `Status="committed"`, ordered by `TakenAt`. For `StorageTier="per-trip"` photos the blob lives in `trip-{secretToken}/<uploadId>_*.jpg`; for `StorageTier="legacy"` it lives in `road-trip-photos/{tripId}/{photoId}.jpg`. Callers do not need to know which tier.
 
 ### 8.4 ISasTokenIssuer
 

@@ -161,57 +161,51 @@
   }
 }
 
-/* Scroll-fade pattern — visual chrome that previously sat on the sticky
-   .page-header (deleted above) now lives on .pinned-stack. The pinned-stack
-   IS the fixed front layer; .page-header is just one of its children.
-   padding-top uses env(safe-area-inset-top) so the header sits below the
-   status bar / Dynamic Island on notched devices. capacitor.config.js
-   ios.contentInset: "automatic" handles initial scroll-position; this rule
-   handles the static padding of the fixed top chrome.
-   --material-bg-light + backdrop-filter preserves the frosted-glass iOS
-   look (Adjustments §6) — the mask in styles.css makes the area UNDER the
-   pinned-stack fully transparent, but on iOS the translucent chrome lets
-   any body background tint through, so the blur stays consistent with
-   prior iOS-shell-polish behavior. */
-.platform-ios .pinned-stack {
-  padding-top: env(safe-area-inset-top, 0px);
+/* Phase 2: post.html chrome (also applies to create.html when Phase 4 lands) */
+.platform-ios .page-header {
+  /* iOS Safari needs the -webkit-sticky prefix to be the FIRST position declaration
+     so the unprefixed `sticky` can override it on engines that support both. Modern
+     iOS supports unprefixed, but the prefix is harmless and defends against any
+     older WebKit version that only honors the prefixed form. */
+  position: -webkit-sticky;
+  position: sticky;
+  /* Pin BELOW the device safe-area, not behind it. `top: 0` would pin at the
+     scroll view's top edge — which is at device y=0 even under Capacitor's
+     `contentInset: "always"` (the WebView's contentInset adjustment shifts the
+     initial render position, but position: sticky's pin point in WebKit is the
+     unshifted scroll-view edge). Using env(safe-area-inset-top) puts the
+     pinned header just below the status bar / Dynamic Island on iPhones with
+     a notch, and at 0 on devices without one. Verified 2026-05-14: with
+     `top: 0` the pinned header was visibly overlapping the status bar
+     (time/battery icons drawing on top of "← Back / [trip name]"). */
+  top: env(safe-area-inset-top, 0px);
+  z-index: 10;
+  /* Keep the negative margin from styles.css (`margin: calc(-1 * var(--space-sm))`)
+     intact — it pulls the header out of the body's padding so it sits flush at
+     viewport edges, full-bleed left/right. The earlier `margin: 0` override here
+     was based on a wrong diagnosis that negative margin broke sticky; the actual
+     cause was a transform on body from the page-in animation, which has since
+     been replaced with opacity-only keyframes. With that gone, sticky engages
+     correctly even with the negative margin, and the iOS-native flush-edge look
+     is restored. */
   background-color: var(--material-bg-light);
   backdrop-filter: var(--material-blur-regular);
   -webkit-backdrop-filter: var(--material-blur-regular);
   border-bottom: 0.5px solid var(--color-separator);
+  /* capacitor.config.js ios.contentInset: "always" already pushes content
+     below the device safe-area at the WebView layer. Adding
+     env(safe-area-inset-top) on top of that double-counts the notch and
+     produces a large empty gap above the sticky header on real hardware
+     (verified iPhone 16 Pro, 2026-05-13). Use design-token space only. */
+  padding-top: var(--space-sm);
+  padding-bottom: var(--space-sm);
 }
 
 @media (prefers-color-scheme: dark) {
-  .platform-ios .pinned-stack {
+  .platform-ios .page-header {
     background-color: var(--material-bg-dark);
   }
 }
-
-/* Make the .page-header transparent INSIDE .platform-ios .pinned-stack so
-   the parent's --material-bg-* + backdrop-filter actually shows through. The
-   base .page-header rule (styles.css:626-636) sets background: var(--color-surface),
-   which is opaque (#ffffff light, #1c1c1e dark) and would otherwise occlude
-   the frosted-glass chrome.
-   On the original sticky design (ios.css:165-208, deleted above) the
-   material chrome lived on .page-header directly, so this transparency
-   override wasn't needed. Now that the chrome lives on the parent, the child
-   must yield. The button stays opaque on purpose — primary actions are
-   solid, not translucent. */
-.platform-ios .pinned-stack .page-header {
-  background: transparent;
-}
-
-/* The .platform-ios .page-header { padding-top: var(--space-xs); } rule at
-   ios.css:106-113 stays. Inside .pinned-stack, the parent already pads
-   env(safe-area-inset-top); the child's var(--space-xs) sits BELOW that
-   safe-area padding (the two stack: safe-area top edge → 8px space → header
-   content). Effective top inset on iPhone 16 Pro ≈ 59px + 8px = 67px.
-   This is intentionally slightly more whitespace than the original sticky
-   design (which deliberately did NOT add safe-area on top of contentInset:
-   "always"); the new pattern uses contentInset: "automatic" so safe-area
-   needs to be carried by the chrome itself. Patrick verifies on-device
-   per AC5.4. If the gap reads as too large, zero the child's padding via
-   `.platform-ios .pinned-stack .page-header { padding-top: 0; }`. */
 
 .platform-ios .page-header h1 {
   font-size: var(--font-size-title-1);
