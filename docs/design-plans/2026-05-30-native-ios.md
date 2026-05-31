@@ -392,10 +392,6 @@ actor RoadTripAPI {
 
 **TestFlight first-build review.** Apple's first build for a new bundle ID typically takes 24–48h for "first build review" even for internal testing. Patrick should expect this on the first Phase 8 submission. Subsequent builds for the same bundle ID install immediately for internal testers. The 1-week shippable estimate includes this review window.
 
-**Scroll-fade work.** The recently-merged scroll-fade feature on the develop branch becomes defunct under this rewrite (SwiftUI's NavigationStack handles the underlying intent natively). The merge is not reverted — it stays on develop as historical record. The scroll-fade design plan and test plan stay in `docs/`.
-
 **Photo caching and disk pressure.** iOS may purge `~/Library/Caches/` under storage pressure. The native client must tolerate cache misses gracefully (re-fetch from server proxy URL via `AsyncImage`). The 1 GB LRU ceiling is a soft cap on what the app retains; iOS may evict regardless.
 
 **Endpoint cleanup is its own future plan.** This design intentionally does NOT cover deletion of POI / boundary / Nominatim endpoints or their seeders. That's a post-cutover cleanup phase tracked separately, after the Capacitor app is decommissioned and prod traffic is exclusively native.
-
-**Existing scroll-fade-era code coverage on the .NET side stays intact.** The PhotoReadService changes and the resilient-upload work landed on the scroll-fade branch are unrelated to the rewrite and remain functional. The native client uses the resilient-upload flow as-is.
