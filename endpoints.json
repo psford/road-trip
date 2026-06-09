@@ -1,5 +1,5 @@
 {
-  "$schema": "./endpoints.schema.json",
+  "$schema": "https://raw.githubusercontent.com/psford/claude-env/main/infrastructure/bootstrap/endpoints.schema.json",
   "project": "road-trip",
   "environments": {
     "dev": {
