@@ -24,35 +24,31 @@ env:
   IMAGE_NAME: roadtripmap
 
 jobs:
+  # Generic Azure preflight: confirm + log + checkout + login + verify-RG.
+  # Lives in claude-env so stock-analyzer and any future Azure-deploying
+  # repo consume the same gate.
   preflight:
+    uses: psford/claude-env/.github/workflows/azure-deploy-preflight.yml@main
+    with:
+      resource_group: rg-roadtripmap-prod
+      confirm_deploy: ${{ inputs.confirm_deploy }}
+      reason: ${{ inputs.reason }}
+    secrets:
+      azure_credentials: ${{ secrets.AZURE_CREDENTIALS }}
+
+  # Road-trip-specific preflight checks: endpoint-registry Key Vault
+  # secret existence, ACR credential test. These differ in shape across
+  # companion repos and stay project-local.
+  project-preflight:
+    needs: preflight
     runs-on: ubuntu-latest
     steps:
-      - name: Validate confirmation
-        if: ${{ github.event.inputs.confirm_deploy != 'deploy' }}
-        run: |
-          echo "::error::Deployment not confirmed. You must type 'deploy' to proceed."
-          exit 1
-
-      - name: Log deployment reason
-        run: |
-          echo "## Production Deployment" >> $GITHUB_STEP_SUMMARY
-          echo "**Triggered by:** ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Reason:** ${{ github.event.inputs.reason }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Branch:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
-
       - uses: actions/checkout@v6
 
-      - name: Test Azure credentials
+      - name: Azure Login
         uses: azure/login@v3
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
-
-      - name: Verify Azure access
-        run: |
-          echo "Testing Azure resource group access..."
-          az group show --name ${{ env.RESOURCE_GROUP }} --query "name" -o tsv
-          echo "✅ Azure credentials valid and resource group accessible"
 
       - name: Validate endpoint registry Key Vault secrets
         run: |
@@ -110,7 +106,7 @@ jobs:
         run: az logout || true
 
   build-and-test:
-    needs: preflight
+    needs: project-preflight
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
