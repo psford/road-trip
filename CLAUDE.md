@@ -4,52 +4,6 @@ Last verified: 2026-05-10
 
 ---
 
-## ⛔ BLOCKING: migrate inline Key Vault Bicep to claude-env shared module
-
-**Status:** Pending. Added 2026-06-09 after claude-env's Bicep module registry went live with `bicep/v1.0.0` (psford/claude-env PR #20, #24).
-
-**Patrick's directive:** This migration is **blocking for any updates to this project**. Before opening any PR — code, deploy, dependency bump, anything — first execute this migration end-to-end (PR + deploy + verify) and remove this block.
-
-**What to do:**
-
-In `infrastructure/azure/main.bicep`, replace the inline Key Vault resource block (`resource keyVault 'Microsoft.KeyVault/vaults@...'`) with a module reference to the canonical version published from claude-env:
-
-```bicep
-module kv 'br:acrstockanalyzerer34ug.azurecr.io/bicep/modules/key-vault:1.0.0' = {
-  name: 'kv'
-  params: {
-    keyVaultName: keyVaultName
-    location: location
-    // map the existing inline values to the module params; see the module's
-    // README at https://github.com/psford/claude-env/blob/main/infrastructure/bicep/modules/README.md
-  }
-}
-```
-
-If `main.bicep` also has any KV role-assignment resources (cross-RG access to the vault), use the paired module:
-
-```bicep
-module kvAccess 'br:acrstockanalyzerer34ug.azurecr.io/bicep/modules/key-vault-role-assignment:1.0.0' = {
-  name: 'kvAccess'
-  params: {
-    keyVaultName: kv.outputs.keyVaultName
-    principalId: someServiceIdentity.identity.principalId
-    roleDefinitionId: '4633458b-17de-408a-b874-0445c86b69e6'  // Key Vault Secrets User
-  }
-}
-```
-
-**Verification before merging:**
-- `az bicep build --file infrastructure/azure/main.bicep` succeeds.
-- Deploy to prod (manual `workflow_dispatch` on `Deploy to Azure Production`), verify the KV provisions correctly and existing secrets remain accessible.
-- The deploy SP `github-deploy-rt` already has `AcrPull` on `acrstockanalyzerer34ug` (via existing `AcrPush` for container images), so the registry pull at deploy time needs no new role assignment.
-
-**After completing the migration:** delete this entire `BLOCKING` section from CLAUDE.md in the same PR.
-
-**Reference:** module README → https://github.com/psford/claude-env/blob/main/infrastructure/bicep/modules/README.md
-
----
-
 ## Purpose
 
 Mobile-first road trip photo sharing app. Users create a trip, get two secret links (one for uploading photos, one for view-only map access), and share geotagged photos on an interactive map. Privacy-first: no accounts, no indexing, no tracking.
