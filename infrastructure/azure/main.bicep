@@ -129,17 +129,23 @@ resource sqlFirewallWslTemp 'Microsoft.Sql/servers/firewallRules@2024-11-01-prev
 // Key Vault
 // --------------------------------------------------------------------------
 
-resource keyVault 'Microsoft.KeyVault/vaults@2024-04-01-preview' = {
-  name: keyVaultName
-  location: location
-  properties: {
-    enableRbacAuthorization: true
-    tenantId: subscription().tenantId
-    sku: {
-      family: 'A'
-      name: 'standard'
-    }
+// Key Vault — provisioned via the claude-env shared module (replaces the former
+// inline 'Microsoft.KeyVault/vaults' resource). Standard SKU + RBAC auth are
+// baked into the module; soft-delete retention uses the module default (90 days),
+// matching the prior inline resource's effective Azure default.
+module kv 'br:acrstockanalyzerer34ug.azurecr.io/bicep/modules/key-vault:1.0.0' = {
+  name: 'kv'
+  params: {
+    keyVaultName: keyVaultName
+    location: location
   }
+}
+
+// Existing-reference to the module-created vault so the role assignments below
+// keep their scope wiring and their fixed literal names. Each dependsOn the
+// module so the vault provisions first (an `existing` ref carries no implicit dependency).
+resource keyVault 'Microsoft.KeyVault/vaults@2024-04-01-preview' existing = {
+  name: keyVaultName
 }
 
 // Secrets in `kv-roadtripmap-prod` are managed out-of-band — their values never
@@ -190,6 +196,9 @@ resource appService 'Microsoft.Web/sites@2024-11-01' = {
       netFrameworkVersion: 'v4.6'
     }
   }
+  dependsOn: [
+    kv
+  ]
 }
 
 // App settings are carried in a child `config` resource so tag-only deploys
@@ -232,6 +241,7 @@ resource roleKvAppService 'Microsoft.Authorization/roleAssignments@2022-04-01' =
     principalId: appService.identity.principalId
     principalType: 'ServicePrincipal'
   }
+  dependsOn: [ kv ]
 }
 
 // github-deploy-rt SP → KV Secrets User. Needed for CI preflight validation.
@@ -243,6 +253,7 @@ resource roleKvGithubDeployRt 'Microsoft.Authorization/roleAssignments@2022-04-0
     principalId: githubDeployRtObjectId
     principalType: 'ServicePrincipal'
   }
+  dependsOn: [ kv ]
 }
 
 // Legacy github-deploy SP → KV Secrets User. Retained until fully migrated to rt.
@@ -254,6 +265,7 @@ resource roleKvGithubDeploy 'Microsoft.Authorization/roleAssignments@2022-04-01'
     principalId: githubDeployObjectId
     principalType: 'ServicePrincipal'
   }
+  dependsOn: [ kv ]
 }
 
 // Cross-RG reference to shared storage account for adding CORS to blob services.
