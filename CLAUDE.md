@@ -2,6 +2,8 @@
 
 Last verified: 2026-05-10
 
+---
+
 ## Purpose
 
 Mobile-first road trip photo sharing app. Users create a trip, get two secret links (one for uploading photos, one for view-only map access), and share geotagged photos on an interactive map. Privacy-first: no accounts, no indexing, no tracking.
@@ -157,6 +159,7 @@ Mobile-first road trip photo sharing app. Users create a trip, get two secret li
 - `.github/workflows/deploy.yml` -- Manual `workflow_dispatch` prod deploy (builds/pushes container + `az webapp config container set`). Does NOT run Bicep or EF migrations — those are manual per the runbook.
 - `docs/implementation-plans/2026-04-13-resilient-uploads/deployment-runbook.md` -- Step-by-step Phase 1 deploy playbook (manual EF migration + Bicep + runbook verification)
 - `docs/TECHNICAL_SPEC.md` -- Full technical specification
+- `bugs/` -- Bug tracker. Markdown files, one per bug, status in YAML frontmatter. `bugs/README.md` is the workflow doc; `bugs/_template.md` is the new-bug template. VCS-portable (no GitHub Issues dependency) — survives migration to jj / Azure DevOps Repos / etc.
 
 ## Gotchas
 
