@@ -268,33 +268,29 @@ resource roleKvGithubDeploy 'Microsoft.Authorization/roleAssignments@2022-04-01'
   dependsOn: [ kv ]
 }
 
-// Cross-RG reference to shared storage account for adding CORS to blob services.
-resource storageAccount 'Microsoft.Storage/storageAccounts@2023-05-01' existing = {
+// Blob CORS for browser direct-upload — applied via a module scoped to the
+// shared storage account's RG. A cross-RG inline blobServices resource hits
+// BCP165 ("computed scope must match the file's"); a module targeting that RG
+// is the supported way to deploy a resource to a different scope.
+module blobCors 'modules/blob-cors.bicep' = {
+  name: 'blob-cors'
   scope: resourceGroup(sharedInfraResourceGroup)
-  name: sharedStorageAccountName
-}
-
-// Blob services configuration with CORS rules for browser direct-upload.
-resource blobServices 'Microsoft.Storage/storageAccounts/blobServices@2023-05-01' = {
-  parent: storageAccount
-  name: 'default'
-  properties: {
-    cors: {
-      corsRules: [
-        {
-          allowedOrigins: [
-            'https://roadtripmap.azurewebsites.net'
-            'https://localhost:5001'
-            'capacitor://localhost'
-            'ionic://localhost'
-          ]
-          allowedMethods: [ 'GET', 'PUT', 'HEAD', 'OPTIONS' ]
-          allowedHeaders: [ '*' ]
-          exposedHeaders: [ 'x-ms-*' ]
-          maxAgeInSeconds: 3600
-        }
-      ]
-    }
+  params: {
+    storageAccountName: sharedStorageAccountName
+    corsRules: [
+      {
+        allowedOrigins: [
+          'https://roadtripmap.azurewebsites.net'
+          'https://localhost:5001'
+          'capacitor://localhost'
+          'ionic://localhost'
+        ]
+        allowedMethods: [ 'GET', 'PUT', 'HEAD', 'OPTIONS' ]
+        allowedHeaders: [ '*' ]
+        exposedHeaders: [ 'x-ms-*' ]
+        maxAgeInSeconds: 3600
+      }
+    ]
   }
 }
 
