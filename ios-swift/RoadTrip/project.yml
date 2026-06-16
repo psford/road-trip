@@ -24,10 +24,9 @@ settings:
 packages:
   GRDB:
     url: https://github.com/groue/GRDB.swift
-    # Design doc: "GRDB.swift (latest stable)". Pinned to the 6.x line here; the Mac's
-    # first `xcodegen generate` + SPM resolve confirms the exact version — bump if 7.x
-    # is current and compatible. (Container has no Swift toolchain to resolve SPM.)
-    from: "6.0.0"
+    # Pinned to the version SPM resolved and the Mac verified building (2026-06-15):
+    # GRDB 6.29.3. `from:` allows in-range patch/minor updates within the 6.x line.
+    from: "6.29.3"
 
 targets:
   RoadTrip:
