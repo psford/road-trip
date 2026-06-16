@@ -20,6 +20,7 @@ settings:
     MARKETING_VERSION: "0.1.0"
     CURRENT_PROJECT_VERSION: "1"
     SWIFT_STRICT_CONCURRENCY: complete    # surface actor/Sendable issues early (background URLSession work in Phase 6)
+    GENERATE_INFOPLIST_FILE: YES          # all targets (app + test bundles) get a synthesized Info.plist
 
 packages:
   GRDB:
@@ -39,7 +40,6 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.psford.roadtripmap.native
-        PRODUCT_NAME: Road Trip
         GENERATE_INFOPLIST_FILE: YES                       # modern Xcode: Info.plist synthesized from build settings (no plist file to maintain)
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_CFBundleDisplayName: Road Trip
@@ -55,6 +55,7 @@ targets:
       - path: RoadTripTests
     dependencies:
       - target: RoadTrip
+      - package: GRDB        # tests exercise the DB directly (in-memory queue, raw schema checks)
 
   RoadTripUITests:
     type: bundle.ui-testing
