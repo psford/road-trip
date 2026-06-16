@@ -323,10 +323,22 @@ const PhotoCarousel = {
         const overlay = document.createElement('div');
         overlay.className = 'fullscreen-overlay';
 
-        // Create the image element using displayUrl (optimized for screen viewing)
+        // Create the image element (src/alt are set by render() below, which
+        // also drives slideshow navigation between photos)
         const img = document.createElement('img');
-        img.src = photo.displayUrl;
-        img.alt = photo.placeName || 'Photo';
+
+        // --- Slideshow navigation state -------------------------------------
+        // Index into the shared photos array so swipe / arrow buttons / keyboard
+        // can move between photos. Resolve by identity first, then by id.
+        const photos = this.photos || [];
+        let currentIndex = photos.indexOf(photo);
+        if (currentIndex === -1) {
+            currentIndex = photos.findIndex(p => p && p.id === photo.id);
+        }
+        if (currentIndex === -1) {
+            currentIndex = 0;
+        }
+        let currentPhoto = photos[currentIndex] || photo;
 
         // Action buttons container
         const actions = document.createElement('div');
@@ -341,7 +353,7 @@ const PhotoCarousel = {
         saveBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>';
         saveBtn.addEventListener('click', (e) => {
             e.stopPropagation();
-            PhotoCarousel.handleSave(photo);
+            PhotoCarousel.handleSave(currentPhoto);
         });
         actions.appendChild(saveBtn);
 
@@ -357,7 +369,7 @@ const PhotoCarousel = {
                 e.stopPropagation();
                 PhotoCarousel.closeOverlay(overlay);
                 if (this.config.onEditLocation) {
-                    this.config.onEditLocation(photo);
+                    this.config.onEditLocation(currentPhoto);
                 }
             });
             actions.appendChild(editLocBtn);
@@ -372,7 +384,7 @@ const PhotoCarousel = {
                 e.stopPropagation();
                 PhotoCarousel.closeOverlay(overlay);
                 if (this.config.onDelete) {
-                    this.config.onDelete(photo);
+                    this.config.onDelete(currentPhoto);
                 }
             });
             actions.appendChild(deleteBtn);
@@ -385,10 +397,60 @@ const PhotoCarousel = {
         closeBtn.textContent = '×';
         closeBtn.addEventListener('click', () => PhotoCarousel.closeOverlay(overlay));
 
+        // Prev / next navigation buttons (slideshow). render() hides them at the
+        // ends and when the trip has only a single photo.
+        const prevBtn = document.createElement('button');
+        prevBtn.className = 'fullscreen-nav fullscreen-nav-prev';
+        prevBtn.type = 'button';
+        prevBtn.setAttribute('aria-label', 'Previous photo');
+        prevBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"></polyline></svg>';
+        prevBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            goTo(currentIndex - 1);
+        });
+
+        const nextBtn = document.createElement('button');
+        nextBtn.className = 'fullscreen-nav fullscreen-nav-next';
+        nextBtn.type = 'button';
+        nextBtn.setAttribute('aria-label', 'Next photo');
+        nextBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>';
+        nextBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            goTo(currentIndex + 1);
+        });
+
+        // Render the current photo and refresh the nav-button affordances.
+        const render = () => {
+            currentPhoto = photos[currentIndex];
+            img.src = currentPhoto.displayUrl;
+            img.alt = currentPhoto.placeName || 'Photo';
+            const atStart = currentIndex <= 0;
+            const atEnd = currentIndex >= photos.length - 1;
+            prevBtn.style.display = atStart ? 'none' : '';
+            nextBtn.style.display = atEnd ? 'none' : '';
+            prevBtn.disabled = atStart;
+            nextBtn.disabled = atEnd;
+        };
+
+        // Move to a new index. We stop at the ends (no wrap-around), so an
+        // out-of-range index is a no-op.
+        const goTo = (idx) => {
+            if (idx < 0 || idx >= photos.length) {
+                return;
+            }
+            currentIndex = idx;
+            render();
+        };
+
         // Assemble overlay
         overlay.appendChild(img);
+        overlay.appendChild(prevBtn);
+        overlay.appendChild(nextBtn);
         overlay.appendChild(closeBtn);
         overlay.appendChild(actions);
+
+        // Paint the first photo and set initial nav visibility.
+        render();
 
         // Add to DOM
         document.body.appendChild(overlay);
@@ -406,49 +468,85 @@ const PhotoCarousel = {
             }
         });
 
-        // Handle close on Escape key (store reference on overlay for cleanup)
-        const handleEscape = (e) => {
+        // Keyboard: Escape closes, Left/Right arrows navigate the slideshow.
+        // Stored on the overlay so closeOverlay() can remove it on dismiss.
+        const handleKey = (e) => {
             if (e.key === 'Escape') {
                 PhotoCarousel.closeOverlay(overlay);
+            } else if (e.key === 'ArrowLeft') {
+                goTo(currentIndex - 1);
+            } else if (e.key === 'ArrowRight') {
+                goTo(currentIndex + 1);
             }
         };
-        overlay._handleEscape = handleEscape;
-        document.addEventListener('keydown', handleEscape);
+        overlay._handleEscape = handleKey;
+        document.addEventListener('keydown', handleKey);
 
-        // Swipe-down to dismiss (iOS only, via Pointer Events)
-        if (globalThis.RoadTrip && globalThis.RoadTrip.isNativePlatform && globalThis.RoadTrip.isNativePlatform()) {
-            let startY = null;
-            let startTime = 0;
-            let dragging = false;
+        // Pointer gestures: a horizontal swipe navigates (touch/pen on any
+        // platform); a vertical swipe-down dismisses (native iOS only). Mouse
+        // drags are ignored for navigation — desktop uses the arrows / keyboard.
+        const isNative = !!(globalThis.RoadTrip && globalThis.RoadTrip.isNativePlatform && globalThis.RoadTrip.isNativePlatform());
+        let startX = null;
+        let startY = null;
+        let startTime = 0;
+        let dragging = false;
+        let axis = null;
+        let startType = '';
 
-            const onDown = (e) => {
-                // Only start a drag if the touch starts on the overlay or image,
-                // not on chrome buttons (close/save/edit/delete).
-                const t = e.target;
-                if (!(t === overlay || t.tagName === 'IMG')) return;
-                startY = e.clientY;
-                startTime = e.timeStamp;
-                dragging = true;
-                overlay.style.transition = 'none';
-            };
+        const onDown = (e) => {
+            // Only start a drag on the overlay or image, not on chrome buttons
+            // (close / save / edit / delete / nav arrows).
+            const t = e.target;
+            if (!(t === overlay || t.tagName === 'IMG')) return;
+            startX = e.clientX;
+            startY = e.clientY;
+            startTime = e.timeStamp;
+            startType = e.pointerType || '';
+            dragging = true;
+            axis = null;
+            overlay.style.transition = 'none';
+        };
 
-            const onMove = (e) => {
-                if (!dragging) return;
-                const dy = Math.max(0, e.clientY - startY);
-                overlay.style.transform = 'translateY(' + dy + 'px)';
-                overlay.style.opacity = String(Math.max(0, 1 - dy / 600));
-            };
+        const onMove = (e) => {
+            if (!dragging) return;
+            const dx = e.clientX - startX;
+            const dy = e.clientY - startY;
+            // Lock the gesture to its dominant axis once it moves past a small
+            // threshold, so a horizontal swipe never triggers the dismiss drag.
+            if (axis === null) {
+                if (Math.abs(dx) < 10 && Math.abs(dy) < 10) return;
+                axis = Math.abs(dx) > Math.abs(dy) ? 'x' : 'y';
+            }
+            if (axis === 'y' && isNative) {
+                const d = Math.max(0, dy);
+                overlay.style.transform = 'translateY(' + d + 'px)';
+                overlay.style.opacity = String(Math.max(0, 1 - d / 600));
+            }
+        };
 
-            const onUp = (e) => {
-                if (!dragging) return;
-                dragging = false;
-                const dy = Math.max(0, e.clientY - startY);
-                const dt = Math.max(1, e.timeStamp - startTime);
-                const velocity = dy / dt; // px per ms
+        const onUp = (e) => {
+            if (!dragging) return;
+            dragging = false;
+            overlay.style.transition = '';
+            const dx = e.clientX - startX;
+            const dy = e.clientY - startY;
+            const dt = Math.max(1, e.timeStamp - startTime);
 
-                overlay.style.transition = '';
+            if (axis === 'x') {
+                // Horizontal swipe: navigate, but ignore mouse drags.
+                if (startType !== 'mouse') {
+                    const vx = Math.abs(dx) / dt; // px per ms
+                    if (Math.abs(dx) > 50 || vx > 0.3) {
+                        goTo(currentIndex + (dx < 0 ? 1 : -1));
+                    }
+                }
+                return;
+            }
 
-                if (dy > 100 || velocity > 0.5) {
+            if (axis === 'y' && isNative) {
+                const d = Math.max(0, dy);
+                const velocity = d / dt; // px per ms
+                if (d > 100 || velocity > 0.5) {
                     // Animate the rest of the dismiss.
                     overlay.classList.add('is-dismissing');
                     overlay.style.transform = 'translateY(100vh)';
@@ -474,12 +572,12 @@ const PhotoCarousel = {
                     overlay.style.transform = '';
                     overlay.style.opacity = '';
                 }
-            };
+            }
+        };
 
-            overlay.addEventListener('pointerdown', onDown);
-            overlay.addEventListener('pointermove', onMove);
-            overlay.addEventListener('pointerup', onUp);
-            overlay.addEventListener('pointercancel', onUp);
-        }
+        overlay.addEventListener('pointerdown', onDown);
+        overlay.addEventListener('pointermove', onMove);
+        overlay.addEventListener('pointerup', onUp);
+        overlay.addEventListener('pointercancel', onUp);
     }
 };
