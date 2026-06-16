@@ -1,0 +1,13 @@
+# XcodeGen output — regenerated from project.yml, never committed.
+*.xcodeproj
+
+# Xcode / SwiftPM build artifacts
+DerivedData/
+.build/
+.swiftpm/
+Package.resolved
+*.xcuserstate
+xcuserdata/
+
+# macOS
+.DS_Store
