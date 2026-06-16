@@ -20,6 +20,7 @@ settings:
     MARKETING_VERSION: "0.1.0"
     CURRENT_PROJECT_VERSION: "1"
     SWIFT_STRICT_CONCURRENCY: complete    # surface actor/Sendable issues early (background URLSession work in Phase 6)
+    GENERATE_INFOPLIST_FILE: YES          # all targets (app + test bundles) get a synthesized Info.plist
 
 packages:
   GRDB:
