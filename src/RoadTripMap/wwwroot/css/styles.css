@@ -1394,6 +1394,68 @@ body.map-page .maplibregl-ctrl-top-left {
   justify-content: center;
 }
 
+/* Close button — top-left, opposite the action buttons. Base (web) styling;
+   ios.css refines it with safe-area insets on native. */
+.fullscreen-close {
+  position: absolute;
+  top: var(--space-md);
+  left: var(--space-md);
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-full);
+  background: rgba(0, 0, 0, 0.5);
+  color: var(--color-surface);
+  font-size: 1.6rem;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background-color var(--motion-duration-fast) var(--motion-ease-standard);
+}
+
+.fullscreen-close:hover {
+  background: rgba(0, 0, 0, 0.7);
+}
+
+/* Slideshow prev/next arrows — vertically centered on the left/right edges. */
+.fullscreen-nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 48px;
+  height: 48px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-full);
+  background: rgba(0, 0, 0, 0.5);
+  color: var(--color-surface);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background-color var(--motion-duration-fast) var(--motion-ease-standard);
+}
+
+.fullscreen-nav:hover {
+  background: rgba(0, 0, 0, 0.7);
+}
+
+.fullscreen-nav svg {
+  width: 28px;
+  height: 28px;
+}
+
+.fullscreen-nav-prev {
+  left: var(--space-md);
+}
+
+.fullscreen-nav-next {
+  right: var(--space-md);
+}
+
 /* Responsive: Desktop carousel item width */
 @media (min-width: 768px) {
   .carousel-item {

@@ -447,6 +447,67 @@ describe('PhotoCarousel', () => {
             expect(overlay.style.transform).toBe(initialTransform);
         });
 
+        it('horizontal touch swipe left advances to the next photo', () => {
+            const p0 = { ...photo, id: 'p0', displayUrl: '/d0', placeName: 'A' };
+            const p1 = { ...photo, id: 'p1', displayUrl: '/d1', placeName: 'B' };
+            const container = document.createElement('div');
+            PhotoCarousel.init(container, [p0, p1], { canDelete: false });
+            globalThis.Native = { statusBar: vi.fn() };
+
+            PhotoCarousel.showFullscreen(p0);
+            const overlay = document.querySelector('.fullscreen-overlay');
+            const img = overlay.querySelector('img');
+            expect(img.src).toContain('/d0');
+
+            const down = new PointerEvent('pointerdown', { bubbles: true });
+            Object.defineProperty(down, 'clientX', { value: 300, configurable: true });
+            Object.defineProperty(down, 'clientY', { value: 100, configurable: true });
+            Object.defineProperty(down, 'pointerType', { value: 'touch', configurable: true });
+            overlay.dispatchEvent(down);
+
+            const move = new PointerEvent('pointermove', { bubbles: true });
+            Object.defineProperty(move, 'clientX', { value: 180, configurable: true });
+            Object.defineProperty(move, 'clientY', { value: 100, configurable: true });
+            overlay.dispatchEvent(move);
+
+            const up = new PointerEvent('pointerup', { bubbles: true });
+            Object.defineProperty(up, 'clientX', { value: 180, configurable: true });
+            Object.defineProperty(up, 'clientY', { value: 100, configurable: true });
+            overlay.dispatchEvent(up);
+
+            expect(img.src).toContain('/d1');
+        });
+
+        it('a mouse drag does NOT navigate (desktop uses arrows/keys)', () => {
+            const p0 = { ...photo, id: 'p0', displayUrl: '/d0' };
+            const p1 = { ...photo, id: 'p1', displayUrl: '/d1' };
+            const container = document.createElement('div');
+            PhotoCarousel.init(container, [p0, p1], { canDelete: false });
+            globalThis.Native = { statusBar: vi.fn() };
+
+            PhotoCarousel.showFullscreen(p0);
+            const overlay = document.querySelector('.fullscreen-overlay');
+            const img = overlay.querySelector('img');
+
+            const down = new PointerEvent('pointerdown', { bubbles: true });
+            Object.defineProperty(down, 'clientX', { value: 300, configurable: true });
+            Object.defineProperty(down, 'clientY', { value: 100, configurable: true });
+            Object.defineProperty(down, 'pointerType', { value: 'mouse', configurable: true });
+            overlay.dispatchEvent(down);
+
+            const move = new PointerEvent('pointermove', { bubbles: true });
+            Object.defineProperty(move, 'clientX', { value: 180, configurable: true });
+            Object.defineProperty(move, 'clientY', { value: 100, configurable: true });
+            overlay.dispatchEvent(move);
+
+            const up = new PointerEvent('pointerup', { bubbles: true });
+            Object.defineProperty(up, 'clientX', { value: 180, configurable: true });
+            Object.defineProperty(up, 'clientY', { value: 100, configurable: true });
+            overlay.dispatchEvent(up);
+
+            expect(img.src).toContain('/d0');
+        });
+
         it('does not attach pointer listeners when not on iOS', () => {
             globalThis.RoadTrip = {
                 appOrigin: vi.fn().mockReturnValue('https://example.test'),
@@ -480,6 +541,102 @@ describe('PhotoCarousel', () => {
             // Since listeners should not be attached when isNativePlatform is false,
             // transform should remain unchanged
             expect(overlay.style.transform).toBe(initialTransform);
+        });
+    });
+
+    describe('Immersive viewer — slideshow navigation', () => {
+        let p0, p1, p2;
+
+        beforeEach(() => {
+            p0 = { ...photo, id: 'p0', displayUrl: '/d0', placeName: 'A' };
+            p1 = { ...photo, id: 'p1', displayUrl: '/d1', placeName: 'B' };
+            p2 = { ...photo, id: 'p2', displayUrl: '/d2', placeName: 'C' };
+            globalThis.Native = { statusBar: vi.fn() };
+            const container = document.createElement('div');
+            PhotoCarousel.init(container, [p0, p1, p2], { canDelete: false });
+        });
+
+        const pressKey = (key) => document.dispatchEvent(new KeyboardEvent('keydown', { key }));
+
+        it('renders prev and next navigation buttons', () => {
+            PhotoCarousel.showFullscreen(p1);
+            const overlay = document.querySelector('.fullscreen-overlay');
+            expect(overlay.querySelector('.fullscreen-nav-prev')).not.toBeNull();
+            expect(overlay.querySelector('.fullscreen-nav-next')).not.toBeNull();
+        });
+
+        it('ArrowRight advances to the next photo', () => {
+            PhotoCarousel.showFullscreen(p0);
+            const img = document.querySelector('.fullscreen-overlay img');
+            expect(img.src).toContain('/d0');
+            pressKey('ArrowRight');
+            expect(img.src).toContain('/d1');
+        });
+
+        it('ArrowLeft goes to the previous photo', () => {
+            PhotoCarousel.showFullscreen(p2);
+            const img = document.querySelector('.fullscreen-overlay img');
+            expect(img.src).toContain('/d2');
+            pressKey('ArrowLeft');
+            expect(img.src).toContain('/d1');
+        });
+
+        it('clicking the next button advances', () => {
+            PhotoCarousel.showFullscreen(p0);
+            const overlay = document.querySelector('.fullscreen-overlay');
+            overlay.querySelector('.fullscreen-nav-next').click();
+            expect(overlay.querySelector('img').src).toContain('/d1');
+        });
+
+        it('stops at the end — ArrowRight on the last photo is a no-op', () => {
+            PhotoCarousel.showFullscreen(p2);
+            const img = document.querySelector('.fullscreen-overlay img');
+            pressKey('ArrowRight');
+            expect(img.src).toContain('/d2');
+        });
+
+        it('stops at the start — ArrowLeft on the first photo is a no-op', () => {
+            PhotoCarousel.showFullscreen(p0);
+            const img = document.querySelector('.fullscreen-overlay img');
+            pressKey('ArrowLeft');
+            expect(img.src).toContain('/d0');
+        });
+
+        it('hides the prev button on the first photo and the next button on the last', () => {
+            PhotoCarousel.showFullscreen(p0);
+            let overlay = document.querySelector('.fullscreen-overlay');
+            expect(overlay.querySelector('.fullscreen-nav-prev').style.display).toBe('none');
+            expect(overlay.querySelector('.fullscreen-nav-next').style.display).not.toBe('none');
+
+            pressKey('ArrowRight'); // -> p1
+            pressKey('ArrowRight'); // -> p2 (last)
+            expect(overlay.querySelector('.fullscreen-nav-next').style.display).toBe('none');
+            expect(overlay.querySelector('.fullscreen-nav-prev').style.display).not.toBe('none');
+        });
+
+        it('hides both nav buttons when the trip has a single photo', () => {
+            const container = document.createElement('div');
+            PhotoCarousel.init(container, [p0], { canDelete: false });
+            PhotoCarousel.showFullscreen(p0);
+            const overlay = document.querySelector('.fullscreen-overlay');
+            expect(overlay.querySelector('.fullscreen-nav-prev').style.display).toBe('none');
+            expect(overlay.querySelector('.fullscreen-nav-next').style.display).toBe('none');
+        });
+
+        it('keeps the save action pointed at the currently shown photo after navigating', async () => {
+            globalThis.Native = { share: vi.fn().mockResolvedValue(undefined), statusBar: vi.fn() };
+            PhotoCarousel.showFullscreen(p0);
+            const overlay = document.querySelector('.fullscreen-overlay');
+            pressKey('ArrowRight'); // now showing p1 ('B')
+
+            overlay.querySelector('.fullscreen-action-btn').click();
+            // allow the async handleSave to resolve
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(globalThis.Native.share).toHaveBeenCalledWith(
+                expect.objectContaining({ title: 'B' })
+            );
         });
     });
 });
