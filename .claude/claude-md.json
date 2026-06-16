@@ -1,0 +1,4 @@
+{
+  "fragments": ["00-universal", "git-flow-develop-main", "stack-web-azure"],
+  "vars": { "WORKING_BRANCH": "develop", "PRODUCTION_BRANCH": "main" }
+}

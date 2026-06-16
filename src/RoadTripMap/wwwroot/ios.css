@@ -330,11 +330,13 @@
 }
 
 .platform-ios .fullscreen-overlay .fullscreen-actions,
+.platform-ios .fullscreen-overlay .fullscreen-nav,
 .platform-ios .fullscreen-overlay .fullscreen-close {
   transition: opacity var(--motion-duration-fast) var(--motion-ease-standard);
 }
 
 .platform-ios .fullscreen-overlay.chrome-hidden .fullscreen-actions,
+.platform-ios .fullscreen-overlay.chrome-hidden .fullscreen-nav,
 .platform-ios .fullscreen-overlay.chrome-hidden .fullscreen-close {
   opacity: 0;
   pointer-events: none;

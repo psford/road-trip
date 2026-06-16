@@ -105,8 +105,21 @@ jobs:
         if: always()
         run: az logout || true
 
+  # Bicep drift check (shared claude-env reusable): fail the deploy if
+  # main.bicep's App Service Plan SKU/alwaysOn have drifted from live Azure.
+  # Same gate stock-analyzer uses; robust ARM-JSON extraction.
+  bicep-drift-check:
+    needs: preflight
+    uses: psford/claude-env/.github/workflows/azure-bicep-drift-check.yml@main
+    with:
+      resource_group: rg-roadtripmap-prod
+      app_service_plan_name: asp-roadtripmap-prod
+      webapp_name: app-roadtripmap-prod
+    secrets:
+      azure_credentials: ${{ secrets.AZURE_CREDENTIALS }}
+
   build-and-test:
-    needs: project-preflight
+    needs: [project-preflight, bicep-drift-check]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
