@@ -221,29 +221,16 @@ resource roleKvGithubDeploy 'Microsoft.Authorization/roleAssignments@2022-04-01'
   dependsOn: [ kv ]
 }
 
-// Blob CORS for browser direct-upload — applied via a module scoped to the shared
-// storage account's RG.
-module blobCors 'modules/blob-cors.bicep' = {
-  name: 'blob-cors'
-  scope: resourceGroup(sharedInfraResourceGroup)
-  params: {
-    storageAccountName: sharedStorageAccountName
-    corsRules: [
-      {
-        allowedOrigins: [
-          'https://roadtripmap.azurewebsites.net'
-          'https://localhost:5001'
-          'capacitor://localhost'
-          'ionic://localhost'
-        ]
-        allowedMethods: [ 'GET', 'PUT', 'HEAD', 'OPTIONS' ]
-        allowedHeaders: [ '*' ]
-        exposedHeaders: [ 'x-ms-*' ]
-        maxAgeInSeconds: 3600
-      }
-    ]
-  }
-}
+// NOTE: Blob CORS is intentionally NOT managed here. `stockanalyzerblob` is a
+// SHARED account (road-trip, stock-analyzer, photoportfolio), and setting CORS via
+// `Microsoft.Storage/.../blobServices/default` replaces the WHOLE account's
+// blob-service config — so any one project's deploy would clobber the others'
+// origins (and other blobServices properties). road-trip's required origins
+// (`app-roadtripmap-prod.azurewebsites.net`, `https://psfordtheriver.com`) are
+// present in the live shared CORS and managed out-of-band. Centralizing
+// shared-account CORS ownership in one place is a tracked follow-up; until then no
+// single project's IaC should own it. (Previously a `blob-cors` module here did,
+// which the 2026-06-17 what-if caught clobbering the shared rules.)
 
 // App Service MSI → Storage Blob Data Contributor (cross-RG, for per-trip blobs).
 module roleStorageBlobAppService 'modules/storage-rbac.bicep' = {
