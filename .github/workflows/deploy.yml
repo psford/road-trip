@@ -16,8 +16,10 @@ on:
         type: string
 
 env:
+  # App Service moved onto the shared P0v3 plan in rg-stockanalyzer-prod (2026-06-17).
+  # The container deploy below targets the app there; SQL/KV remain in rg-roadtripmap-prod.
   AZURE_WEBAPP_NAME: app-roadtripmap-prod
-  RESOURCE_GROUP: rg-roadtripmap-prod
+  RESOURCE_GROUP: rg-stockanalyzer-prod
   DOTNET_VERSION: '8.0.x'
   ACR_NAME: acrstockanalyzerer34ug
   ACR_LOGIN_SERVER: acrstockanalyzerer34ug.azurecr.io
@@ -30,7 +32,7 @@ jobs:
   preflight:
     uses: psford/claude-env/.github/workflows/azure-deploy-preflight.yml@main
     with:
-      resource_group: rg-roadtripmap-prod
+      resource_group: rg-stockanalyzer-prod
       confirm_deploy: ${{ inputs.confirm_deploy }}
       reason: ${{ inputs.reason }}
     secrets:
@@ -105,21 +107,13 @@ jobs:
         if: always()
         run: az logout || true
 
-  # Bicep drift check (shared claude-env reusable): fail the deploy if
-  # main.bicep's App Service Plan SKU/alwaysOn have drifted from live Azure.
-  # Same gate stock-analyzer uses; robust ARM-JSON extraction.
-  bicep-drift-check:
-    needs: preflight
-    uses: psford/claude-env/.github/workflows/azure-bicep-drift-check.yml@main
-    with:
-      resource_group: rg-roadtripmap-prod
-      app_service_plan_name: asp-roadtripmap-prod
-      webapp_name: app-roadtripmap-prod
-    secrets:
-      azure_credentials: ${{ secrets.AZURE_CREDENTIALS }}
+  # NOTE: the shared `azure-bicep-drift-check` job was removed on 2026-06-17.
+  # road-trip no longer owns an App Service Plan — it runs on the shared P0v3 plan
+  # `asp-stockanalyzer`, which stock-analyzer's repo owns and drift-checks. main.bicep
+  # references that plan as `existing`, so there is no road-trip plan SKU to verify.
 
   build-and-test:
-    needs: [project-preflight, bicep-drift-check]
+    needs: [project-preflight]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
