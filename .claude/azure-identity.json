@@ -3,5 +3,6 @@
   "repo": "road-trip",
   "allowed_sp_names": ["github-deploy-rt"],
   "allowed_sp_object_ids": ["5693632f-69d8-4482-9820-355c3bea04c3"],
-  "resource_group": "rg-roadtripmap-prod"
+  "_resource_group_note": "App Service moved to rg-stockanalyzer-prod (P0v3 plan) 2026-06-17; SQL + Key Vault remain in rg-roadtripmap-prod.",
+  "resource_group": "rg-stockanalyzer-prod"
 }

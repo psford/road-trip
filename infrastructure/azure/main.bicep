@@ -1,24 +1,26 @@
 // Road-trip production infrastructure.
 //
-// This file is the source of truth for the Azure resources in rg-roadtripmap-prod
-// plus the cross-RG role assignments road-trip depends on. It is authored so that
-// `az deployment group what-if` against the current production state shows zero
-// changes, and so that `az deployment group create` against an empty resource
-// group rebuilds the environment exactly as it currently exists.
+// This file is the source of truth for road-trip's Azure resources. It is authored
+// so that `az deployment group what-if` against the current production state shows
+// zero changes, and so that `az deployment group create` rebuilds the environment
+// exactly as it currently exists.
+//
+// Resource-group topology (since the 2026-06-17 P0v3 plan consolidation):
+//   - SQL Server + DB, Key Vault, and the KV role assignments live in
+//     `rg-roadtripmap-prod` (this template's target scope).
+//   - The App Service (`app-roadtripmap-prod`) was moved onto the shared P0v3 plan
+//     `asp-stockanalyzer` in `rg-stockanalyzer-prod`. It is created by the
+//     `appService` module below, scoped to that resource group. The former
+//     dedicated `asp-roadtripmap-prod` (B1) plan has been deleted.
 //
 // Cross-RG dependencies (NOT managed here, only referenced):
-//   - Storage account `stockanalyzerblob`      (rg-stockanalyzer-prod)
+//   - App Service Plan `asp-stockanalyzer`     (rg-stockanalyzer-prod, owned by stock-analyzer)
+//   - Storage account   `stockanalyzerblob`    (rg-stockanalyzer-prod)
 //   - Container registry `acrstockanalyzerer34ug` (rg-stockanalyzer-prod)
 //
 // Secrets policy:
 //   - Key Vault secret VALUES are managed out-of-band (portal / az keyvault).
-//     Bicep references the secrets with `existing` so it never overwrites them.
 //   - SQL admin password and ACR password are `@secure()` params supplied per-deploy.
-//
-// Container image:
-//   - `containerImageTag` parameter; default matches the current prod tag.
-//     The GitHub Actions deploy workflow updates the tag via `az webapp config
-//     container set`; Bicep reflects the current tag so what-if stays clean.
 
 targetScope = 'resourceGroup'
 
@@ -44,13 +46,11 @@ param sqlAdminPassword string
 param acrPassword string
 
 @description('Container image tag deployed to App Service. Bump each deploy.')
-param containerImageTag string = 'prod-33'
+param containerImageTag string = 'prod-70'
 
 @description('Ephemeral dev firewall rule for SQL (WSL tunnel). IP only, no pw.')
 param wsl2TempFirewallIp string = '38.42.115.201'
 
-// Known service principal object IDs (for RBAC). Declared explicitly so the
-// role assignment resources carry them as parameters rather than magic strings.
 @description('Object ID of github-deploy-rt SP (road-trip CI deploys).')
 param githubDeployRtObjectId string = '5693632f-69d8-4482-9820-355c3bea04c3'
 
@@ -58,7 +58,7 @@ param githubDeployRtObjectId string = '5693632f-69d8-4482-9820-355c3bea04c3'
 param githubDeployObjectId string = '9c7eb26a-75f0-4359-ad5b-9146558530fb'
 
 // Cross-RG references — where shared infrastructure actually lives.
-@description('Resource group hosting the shared storage account and ACR.')
+@description('Resource group hosting the shared plan, storage account, and ACR.')
 param sharedInfraResourceGroup string = 'rg-stockanalyzer-prod'
 
 @description('Cross-RG blob storage account (shared with stock-analyzer).')
@@ -70,8 +70,8 @@ param sharedStorageAccountName string = 'stockanalyzerblob'
 
 var sqlServerName = 'sql-roadtripmap-prod'
 var sqlDatabaseName = 'roadtripmap-db'
-var appServicePlanName = 'asp-roadtripmap-prod'
 var appServiceName = 'app-roadtripmap-prod'
+var sharedAppServicePlanName = 'asp-stockanalyzer'
 var keyVaultName = 'kv-roadtripmap-prod'
 var acrLoginServer = 'acrstockanalyzerer34ug.azurecr.io'
 var acrUsername = 'acrstockanalyzerer34ug'
@@ -129,10 +129,8 @@ resource sqlFirewallWslTemp 'Microsoft.Sql/servers/firewallRules@2024-11-01-prev
 // Key Vault
 // --------------------------------------------------------------------------
 
-// Key Vault — provisioned via the claude-env shared module (replaces the former
-// inline 'Microsoft.KeyVault/vaults' resource). Standard SKU + RBAC auth are
-// baked into the module; soft-delete retention uses the module default (90 days),
-// matching the prior inline resource's effective Azure default.
+// Key Vault — provisioned via the claude-env shared module. Standard SKU + RBAC
+// auth are baked into the module; soft-delete retention uses the module default.
 module kv 'br:acrstockanalyzerer34ug.azurecr.io/bicep/modules/key-vault:1.0.0' = {
   name: 'kv'
   params: {
@@ -141,82 +139,39 @@ module kv 'br:acrstockanalyzerer34ug.azurecr.io/bicep/modules/key-vault:1.0.0' =
   }
 }
 
-// Existing-reference to the module-created vault so the role assignments below
-// keep their scope wiring and their fixed literal names. Each dependsOn the
-// module so the vault provisions first (an `existing` ref carries no implicit dependency).
+// Existing-reference to the module-created vault so role assignments keep their
+// scope wiring and fixed literal names. Each dependsOn the module so the vault
+// provisions first (an `existing` ref carries no implicit dependency).
 resource keyVault 'Microsoft.KeyVault/vaults@2024-04-01-preview' existing = {
   name: keyVaultName
 }
 
-// Secrets in `kv-roadtripmap-prod` are managed out-of-band — their values never
-// flow through Bicep. The App Service resolves them via `@Microsoft.KeyVault(...)`
-// app settings below. Expected secrets (name: purpose):
+// Secrets in `kv-roadtripmap-prod` are managed out-of-band — values never flow
+// through Bicep. The App Service resolves them via `@Microsoft.KeyVault(...)` app
+// settings (in the app-service module). Expected secrets (name: purpose):
 //   DbConnectionString     — Azure SQL connection string
 //   BlobStorageConnection  — `stockanalyzerblob` connection string
 //   NpsApiKey              — National Park Service API key
 
 // --------------------------------------------------------------------------
-// App Service Plan + App Service
+// App Service (cross-RG: runs in rg-stockanalyzer-prod on the shared P0v3 plan)
 // --------------------------------------------------------------------------
 
-resource appServicePlan 'Microsoft.Web/serverfarms@2024-11-01' = {
-  name: appServicePlanName
-  location: location
-  kind: 'linux'
-  sku: {
-    name: 'B1'
-    tier: 'Basic'
-    size: 'B1'
-    family: 'B'
-    capacity: 1
-  }
-  properties: {
-    reserved: true
-  }
-}
-
-resource appService 'Microsoft.Web/sites@2024-11-01' = {
-  name: appServiceName
-  location: location
-  kind: 'app,linux,container'
-  identity: {
-    type: 'SystemAssigned'
-  }
-  properties: {
-    serverFarmId: appServicePlan.id
-    httpsOnly: true
-    siteConfig: {
-      linuxFxVersion: 'DOCKER|${acrLoginServer}/roadtripmap:${containerImageTag}'
-      alwaysOn: true
-      ftpsState: 'FtpsOnly'
-      numberOfWorkers: 1
-      // Azure auto-populates these three fields; declared here so `what-if` sees
-      // no drift. They have no functional meaning for a Linux container app.
-      localMySqlEnabled: false
-      netFrameworkVersion: 'v4.6'
-    }
-  }
-  dependsOn: [
-    kv
-  ]
-}
-
-// App settings are carried in a child `config` resource so tag-only deploys
-// don't have to respecify everything, and the deploy workflow can manage the
-// image tag separately.
-resource appServiceSettings 'Microsoft.Web/sites/config@2024-11-01' = {
-  parent: appService
-  name: 'appsettings'
-  properties: {
-    WEBSITES_ENABLE_APP_SERVICE_STORAGE: 'false'
-    ASPNETCORE_ENVIRONMENT: environment
-    WEBSITES_PORT: '5100'
-    DOCKER_REGISTRY_SERVER_URL: 'https://${acrLoginServer}'
-    DOCKER_REGISTRY_SERVER_USERNAME: acrUsername
-    DOCKER_REGISTRY_SERVER_PASSWORD: acrPassword
-    ConnectionStrings__DefaultConnection: '@Microsoft.KeyVault(VaultName=${keyVaultName};SecretName=DbConnectionString)'
-    ConnectionStrings__AzureStorage: '@Microsoft.KeyVault(VaultName=${keyVaultName};SecretName=BlobStorageConnection)'
-    NPS_API_KEY: '@Microsoft.KeyVault(VaultName=${keyVaultName};SecretName=NpsApiKey)'
+module appService 'modules/app-service.bicep' = {
+  name: 'app-service'
+  scope: resourceGroup(sharedInfraResourceGroup)
+  params: {
+    appServiceName: appServiceName
+    location: location
+    sharedPlanName: sharedAppServicePlanName
+    acrLoginServer: acrLoginServer
+    acrUsername: acrUsername
+    acrPassword: acrPassword
+    containerImageTag: containerImageTag
+    environment: environment
+    keyVaultName: keyVaultName
+    blobAccountName: sharedStorageAccountName
+    clientSideProcessingEnabled: 'true'
   }
 }
 
@@ -227,18 +182,16 @@ resource appServiceSettings 'Microsoft.Web/sites/config@2024-11-01' = {
 //   Key Vault Secrets User        4633458b-17de-408a-b874-0445c86b69e6
 //   Storage Blob Data Contributor ba92f5b4-2d11-453d-a403-e96b0029c9fe
 //
-// Role-assignment GUIDs are pinned to the existing names so Bicep updates the
-// actual resources rather than creating duplicates alongside them. When the
-// environment is rebuilt from scratch, these GUIDs are arbitrary and will be
-// recreated under these same names.
+// Role-assignment GUIDs are pinned to the live names so Bicep updates the actual
+// resources rather than creating duplicates alongside them.
 
-// App Service MSI → KV Secrets User.
+// App Service MSI → KV Secrets User. (App identity now comes from the module.)
 resource roleKvAppService 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   scope: keyVault
-  name: 'f5d9fe32-df13-5e72-9a9a-8a699587e839'
+  name: '61ad2060-f2e7-44a9-952a-33b685c3065d'
   properties: {
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '4633458b-17de-408a-b874-0445c86b69e6')
-    principalId: appService.identity.principalId
+    principalId: appService.outputs.principalId
     principalType: 'ServicePrincipal'
   }
   dependsOn: [ kv ]
@@ -268,10 +221,8 @@ resource roleKvGithubDeploy 'Microsoft.Authorization/roleAssignments@2022-04-01'
   dependsOn: [ kv ]
 }
 
-// Blob CORS for browser direct-upload — applied via a module scoped to the
-// shared storage account's RG. A cross-RG inline blobServices resource hits
-// BCP165 ("computed scope must match the file's"); a module targeting that RG
-// is the supported way to deploy a resource to a different scope.
+// Blob CORS for browser direct-upload — applied via a module scoped to the shared
+// storage account's RG.
 module blobCors 'modules/blob-cors.bicep' = {
   name: 'blob-cors'
   scope: resourceGroup(sharedInfraResourceGroup)
@@ -300,9 +251,9 @@ module roleStorageBlobAppService 'modules/storage-rbac.bicep' = {
   scope: resourceGroup(sharedInfraResourceGroup)
   params: {
     storageAccountName: sharedStorageAccountName
-    principalId: appService.identity.principalId
+    principalId: appService.outputs.principalId
     roleDefinitionId: 'ba92f5b4-2d11-453d-a403-e96b0029c9fe'
-    roleAssignmentName: '8066a9a7-16a6-4d2d-a76a-46db1378beca'
+    roleAssignmentName: '46c19f15-0fa8-4bb3-8171-e56f670d0cf4'
   }
 }
 
@@ -312,5 +263,5 @@ module roleStorageBlobAppService 'modules/storage-rbac.bicep' = {
 
 output sqlServerFqdn string = sqlServer.properties.fullyQualifiedDomainName
 output sqlDatabaseName string = sqlDatabase.name
-output webAppUrl string = 'https://${appService.properties.defaultHostName}'
-output appServicePrincipalId string = appService.identity.principalId
+output webAppUrl string = 'https://${appService.outputs.defaultHostName}'
+output appServicePrincipalId string = appService.outputs.principalId
