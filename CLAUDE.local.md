@@ -5,7 +5,16 @@
 <!-- sync-claude-md.sh. Edit THIS file (or the shared fragments) — never edit the -->
 <!-- generated CLAUDE.md. -->
 
-Last verified: 2026-06-14
+Last verified: 2026-06-18
+
+## Status Honesty — HARD RULE (no "done" inflation)
+
+| Checkpoint | Rule |
+|------------|------|
+| **SHOW, DON'T CLAIM** | A UI task is not "done" until the app was RUN and a screenshot/recording of the *actual running screen* was shown to Patrick, AND exercised against real (not seed/stub) data. A green build or passing test is "implemented", never "done". |
+| **NO STATUS INFLATION** | Report status on this ladder and never skip rungs: `implemented-slice (stub data)` → `verified-running (screenshot shown)` → `real-data` → `QA/UAT` → `shippable`. Meeting one AC ≠ feature done; a feature done ≠ product done. |
+| **STATE THE DENOMINATOR** | Every status report names what % / which slice of the *whole* scope is complete and what remains. "AC5 met" must be paired with "the app is otherwise a read-only prototype on SampleData — Phases 3/5/6/7 unbuilt". |
+| **NEVER push submission/deploy** | Do not frame App Store / TestFlight / prod deploy as a next step for an unseen, un-QA'd build. Those are Patrick-gated end states, not progress nudges. |
 
 ## Purpose
 
