@@ -53,6 +53,13 @@ enum SampleData {
                     (44.8650, -110.4000, "Lamar Valley", "Bison herd at dusk"),
                     (44.7978, -110.7036, "Norris Basin", "Steam for miles"),
                 ])
+
+            // A trip with zero photos — exercises the TripDetailView "no photos yet"
+            // empty-state + user-location framing (design AC5.4).
+            try addTrip(
+                name: "Weekend Getaway", description: "Planning in progress",
+                slug: "weekend", createdDaysAgo: 200,
+                pins: [])
         }
     }
 }

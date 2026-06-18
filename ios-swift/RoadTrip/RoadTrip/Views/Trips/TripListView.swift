@@ -25,7 +25,11 @@ struct TripListView: View {
             }
             .navigationTitle("My Trips")
         }
-        .task { await load() }
+        .task {
+            // Phase 3: replace SampleData with the real trip from the backend.
+            await RoadTripAPI.shared.hydrateDemoTrip(into: database)
+            await load()
+        }
     }
 
     private func load() async {
