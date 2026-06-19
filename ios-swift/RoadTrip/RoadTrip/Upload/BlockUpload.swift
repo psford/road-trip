@@ -26,6 +26,16 @@ enum BlockUpload {
         return Data(buffer).base64EncodedString()
     }
 
+    /// Builds the Azure "Put Block" URL for a SAS + block id: `{sas}&comp=block&blockid=<b64>`.
+    /// The block id is percent-encoded so base64 `+`, `/`, `=` survive as query values, and the
+    /// separator adapts to whether the SAS already has a query string. Pure so both the request
+    /// builder and tests share one definition. Returns `nil` only if the result isn't a valid URL.
+    static func blockPutURL(sasUrl: String, blockId: String) -> URL? {
+        let encodedId = blockId.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? blockId
+        let separator = sasUrl.contains("?") ? "&" : "?"
+        return URL(string: "\(sasUrl)\(separator)comp=block&blockid=\(encodedId)")
+    }
+
     /// Splits a file of `fileSize` bytes into `chunkSize` ranges, each tagged with its
     /// block id. The final range holds the remainder; an exact multiple yields no
     /// trailing empty block, and a zero-length file yields no ranges.

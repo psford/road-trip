@@ -56,4 +56,23 @@ final class BlockUploadTests: XCTestCase {
     func testEmptyFileYieldsNoRanges() {
         XCTAssertTrue(BlockUpload.chunkRanges(fileSize: 0, chunkSize: 4 * 1024 * 1024).isEmpty)
     }
+
+    // MARK: - blockPutURL (Slice B.2: shared by the background request builder)
+
+    func testBlockPutURLAppendsBlockParamsAndPercentEncodesBase64() throws {
+        // A SAS already carrying a query → uses `&`; the base64 `+`/`/`/`=` must be encoded.
+        let sas = "https://acct.blob.core.windows.net/c/blob?sv=2021&sig=ab+c/d="
+        let blockId = BlockUpload.blockId(index: 5)   // base64, length-64 buffer
+        let url = try XCTUnwrap(BlockUpload.blockPutURL(sasUrl: sas, blockId: blockId))
+        let s = url.absoluteString
+        XCTAssertTrue(s.hasPrefix(sas + "&comp=block&blockid="))
+        XCTAssertFalse(s.dropFirst(sas.count + "&comp=block&blockid=".count).contains("="),
+                       "base64 padding must be percent-encoded, not left raw")
+        XCTAssertFalse(s.dropFirst(sas.count).contains("+"), "base64 '+' must be encoded")
+    }
+
+    func testBlockPutURLUsesQuestionMarkWhenSasHasNoQuery() throws {
+        let url = try XCTUnwrap(BlockUpload.blockPutURL(sasUrl: "https://host/blob", blockId: BlockUpload.blockId(index: 0)))
+        XCTAssertTrue(url.absoluteString.contains("/blob?comp=block&blockid="))
+    }
 }
