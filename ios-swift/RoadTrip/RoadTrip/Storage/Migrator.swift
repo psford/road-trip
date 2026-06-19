@@ -64,6 +64,21 @@ enum AppMigrator {
             }
         }
 
+        // v2 (Phase 6 Slice B.2): fields a relaunched background-`URLSession` upload needs
+        // to resume from disk alone, after a force-quit cancels its in-flight block tasks.
+        // - blockSizeBytes: the block size the plan was sliced with, so re-slicing on resume
+        //   reproduces identical block boundaries + ids (don't trust a re-fetched value).
+        // - serverPhotoId: the photo id returned by request-upload (used to commit).
+        // - completedBlockIndices: which block indices Azure has already accepted (a 201),
+        //   so resume re-enqueues only the missing ones. JSON int array.
+        migrator.registerMigration("v2") { db in
+            try db.alter(table: UploadQueueItem.databaseTableName) { t in
+                t.add(column: "blockSizeBytes", .integer)
+                t.add(column: "serverPhotoId", .text)
+                t.add(column: "completedBlockIndices", .text).notNull().defaults(to: "[]")
+            }
+        }
+
         return migrator
     }
 }

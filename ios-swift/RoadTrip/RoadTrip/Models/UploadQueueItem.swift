@@ -44,9 +44,21 @@ struct UploadQueueItem: Codable, Identifiable, Equatable {
     // State machine
     var stage: UploadStage
     var bytesUploaded: Int64
-    /// Base64 block IDs already PUT to Azure, so a resumed upload knows its progress.
-    /// Stored as JSON text by GRDB.
+    /// Legacy (foreground path, removed in Slice B.2): ordered block IDs. The background
+    /// uploader tracks progress via `completedBlockIndices` instead. Kept as a column so
+    /// existing on-disk rows still decode; no longer written.
     var blockIds: [String]
+
+    // Background-upload resume state (Slice B.2 / v2 migration). A force-quit cancels the
+    // in-flight block `uploadTask`s, so resume rebuilds the plan from these + the staged file.
+    /// Block size the plan was sliced with — re-slice with this so boundaries/ids match.
+    var blockSizeBytes: Int? = nil
+    /// Photo id from `request-upload`, needed to commit. (Equals the uploadId server-side,
+    /// but persisted explicitly rather than assumed.)
+    var serverPhotoId: String? = nil
+    /// Block indices Azure has already accepted (HTTP 201). Resume re-enqueues the rest;
+    /// commit sends `completedBlockIndices.sorted().map(BlockUpload.blockId)`.
+    var completedBlockIndices: [Int] = []
 
     // SAS material from `request-upload`. Kept so a relaunched upload can continue;
     // refreshed when `sasIssuedAt` is older than ~1.75h (SAS TTL is 2h).
