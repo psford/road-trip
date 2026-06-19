@@ -17,22 +17,28 @@ struct PhotoPopupView: View {
     }
 
     var body: some View {
-        ZStack {
-            Color.black.opacity(0.55)
-                .ignoresSafeArea()
-                .onTapGesture { onClose() }
+        GeometryReader { geo in
+            // Adaptive card height: cap it and leave generous top/bottom margins so the
+            // popup is always a contained, centered card — never running off-screen on any
+            // device (the old fixed 440 overran on larger phones / smaller safe areas).
+            let cardHeight = min(460, max(300, geo.size.height - 220))
 
-            TabView(selection: $selection) {
-                ForEach(Array(photos.enumerated()), id: \.element.id) { index, photo in
-                    PhotoCard(photo: photo)
-                        .padding(.horizontal, 20)
-                        .tag(index)
+            ZStack {
+                Color.black.opacity(0.55)
+                    .ignoresSafeArea()
+                    .onTapGesture { onClose() }
+
+                TabView(selection: $selection) {
+                    ForEach(Array(photos.enumerated()), id: \.element.id) { index, photo in
+                        PhotoCard(photo: photo, multiPhoto: photos.count > 1)
+                            .padding(.horizontal, 20)
+                            .tag(index)
+                    }
                 }
-            }
-            .tabViewStyle(.page(indexDisplayMode: photos.count > 1 ? .always : .never))
-            .frame(height: 440)
+                .tabViewStyle(.page(indexDisplayMode: photos.count > 1 ? .always : .never))
+                .frame(height: cardHeight)
 
-            VStack {
+                VStack {
                 HStack {
                     if onMovePin != nil || onDelete != nil, let photo = currentPhoto {
                         Menu {
@@ -62,23 +68,26 @@ struct PhotoPopupView: View {
                     .accessibilityLabel("Close")
                 }
                 Spacer()
+                }
             }
         }
     }
 }
 
-/// A single photo card inside the popup: image, caption, place, capture date.
+/// A single photo card inside the popup: image (fills the card), then place + date.
 private struct PhotoCard: View {
     let photo: Photo
+    let multiPhoto: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             AsyncImage(url: URL(string: photo.displayUrl)) { image in
                 image.resizable().scaledToFill()
             } placeholder: {
-                ProgressView().frame(maxWidth: .infinity, minHeight: 260)
+                Color.secondary.opacity(0.12).overlay(ProgressView())
             }
-            .frame(height: 300)
+            // Fill the space left after the caption (no fixed height → no dead frosted gap).
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .clipped()
 
             VStack(alignment: .leading, spacing: 6) {
@@ -95,8 +104,11 @@ private struct PhotoCard: View {
                 }
             }
             .padding()
+            // Leave room for the page dots so they don't overlap the caption.
+            .padding(.bottom, multiPhoto ? 14 : 0)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .frame(maxHeight: .infinity)
         .background(.regularMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 16))
         .shadow(radius: 14)
