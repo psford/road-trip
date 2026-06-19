@@ -10,11 +10,15 @@ struct PhotoPopupView: View {
     var onMovePin: ((Photo) -> Void)? = nil
     var onDelete: ((Photo) -> Void)? = nil
 
+    @State private var dragOffset: CGFloat = 0
+
     /// The photo currently shown (selection clamped to a valid index).
     private var currentPhoto: Photo? {
         guard photos.indices.contains(selection) else { return photos.last }
         return photos[selection]
     }
+
+    private let dismissThreshold: CGFloat = 120
 
     var body: some View {
         GeometryReader { geo in
@@ -27,7 +31,8 @@ struct PhotoPopupView: View {
             let cardHeight = imageHeight + captionHeight
 
             ZStack {
-                Color.black.opacity(0.55)
+                Color.black
+                    .opacity(0.55 * (1 - min(dragOffset / dismissThreshold, 1)))
                     .ignoresSafeArea()
                     .onTapGesture { onClose() }
 
@@ -113,6 +118,33 @@ struct PhotoPopupView: View {
                 .background(.regularMaterial)
                 .clipShape(RoundedRectangle(cornerRadius: 16))
                 .shadow(radius: 14)
+                .offset(y: dragOffset)
+                .gesture(
+                    DragGesture(minimumDistance: 10)
+                        .onChanged { value in
+                            // Only claim vertical-dominant downward drags
+                            let isDownward = value.translation.height > 0
+                            let isVerticalDominant = abs(value.translation.height) > abs(value.translation.width)
+                            if isDownward && isVerticalDominant {
+                                dragOffset = value.translation.height
+                            }
+                        }
+                        .onEnded { value in
+                            let isDownward = value.translation.height > 0
+                            let isVerticalDominant = abs(value.translation.height) > abs(value.translation.width)
+                            let isPastThreshold = dragOffset > dismissThreshold
+                            let isFastFlick = isDownward && isVerticalDominant && value.predictedEndTranslation.height > dismissThreshold
+
+                            if isPastThreshold || isFastFlick {
+                                onClose()
+                            } else {
+                                // Spring back animation
+                                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                    dragOffset = 0
+                                }
+                            }
+                        }
+                )
             }
         }
     }
