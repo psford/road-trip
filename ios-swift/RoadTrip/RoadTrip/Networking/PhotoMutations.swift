@@ -36,7 +36,9 @@ struct PhotoMutations {
         var optimistic = photo
         optimistic.lat = lat
         optimistic.lng = lng
-        try await database.dbQueue.write { db in try optimistic.update(db) }
+        // Capture an immutable copy ([optimistic]) so the @Sendable write closure doesn't
+        // reference a mutable var (a Swift 6 concurrency error otherwise).
+        try await database.dbQueue.write { [optimistic] db in try optimistic.update(db) }
 
         do {
             let response = try await api.updatePhotoLocation(secretToken: token, photoId: photo.id, lat: lat, lng: lng)
@@ -44,9 +46,9 @@ struct PhotoMutations {
             updated.lat = response.lat
             updated.lng = response.lng
             updated.placeName = response.placeName
-            try await database.dbQueue.write { db in try updated.update(db) }
+            try await database.dbQueue.write { [updated] db in try updated.update(db) }
         } catch {
-            try? await database.dbQueue.write { db in try original.update(db) }
+            try? await database.dbQueue.write { [original] db in try original.update(db) }
             throw error
         }
     }

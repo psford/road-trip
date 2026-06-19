@@ -271,9 +271,10 @@ struct TripDetailView: View {
     /// Runs an upload under a background-execution assertion so a brief backgrounding
     /// doesn't kill it mid-flight, then refreshes the map on success.
     private func startUpload(_ item: UploadQueueItem) {
-        Task {
-            let taskId = await UIApplication.shared.beginBackgroundTask(withName: "photo-upload")
-            defer { Task { @MainActor in UIApplication.shared.endBackgroundTask(taskId) } }
+        Task { @MainActor in
+            // UIApplication is main-actor; begin/end must pair on the main thread.
+            let taskId = UIApplication.shared.beginBackgroundTask(withName: "photo-upload")
+            defer { UIApplication.shared.endBackgroundTask(taskId) }
             // The uploader persists .failed on error; the banner surfaces it + Retry.
             // The committed photo appears via the photos ValueObservation — no manual reload.
             try? await UploadCoordinator(database: database, keychain: keychain).upload(item)
