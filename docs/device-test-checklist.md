@@ -28,6 +28,8 @@ the tactile pin drag, or TestFlight — so those wait for here.
 - [ ] **Move Pin** on a committed photo (popup → ⋯ → Move Pin) → drag → Confirm → pin moves; place name updates.
 - [ ] **No-GPS photo** → "Where was this taken?" → long-press to drop + drag → "Pin & Upload" → uploads.
 - [ ] Pin taps still open the photo popup (long-press gesture didn't steal taps).
+- [ ] **Popup ⋯/✕ chrome** — controls render in a header bar on the card, legible over any photo, no overlap with the map compass.
+- [ ] **Popup swipe-down** — swipe the card down past ~120pt to dismiss; below the threshold springs back. Horizontal swipes still page between photos. If the gesture feels bad, fall back to ✕ button or backdrop tap.
 
 ## 2. Photo capture (sim-confirmed; spot-check on device)
 - [ ] HEIC photo from the camera roll uploads as JPEG with correct location/date.

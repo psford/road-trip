@@ -127,6 +127,8 @@ final class RoadTripUITests: XCTestCase {
 
     /// AC5.2: tapping a map annotation opens the photo view via the NavigationStack.
     /// Also visually captures the fitted map + controls (AC5.1 / AC5.3).
+    /// Extended to verify AC1.2: ✕ button closes the popup.
+    /// Extended to verify AC1.3: backdrop-tap closes the popup.
     func testTappingMapPinOpensPhotoDetail() {
         let app = launchApp()
 
@@ -147,6 +149,30 @@ final class RoadTripUITests: XCTestCase {
         XCTAssertTrue(caption.waitForExistence(timeout: 5),
                       "tapping a pin should open the photo view (AC5.2)")
         attach(app.screenshot(), name: "AC5.2-photo-detail")
+
+        // AC1.2: verify the ✕ button exists and tapping it closes the popup
+        let closeButton = app.buttons["popup-close"]
+        XCTAssertTrue(closeButton.waitForExistence(timeout: 5),
+                      "popup should have a close button (AC1.2)")
+        closeButton.tap()
+
+        // Caption should now be gone, proving the popup closed
+        XCTAssertTrue(caption.waitForNonExistence(timeout: 5),
+                      "tapping the ✕ button should close the popup (AC1.2)")
+        attach(app.screenshot(), name: "AC1.2-popup-closed-via-close-button")
+
+        // AC1.3: verify backdrop-tap also closes the popup
+        pin.tap()
+        XCTAssertTrue(caption.waitForExistence(timeout: 5),
+                      "should be able to reopen the popup")
+
+        // Tap the backdrop (dimmed area around the card) — use a coordinate outside the card
+        let mapCoordinate = app.maps.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.1, dy: 0.1))
+        mapCoordinate.tap()
+
+        XCTAssertTrue(caption.waitForNonExistence(timeout: 5),
+                      "tapping the backdrop should close the popup (AC1.3)")
+        attach(app.screenshot(), name: "AC1.3-popup-closed-via-backdrop")
     }
 
     /// Long-press on the trip map offers to post a photo at that spot (Apple Maps drop-pin
