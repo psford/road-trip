@@ -86,14 +86,20 @@ private struct PhotoCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            AsyncImage(url: URL(string: photo.displayUrl)) { image in
-                image.resizable().scaledToFill()
-            } placeholder: {
-                Color.secondary.opacity(0.12).overlay(ProgressView())
-            }
-            .frame(maxWidth: .infinity)
-            .frame(height: imageHeight)   // definite → loaded image is clipped, never resizes the card
-            .clipped()
+            // A fixed-size clear box defines the slot; the image is an OVERLAY, so it can
+            // never affect layout regardless of its aspect ratio (portrait, landscape, or
+            // a rotated source). scaledToFill fills the slot, clipped() trims the overflow.
+            Color.clear
+                .frame(maxWidth: .infinity)
+                .frame(height: imageHeight)
+                .overlay {
+                    AsyncImage(url: URL(string: photo.displayUrl)) { image in
+                        image.resizable().scaledToFill()
+                    } placeholder: {
+                        Color.secondary.opacity(0.12).overlay(ProgressView())
+                    }
+                }
+                .clipped()
 
             VStack(alignment: .leading, spacing: 6) {
                 if let caption = photo.caption, !caption.isEmpty {

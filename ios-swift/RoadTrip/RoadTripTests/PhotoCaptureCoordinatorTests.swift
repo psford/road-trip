@@ -2,6 +2,7 @@ import XCTest
 import ImageIO
 import CoreGraphics
 import CoreLocation
+import UIKit
 import UniformTypeIdentifiers
 @testable import RoadTrip
 
@@ -60,6 +61,39 @@ final class PhotoCaptureCoordinatorTests: XCTestCase {
 
         XCTAssertEqual(item.exifLat ?? .nan, 48.8584, accuracy: 0.0001, "override coordinate wins")
         XCTAssertEqual(item.exifLon ?? .nan, 2.2945, accuracy: 0.0001)
+    }
+
+    func testNormalizeBakesNonUprightOrientationUpright() {
+        // A JPEG tagged with EXIF orientation 6 (rotate 90°) — what a sideways camera shot
+        // produces. The server's resize ignores the tag, so we must bake it in client-side.
+        let rotated = makeOrientedJPEG(width: 8, height: 16, orientation: .right)
+        XCTAssertNotEqual(UIImage(data: rotated)?.imageOrientation, .up, "fixture should be rotated")
+
+        let (out, contentType, _) = PhotoCaptureCoordinator.normalizedImage(rotated, filename: "IMG.JPG")
+
+        XCTAssertEqual(contentType, "image/jpeg")
+        XCTAssertEqual(UIImage(data: out)?.imageOrientation, .up,
+                       "orientation must be baked into upright pixels before upload")
+    }
+
+    func testNormalizeUprightJPEGStaysUpright() {
+        let upright = makeOrientedJPEG(width: 16, height: 8, orientation: .up)
+        let (out, _, _) = PhotoCaptureCoordinator.normalizedImage(upright, filename: "IMG.JPG")
+        XCTAssertEqual(UIImage(data: out)?.imageOrientation, .up)
+    }
+
+    private func makeOrientedJPEG(width: Int, height: Int, orientation: CGImagePropertyOrientation) -> Data {
+        let ctx = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8,
+                            bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(),
+                            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        ctx.setFillColor(CGColor(red: 0.3, green: 0.6, blue: 0.4, alpha: 1))
+        ctx.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        let image = ctx.makeImage()!
+        let out = NSMutableData()
+        let dest = CGImageDestinationCreateWithData(out, UTType.jpeg.identifier as CFString, 1, nil)!
+        CGImageDestinationAddImage(dest, image, [kCGImagePropertyOrientation: orientation.rawValue] as CFDictionary)
+        CGImageDestinationFinalize(dest)
+        return out as Data
     }
 
     // MARK: - Helpers

@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import UIKit
 import CoreLocation
 import GRDB
 import Photos
@@ -68,12 +69,31 @@ struct PhotoCaptureCoordinator {
         return item
     }
 
-    /// Transcodes HEIC to JPEG; other formats pass through. Road Trip photos are camera
-    /// JPEG/HEIC, and the server expects `image/jpeg`, so the content type is always JPEG.
+    /// Produces upload-ready JPEG bytes. Re-encodes when the server can't read the format
+    /// (HEIC) OR the image carries a non-upright EXIF orientation — the server's SkiaSharp
+    /// resize ignores EXIF orientation, so we bake it into upright pixels here; otherwise the
+    /// derived display/thumb tiers come out rotated. An already-upright JPEG passes through
+    /// untouched (no re-encode, no quality loss). GPS is read from the original before this,
+    /// so dropping EXIF in the re-encode is fine.
     static func normalizedImage(_ data: Data, filename: String) -> (Data, String, String) {
-        if HEICTranscoder.isHEIC(data), let jpeg = HEICTranscoder.transcodedToJPEG(data) {
-            let base = (filename as NSString).deletingPathExtension
-            return (jpeg, "image/jpeg", base.isEmpty ? "photo.jpg" : base + ".jpg")
+        let base = (filename as NSString).deletingPathExtension
+        let jpegName = base.isEmpty ? "photo.jpg" : base + ".jpg"
+        let isHEIC = HEICTranscoder.isHEIC(data)
+
+        if let image = UIImage(data: data), isHEIC || image.imageOrientation != .up {
+            // Redraw into a context so EXIF orientation is baked into upright pixels.
+            // (UIImage.jpegData alone preserves the orientation tag — a redraw normalizes it.)
+            // scale = 1 keeps the original pixel dimensions (no device-scale upscaling).
+            let format = UIGraphicsImageRendererFormat.default()
+            format.scale = 1
+            format.opaque = true
+            let renderer = UIGraphicsImageRenderer(size: image.size, format: format)
+            let upright = renderer.image { _ in
+                image.draw(in: CGRect(origin: .zero, size: image.size))
+            }
+            if let jpeg = upright.jpegData(compressionQuality: 0.95) {
+                return (jpeg, "image/jpeg", jpegName)
+            }
         }
         return (data, "image/jpeg", filename)
     }
