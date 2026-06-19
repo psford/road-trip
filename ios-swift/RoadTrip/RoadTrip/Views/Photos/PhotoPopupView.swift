@@ -93,9 +93,8 @@ private struct PhotoCard: View {
                 .frame(maxWidth: .infinity)
                 .frame(height: imageHeight)
                 .overlay {
-                    AsyncImage(url: URL(string: photo.displayUrl)) { image in
-                        image.resizable().scaledToFill()
-                    } placeholder: {
+                    CachedImage(url: URL(string: photo.displayUrl), tripId: photo.tripId,
+                                photoId: photo.id, tier: .display) {
                         Color.secondary.opacity(0.12).overlay(ProgressView())
                     }
                 }

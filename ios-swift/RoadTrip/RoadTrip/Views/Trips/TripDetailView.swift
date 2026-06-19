@@ -312,7 +312,7 @@ struct TripDetailView: View {
                         Button {
                             openPopup(at: index)
                         } label: {
-                            PinThumbnail(url: photo.thumbnailUrl)
+                            PinThumbnail(photo: photo)
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel(Text(photo.placeName))
@@ -361,9 +361,8 @@ struct TripDetailView: View {
                     Button {
                         openPopup(at: index)
                     } label: {
-                        AsyncImage(url: URL(string: photo.displayUrl)) { image in
-                            image.resizable().scaledToFill()
-                        } placeholder: {
+                        CachedImage(url: URL(string: photo.displayUrl), tripId: photo.tripId,
+                                    photoId: photo.id, tier: .display) {
                             Color.secondary.opacity(0.15)
                         }
                         .frame(width: 92, height: 92)
@@ -494,12 +493,11 @@ private struct UploadBanner: View {
 
 /// Circular thumbnail used as a map annotation marker.
 private struct PinThumbnail: View {
-    let url: String
+    let photo: Photo
 
     var body: some View {
-        AsyncImage(url: URL(string: url)) { image in
-            image.resizable().scaledToFill()
-        } placeholder: {
+        CachedImage(url: URL(string: photo.thumbnailUrl), tripId: photo.tripId,
+                    photoId: photo.id, tier: .thumb) {
             Image(systemName: "photo").imageScale(.small).foregroundStyle(.secondary)
         }
         .frame(width: 40, height: 40)
