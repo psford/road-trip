@@ -9,6 +9,11 @@ struct RoadTripApp: App {
     init() {
         // makeShared() opens (and migrates) the on-disk SQLite database.
         let db = try! AppDatabase.makeShared()
+        // UI tests pass `-uitest` to start from a deterministic state (just SampleData),
+        // since the on-disk DB otherwise carries created/imported trips between launches.
+        if ProcessInfo.processInfo.arguments.contains("-uitest") {
+            try? db.wipeAllData()
+        }
         try? SampleData.seedIfEmpty(db)
         _database = State(initialValue: db)
     }

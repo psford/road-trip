@@ -10,7 +10,10 @@ enum SampleData {
     static func seedIfEmpty(_ database: AppDatabase) throws {
         try database.dbQueue.write { db in
             guard try Trip.fetchCount(db) == 0 else { return }
-            var photoId = 1
+            // Photo.id is the server's globally-unique photo id and the local primary key.
+            // Sample photos use a high offset so they never collide with real photo ids
+            // (which start at 1) when a real trip is imported alongside the samples.
+            var photoId = 900_000_000
 
             func addTrip(name: String, description: String, slug: String,
                          createdDaysAgo: Int,

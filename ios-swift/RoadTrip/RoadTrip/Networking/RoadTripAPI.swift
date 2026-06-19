@@ -1,4 +1,5 @@
 import Foundation
+import GRDB
 
 /// Typed entrypoint to the Road Trip backend (design Phase 3, `native-ios.AC1.3`).
 ///
@@ -8,15 +9,20 @@ import Foundation
 actor RoadTripAPI {
     static let shared = RoadTripAPI()
 
-    /// Local dev backend. (Prod/dev-slot base URL config is a later step.)
+    /// Base URL per build configuration (local / dev slot / prod) — see `APIEnvironment`.
     let baseURL: URL
 
     private let session: URLSession
     private let decoder: JSONDecoder
+    private let encoder: JSONEncoder
 
-    init(baseURL: URL = URL(string: "http://localhost:5100")!) {
+    init(baseURL: URL = APIEnvironment.baseURL) {
         self.baseURL = baseURL
         self.session = URLSession(configuration: .ephemeral)
+        // Request bodies with dates (exif.takenAt → .NET DateTimeOffset) use ISO-8601.
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        self.encoder = encoder
         let decoder = JSONDecoder()
         // .NET serializes DateTime without a timezone (e.g. "2026-06-18T05:55:11.12"),
         // which Swift's .iso8601 rejects — parse flexibly so hydration doesn't silently fail.
@@ -47,6 +53,11 @@ actor RoadTripAPI {
         return nil
     }
 
+    /// `POST /api/trips` — creates a trip server-side and returns its slug + tokens.
+    func createTrip(name: String, description: String?) async throws -> CreateTripResponse {
+        try await post("/api/trips", body: CreateTripRequest(name: name, description: description))
+    }
+
     /// `GET /api/post/{secretToken}` — trip metadata for an owned (upload) token.
     func tripForPost(secretToken: String) async throws -> TripResponse {
         try await get("/api/post/\(secretToken)")
@@ -57,6 +68,81 @@ actor RoadTripAPI {
         try await get("/api/post/\(secretToken)/photos")
     }
 
+    /// `DELETE /api/trips/{secretToken}` — deletes the trip server-side (204 No Content).
+    /// Path-token auth: the server authorizes by matching the path's secret token.
+    func deleteTrip(secretToken: String) async throws {
+        var request = URLRequest(url: baseURL.appendingPathComponent("/api/trips/\(secretToken)"))
+        request.httpMethod = "DELETE"
+        try await sendVoid(request)
+    }
+
+    /// `DELETE …/photos/{id}` — deletes one committed photo (204). Int photo id.
+    func deletePhoto(secretToken: String, photoId: Int) async throws {
+        var request = URLRequest(url: baseURL.appendingPathComponent(
+            "/api/trips/\(secretToken.lowercased())/photos/\(photoId)"))
+        request.httpMethod = "DELETE"
+        try await sendVoid(request)
+    }
+
+    /// `PATCH …/photos/{id}/location` — moves a committed photo; the server reverse-geocodes
+    /// and returns the updated `PhotoResponse`.
+    func updatePhotoLocation(secretToken: String, photoId: Int, lat: Double, lng: Double) async throws -> PhotoResponse {
+        try await send(jsonRequest(
+            "/api/trips/\(secretToken.lowercased())/photos/\(photoId)/location",
+            method: "PATCH", body: UpdateLocationRequest(lat: lat, lng: lng)))
+    }
+
+    // MARK: - Resilient upload (Phase 6). Path tokens lowercased for the case-sensitive auth.
+
+    /// `POST …/photos/request-upload` — registers the upload and returns SAS URLs + block size.
+    /// Idempotent on `uploadId`.
+    func requestUpload(_ body: RequestUploadRequest, secretToken: String) async throws -> RequestUploadResponse {
+        try await post("/api/trips/\(secretToken.lowercased())/photos/request-upload", body: body)
+    }
+
+    /// `POST …/photos/{photoId}/commit` — commits the uploaded block list. The server
+    /// finalizes the original blob and regenerates any missing display/thumb tiers.
+    func commitUpload(secretToken: String, photoId: String, blockIds: [String]) async throws {
+        try await postVoid("/api/trips/\(secretToken.lowercased())/photos/\(photoId)/commit",
+                           body: CommitRequest(blockIds: blockIds))
+    }
+
+    /// `POST …/photos/{photoId}/abort` — cancels an in-progress upload (idempotent, 204).
+    func abortUpload(secretToken: String, photoId: String) async throws {
+        var request = URLRequest(url: baseURL.appendingPathComponent(
+            "/api/trips/\(secretToken.lowercased())/photos/\(photoId)/abort"))
+        request.httpMethod = "POST"
+        try await sendVoid(request)
+    }
+
+    /// PUTs one block to an Azure (or Azurite) SAS URL. Mirrors the web client's transport:
+    /// `?comp=block&blockid=<b64>`, `x-ms-blob-type: BlockBlob`, 201 = success.
+    /// The block id is percent-encoded so base64 `+`, `/`, `=` survive as query values.
+    /// Throws `UploadTransportError` so the runner can retry / refresh / abort appropriately;
+    /// a network-layer failure maps to `.retryable` (likely transient connectivity).
+    func putBlock(sasUrl: String, blockId: String, data: Data) async throws {
+        let encodedId = blockId.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? blockId
+        let separator = sasUrl.contains("?") ? "&" : "?"
+        guard let url = URL(string: "\(sasUrl)\(separator)comp=block&blockid=\(encodedId)") else {
+            throw UploadTransportError.permanent(status: -1)
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = "PUT"
+        request.setValue("BlockBlob", forHTTPHeaderField: "x-ms-blob-type")
+        request.httpBody = data
+        do {
+            let (_, response) = try await session.data(for: request)
+            guard let http = response as? HTTPURLResponse else {
+                throw UploadTransportError.retryable(status: -1)
+            }
+            if let error = UploadTransportError.classify(status: http.statusCode) { throw error }
+        } catch let error as UploadTransportError {
+            throw error
+        } catch {
+            throw UploadTransportError.retryable(status: -1)   // network drop → retry with backoff
+        }
+    }
+
     /// Absolute URL for a server-relative media path (e.g. `/api/photos/1/2/thumb`).
     nonisolated func absoluteURL(forPath path: String) -> String {
         if path.hasPrefix("http") { return path }
@@ -64,9 +150,50 @@ actor RoadTripAPI {
     }
 
     private func get<T: Decodable>(_ path: String) async throws -> T {
-        let url = baseURL.appendingPathComponent(path)
+        try await send(URLRequest(url: baseURL.appendingPathComponent(path)))
+    }
+
+    private func post<Body: Encodable, T: Decodable>(_ path: String, body: Body) async throws -> T {
+        return try await send(jsonRequest(path, method: "POST", body: body))
+    }
+
+    /// POST a JSON body where the response has no useful content to decode (2xx = success).
+    private func postVoid<Body: Encodable>(_ path: String, body: Body) async throws {
+        try await sendVoid(jsonRequest(path, method: "POST", body: body))
+    }
+
+    private func jsonRequest<Body: Encodable>(_ path: String, method: String, body: Body) throws -> URLRequest {
+        var request = URLRequest(url: baseURL.appendingPathComponent(path))
+        request.httpMethod = method
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try encoder.encode(body)
+        return request
+    }
+
+    /// Shared transport for requests with no response body to decode (e.g. DELETE → 204).
+    private func sendVoid(_ request: URLRequest) async throws {
         do {
-            let (data, response) = try await session.data(from: url)
+            let (_, response) = try await session.data(for: request)
+            guard let http = response as? HTTPURLResponse else {
+                throw RoadTripAPIError.serverError("No HTTP response")
+            }
+            switch http.statusCode {
+            case 200..<300: return
+            case 401: throw RoadTripAPIError.unauthorized
+            case 404: throw RoadTripAPIError.notFound
+            default: throw RoadTripAPIError.serverError("HTTP \(http.statusCode)")
+            }
+        } catch let error as RoadTripAPIError {
+            throw error
+        } catch {
+            throw RoadTripAPIError.networkUnavailable
+        }
+    }
+
+    /// Shared transport: runs the request, maps HTTP status to typed errors, decodes JSON.
+    private func send<T: Decodable>(_ request: URLRequest) async throws -> T {
+        do {
+            let (data, response) = try await session.data(for: request)
             guard let http = response as? HTTPURLResponse else {
                 throw RoadTripAPIError.serverError("No HTTP response")
             }
@@ -95,6 +222,53 @@ enum RoadTripAPIError: Error, Equatable {
 
 // MARK: - DTOs (match the .NET server's camelCase JSON)
 
+struct CreateTripRequest: Encodable {
+    let name: String
+    let description: String?
+}
+
+struct CreateTripResponse: Codable {
+    let slug: String
+    let secretToken: String
+    let viewToken: String
+    let viewUrl: String
+    let postUrl: String
+}
+
+struct ExifDTO: Encodable {
+    let gpsLat: Double?
+    let gpsLon: Double?
+    let takenAt: Date?
+}
+
+struct RequestUploadRequest: Encodable {
+    let uploadId: String
+    let filename: String
+    let contentType: String
+    let sizeBytes: Int64
+    let exif: ExifDTO?
+}
+
+struct RequestUploadResponse: Decodable {
+    let photoId: String
+    let sasUrl: String
+    let displaySasUrl: String
+    let thumbSasUrl: String
+    let blobPath: String
+    let maxBlockSizeBytes: Int
+    let serverVersion: String
+    let clientMinVersion: String
+}
+
+struct CommitRequest: Encodable {
+    let blockIds: [String]
+}
+
+struct UpdateLocationRequest: Encodable {
+    let lat: Double
+    let lng: Double
+}
+
 struct TripResponse: Codable {
     let name: String
     let description: String?
@@ -115,43 +289,122 @@ struct PhotoResponse: Codable {
     let takenAt: Date?
 }
 
-// MARK: - Demo hydration (AC1.3 slice: import a real trip into the local cache)
+// MARK: - Trip orchestration (API + Keychain + GRDB)
+//
+// These methods own the full write path for a trip: call the server, persist the
+// SecretToken/ViewToken to the Keychain (never to GRDB), and upsert the local cache.
+// Views/view models call these rather than juggling the three stores themselves.
 
 extension RoadTripAPI {
-    /// SecretToken of the trip seeded on the local backend, baked in for the demo so
-    /// the app loads real server data on launch instead of `SampleData`.
-    static let demoSecretToken = "e0213ab5-2018-4ecc-9c90-f0ab1533d4bc"
+    /// AC1.1: create a trip on the server, store its tokens in the Keychain, and insert
+    /// the local Trip row. Returns the inserted Trip. Throws on any server/Keychain error
+    /// (the caller surfaces it; no partial local state is written on failure).
+    func createTrip(name: String, description: String?,
+                    into database: AppDatabase, keychain: KeychainStore) async throws -> Trip {
+        let response = try await createTrip(name: name, description: description)
+        let tripId = UUID()
+        // Tokens are GUIDs from the server; tolerate either if the server ever changes format.
+        if let secret = UUID(uuidString: response.secretToken) {
+            try keychain.setToken(secret, kind: .secret, tripId: tripId)
+        }
+        if let view = UUID(uuidString: response.viewToken) {
+            try keychain.setToken(view, kind: .view, tripId: tripId)
+        }
+        let trip = Trip(id: tripId, name: name, description: description,
+                        slug: response.slug, photoCount: 0,
+                        createdAt: Date(), cachedAt: Date())
+        try await database.dbQueue.write { db in try trip.insert(db) }
+        return trip
+    }
 
-    /// Pulls the demo trip + photos from the backend and replaces the local cache so
-    /// the UI shows real server data. Best-effort: on any failure the existing local
-    /// cache (e.g. SampleData) is left untouched.
-    func hydrateDemoTrip(into database: AppDatabase) async {
+    /// AC1.3: import a trip the device doesn't own yet via a pasted SecretToken. Fetches
+    /// trip + photos, stores the token in the Keychain, and upserts a fresh local trip.
+    /// `tokenString` must be a GUID; an invalid/unknown token surfaces as a thrown error
+    /// (AC1.5) with no Keychain or GRDB write.
+    func importTrip(tokenString: String,
+                    into database: AppDatabase, keychain: KeychainStore) async throws -> Trip {
+        let trimmed = tokenString.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let secret = UUID(uuidString: trimmed) else { throw RoadTripAPIError.notFound }
+
+        // Fetch first; only touch local stores once the server confirms the token is valid.
+        let tripDTO = try await tripForPost(secretToken: trimmed)
+        let photoDTOs = try await photosForPost(secretToken: trimmed)
+
+        let tripId = UUID()
+        try keychain.setToken(secret, kind: .secret, tripId: tripId)
+        let trip = Trip(id: tripId, name: tripDTO.name, description: tripDTO.description,
+                        slug: nil, photoCount: tripDTO.photoCount,
+                        createdAt: tripDTO.createdAt, cachedAt: Date())
+        let photos = mapPhotos(photoDTOs, tripId: tripId)
+        try await database.dbQueue.write { db in
+            try trip.insert(db)
+            for photo in photos { try photo.insert(db) }
+        }
+        return trip
+    }
+
+    /// Stale-while-revalidate: refresh one already-owned trip's metadata + photos in place.
+    /// Best-effort — failures leave the existing cache untouched.
+    func revalidate(tripId: UUID, secretToken: String, into database: AppDatabase) async {
         do {
-            let tripDTO = try await tripForPost(secretToken: Self.demoSecretToken)
-            let photoDTOs = try await photosForPost(secretToken: Self.demoSecretToken)
-
-            let tripId = UUID()
-            let base = baseURL.absoluteString
-            let trip = Trip(id: tripId, name: tripDTO.name, description: tripDTO.description,
-                            slug: nil, photoCount: tripDTO.photoCount,
-                            createdAt: tripDTO.createdAt, cachedAt: Date())
-            let photos = photoDTOs.map { p in
-                Photo(id: p.id, tripId: tripId,
-                      thumbnailUrl: base + p.thumbnailUrl,
-                      displayUrl: base + p.displayUrl,
-                      originalUrl: base + p.originalUrl,
-                      lat: p.lat, lng: p.lng, placeName: p.placeName,
-                      caption: p.caption, takenAt: p.takenAt, uploadId: nil)
-            }
-
+            let tripDTO = try await tripForPost(secretToken: secretToken)
+            let photoDTOs = try await photosForPost(secretToken: secretToken)
+            let photos = mapPhotos(photoDTOs, tripId: tripId)
             try await database.dbQueue.write { db in
-                try Photo.deleteAll(db)
-                try Trip.deleteAll(db)
-                try trip.insert(db)
+                guard var trip = try Trip.fetchOne(db, key: tripId) else { return }
+                trip.name = tripDTO.name
+                trip.description = tripDTO.description
+                trip.photoCount = tripDTO.photoCount
+                trip.createdAt = tripDTO.createdAt
+                trip.cachedAt = Date()
+                try trip.update(db)
+                try Photo.filter(Column("tripId") == tripId).deleteAll(db)
                 for photo in photos { try photo.insert(db) }
             }
         } catch {
-            print("hydrateDemoTrip: \(error)")
+            print("revalidate(\(tripId)): \(error)")
+        }
+    }
+
+    /// AC1.4: delete a trip. For an owned trip (secret token in the Keychain) the server
+    /// `DELETE` runs first; a 404 means it's already gone, so cleanup still proceeds. Then
+    /// the local Trip row is removed (photos cascade via FK) and both Keychain tokens are
+    /// cleared. Sample/local-only trips (no token) delete locally only. Any other server
+    /// error throws with no local change, so the caller can surface it and retry.
+    func deleteTrip(_ trip: Trip, from database: AppDatabase, keychain: KeychainStore) async throws {
+        if let token = try? keychain.token(kind: .secret, tripId: trip.id) {
+            do {
+                // Server tokens are lowercase and its auth check is a case-sensitive string
+                // compare; `UUID.uuidString` is uppercase, so send the canonical lowercase form.
+                try await deleteTrip(secretToken: token.uuidString.lowercased())
+            } catch RoadTripAPIError.notFound {
+                // Already deleted server-side — fall through to local cleanup.
+            }
+        }
+        try await Self.deleteLocally(tripId: trip.id, from: database, keychain: keychain)
+    }
+
+    /// Local-only cleanup for a deleted trip: removes the Trip row (photos cascade via the
+    /// `onDelete: .cascade` FK) and both Keychain tokens. Split out so the local-state
+    /// guarantee is unit-testable without a server.
+    nonisolated static func deleteLocally(tripId: UUID, from database: AppDatabase,
+                                          keychain: KeychainStore) async throws {
+        try await database.dbQueue.write { db in
+            _ = try Trip.deleteOne(db, key: tripId)
+        }
+        try keychain.removeAll(tripId: tripId)
+    }
+
+    /// Maps server photo DTOs to local records, resolving relative media paths to absolute URLs.
+    private func mapPhotos(_ dtos: [PhotoResponse], tripId: UUID) -> [Photo] {
+        let base = baseURL.absoluteString
+        return dtos.map { p in
+            Photo(id: p.id, tripId: tripId,
+                  thumbnailUrl: base + p.thumbnailUrl,
+                  displayUrl: base + p.displayUrl,
+                  originalUrl: base + p.originalUrl,
+                  lat: p.lat, lng: p.lng, placeName: p.placeName,
+                  caption: p.caption, takenAt: p.takenAt, uploadId: nil)
         }
     }
 }

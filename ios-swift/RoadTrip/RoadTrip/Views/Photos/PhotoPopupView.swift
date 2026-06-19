@@ -7,6 +7,14 @@ struct PhotoPopupView: View {
     let photos: [Photo]
     @Binding var selection: Int
     let onClose: () -> Void
+    var onMovePin: ((Photo) -> Void)? = nil
+    var onDelete: ((Photo) -> Void)? = nil
+
+    /// The photo currently shown (selection clamped to a valid index).
+    private var currentPhoto: Photo? {
+        guard photos.indices.contains(selection) else { return photos.last }
+        return photos[selection]
+    }
 
     var body: some View {
         ZStack {
@@ -26,6 +34,23 @@ struct PhotoPopupView: View {
 
             VStack {
                 HStack {
+                    if onMovePin != nil || onDelete != nil, let photo = currentPhoto {
+                        Menu {
+                            if let onMovePin {
+                                Button { onMovePin(photo) } label: { Label("Move Pin", systemImage: "mappin.and.ellipse") }
+                            }
+                            if let onDelete {
+                                Button(role: .destructive) { onDelete(photo) } label: { Label("Delete Photo", systemImage: "trash") }
+                            }
+                        } label: {
+                            Image(systemName: "ellipsis.circle.fill")
+                                .font(.title)
+                                .symbolRenderingMode(.palette)
+                                .foregroundStyle(.white, .black.opacity(0.45))
+                        }
+                        .padding()
+                        .accessibilityLabel("Photo actions")
+                    }
                     Spacer()
                     Button(action: onClose) {
                         Image(systemName: "xmark.circle.fill")

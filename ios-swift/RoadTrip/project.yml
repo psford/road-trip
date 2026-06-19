@@ -6,6 +6,13 @@
 # See README.md in this directory for the loop.
 name: RoadTrip
 
+# Build configurations. Debug → local backend; Release → prod; Release-TestFlight →
+# Azure dev slot (the DEVSLOT compilation flag selects it in APIEnvironment).
+configs:
+  Debug: debug
+  Release: release
+  Release-TestFlight: release
+
 options:
   bundleIdPrefix: com.psford.roadtripmap.native
   deploymentTarget:
@@ -45,11 +52,16 @@ targets:
         INFOPLIST_KEY_CFBundleDisplayName: Road Trip
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
         INFOPLIST_KEY_NSLocationWhenInUseUsageDescription: "Road Trip centers the map on your location, including when a trip has no photos yet."
+        INFOPLIST_KEY_NSPhotoLibraryUsageDescription: "Road Trip reads the photos you pick so it can keep their location and date, then pin them on your trip map."
         # ATS exception so the simulator app can talk to the local dev backend over http://localhost:5100 (Phase 3 integration).
         INFOPLIST_KEY_NSAppTransportSecurity__NSAllowsLocalNetworking: "YES"
         TARGETED_DEVICE_FAMILY: "1"                        # iPhone only (design excludes iPad)
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+      configs:
+        Release-TestFlight:
+          # Selects the Azure dev slot base URL in APIEnvironment (#elseif DEVSLOT).
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: $(inherited) DEVSLOT
 
   RoadTripTests:
     type: bundle.unit-test
@@ -80,3 +92,5 @@ schemes:
       targets:
         - RoadTripTests
         - RoadTripUITests
+    archive:
+      config: Release-TestFlight   # TestFlight archives target the dev slot
