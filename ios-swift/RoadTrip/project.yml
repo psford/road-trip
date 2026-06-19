@@ -87,6 +87,14 @@ schemes:
         RoadTrip: all
     run:
       config: Debug
+      # Point Debug runs at the Azure dev slot so on-device builds reach a real backend
+      # (localhost is unreachable from a phone). Baked in here so `xcodegen generate` can't
+      # wipe it the way a manually-added scheme env var gets wiped. Only the run action —
+      # the test action stays on the APIEnvironment default (localhost) for integration tests.
+      environmentVariables:
+        - variable: API_BASE_URL
+          value: https://app-roadtripmap-prod-dev.azurewebsites.net
+          isEnabled: true
     test:
       config: Debug
       targets:

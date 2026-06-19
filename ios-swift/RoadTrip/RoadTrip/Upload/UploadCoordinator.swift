@@ -21,12 +21,22 @@ struct UploadCoordinator {
 
     enum UploadError: Error, Equatable {
         case missingToken
+        case sourceUnavailable   // staged source file is gone (e.g. purged) — retry is futile
     }
 
     /// Re-runs a failed (or staged) item from the start. request-upload is idempotent on
     /// the uploadId, so the server returns the same photo id.
     func retry(_ item: UploadQueueItem) async throws {
         try await upload(item)
+    }
+
+    /// Cancels a stuck/failed upload: removes its queue row and deletes the staged source
+    /// file. Used by the banner's dismiss action (and when the source is gone).
+    func abort(_ item: UploadQueueItem) async {
+        removeStagedFile(item)
+        try? await database.dbQueue.write { db in
+            _ = try UploadQueueItem.deleteOne(db, key: item.uploadId)
+        }
     }
 
     /// Uploads one staged item end-to-end. On failure, persists `.failed` + the error and
@@ -43,7 +53,9 @@ struct UploadCoordinator {
             let response = try await requestUpload(item, token: token)
             try await persistSAS(item.uploadId, sasUrl: response.sasUrl)
 
-            let fileData = try Data(contentsOf: URL(fileURLWithPath: item.localFilePath))
+            guard let fileData = try? Data(contentsOf: URL(fileURLWithPath: item.localFilePath)) else {
+                throw UploadError.sourceUnavailable   // staged file purged — can't upload
+            }
             let ranges = BlockUpload.chunkRanges(fileSize: fileData.count, chunkSize: response.maxBlockSizeBytes)
 
             // Track the live SAS URL across reactive refreshes and cumulative bytes for progress.
@@ -80,6 +92,7 @@ struct UploadCoordinator {
             try await database.dbQueue.write { db in
                 _ = try UploadQueueItem.deleteOne(db, key: item.uploadId)
             }
+            removeStagedFile(item)   // committed → the staged source is no longer needed
         } catch {
             try? await setStage(item.uploadId, .failed, error: friendlyError(error))
             throw error
@@ -128,11 +141,17 @@ struct UploadCoordinator {
         }
     }
 
+    private func removeStagedFile(_ item: UploadQueueItem) {
+        try? FileManager.default.removeItem(atPath: item.localFilePath)
+    }
+
     private func friendlyError(_ error: Error) -> String {
         switch error {
+        case UploadError.sourceUnavailable: return "This photo is no longer available — remove it and add it again."
         case UploadTransportError.permanent(let status): return "Upload rejected (HTTP \(status))."
         case UploadTransportError.retryable: return "Upload kept failing. Tap to retry."
-        case RoadTripAPIError.networkUnavailable: return "Couldn’t reach the server."
+        case RoadTripAPIError.networkUnavailable: return "Couldn’t reach the server. Check your connection."
+        case RoadTripAPIError.serverError(let detail): return "Server error: \(detail)"
         default: return "Upload failed. Tap to retry."
         }
     }

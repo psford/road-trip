@@ -17,12 +17,20 @@ struct PhotoCaptureCoordinator {
     let database: AppDatabase
     let stagingDirectory: URL
 
-    init(database: AppDatabase,
-         stagingDirectory: URL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("staged-uploads", isDirectory: true)) {
+    init(database: AppDatabase, stagingDirectory: URL = PhotoCaptureCoordinator.defaultStagingDirectory) {
         self.database = database
         self.stagingDirectory = stagingDirectory
     }
+
+    /// Persistent staging location — Application Support, NOT `temporaryDirectory` (which
+    /// iOS purges on relaunch / under storage pressure). A staged upload must survive
+    /// relaunch so it can be retried or resumed; tmp/ left orphaned, un-retryable items.
+    static let defaultStagingDirectory: URL = {
+        let base = (try? FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask,
+                                                 appropriateFor: nil, create: true))
+            ?? FileManager.default.temporaryDirectory
+        return base.appendingPathComponent("PendingUploads", isDirectory: true)
+    }()
 
     enum CaptureError: Error, Equatable {
         case noAsset           // picked item has no resolvable PHAsset (no library access)

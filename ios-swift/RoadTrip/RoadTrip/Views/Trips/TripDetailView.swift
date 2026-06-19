@@ -45,9 +45,9 @@ struct TripDetailView: View {
 
             if !uploads.isEmpty {
                 VStack {
-                    UploadBanner(uploads: uploads, onRetry: { item in
-                        Task { await retryUpload(item) }
-                    })
+                    UploadBanner(uploads: uploads,
+                                 onRetry: { item in Task { await retryUpload(item) } },
+                                 onDismiss: { item in dismissUpload(item) })
                     Spacer()
                 }
                 .transition(.move(edge: .top).combined(with: .opacity))
@@ -285,6 +285,12 @@ struct TripDetailView: View {
         startUpload(item)
     }
 
+    /// Removes a stuck/failed upload (and its staged file) so the banner can be cleared
+    /// even when retry is futile (e.g. the source photo is gone).
+    private func dismissUpload(_ item: UploadQueueItem) {
+        Task { await UploadCoordinator(database: database, keychain: keychain).abort(item) }
+    }
+
     private func deleteTrip() async {
         isDeleting = true
         do {
@@ -444,6 +450,7 @@ private struct PostPhotoHereSheet: View {
 private struct UploadBanner: View {
     let uploads: [UploadQueueItem]
     let onRetry: (UploadQueueItem) -> Void
+    let onDismiss: (UploadQueueItem) -> Void
 
     var body: some View {
         VStack(spacing: 8) {
@@ -459,6 +466,13 @@ private struct UploadBanner: View {
                         Button("Retry") { onRetry(item) }
                             .buttonStyle(.borderedProminent)
                             .controlSize(.small)
+                        Button { onDismiss(item) } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.title3)
+                                .foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Dismiss")
                     } else {
                         Group {
                             if let fraction = fraction(item) {
