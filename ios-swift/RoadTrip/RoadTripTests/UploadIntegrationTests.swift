@@ -32,7 +32,7 @@ final class UploadIntegrationTests: XCTestCase {
         let staged = try await PhotoCaptureCoordinator(database: db, stagingDirectory: dir)
             .stagePhoto(imageData: jpeg, filename: "IMG_IT.jpg", tripId: trip.id)
 
-        try await UploadCoordinator(database: db, keychain: keychain).upload(staged)
+        try await runUploadToCompletion(staged.uploadId, db: db, keychain: keychain)
 
         // The queue item is consumed and a committed Photo row now exists for the trip.
         let queueCount = try await db.dbQueue.read { try UploadQueueItem.fetchCount($0) }
@@ -69,7 +69,7 @@ final class UploadIntegrationTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: dir) }
         let staged = try await PhotoCaptureCoordinator(database: db, stagingDirectory: dir)
             .stagePhoto(imageData: makeJPEGWithGPS(lat: 37.7749, lng: -122.4194), filename: "IMG.jpg", tripId: trip.id)
-        try await UploadCoordinator(database: db, keychain: keychain).upload(staged)
+        try await runUploadToCompletion(staged.uploadId, db: db, keychain: keychain)
         let committed = try await db.dbQueue.read { db in
             try Photo.filter(Column("tripId") == trip.id).fetchAll(db)
         }
@@ -92,7 +92,33 @@ final class UploadIntegrationTests: XCTestCase {
         XCTAssertTrue(afterDelete.isEmpty, "server deleted the photo")
     }
 
-    // MARK: - Helper
+    // MARK: - Helpers
+
+    /// Drives a staged item through the real `BackgroundUploadSession` end-to-end. Uses an
+    /// `.ephemeral` config so the delegate callbacks fire deterministically in-test (a real
+    /// `.background` session needs the OS daemon + can't share its identifier with the app).
+    /// The session is fire-and-forget, so we poll the queue row until it commits (row gone)
+    /// or fails.
+    private func runUploadToCompletion(_ uploadId: UUID, db: AppDatabase, keychain: KeychainStore,
+                                       timeout: TimeInterval = 90) async throws {
+        let session = BackgroundUploadSession(database: db, keychain: keychain, configuration: .ephemeral)
+        session.start(uploadId)
+
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            let item = try await db.dbQueue.read { try UploadQueueItem.fetchOne($0, key: uploadId) }
+            guard let item else {
+                withExtendedLifetime(session) {}   // keep the session alive until we're done
+                return                              // committed + queue row deleted
+            }
+            if item.stage == .failed {
+                XCTFail("upload failed: \(item.errorMessage ?? "unknown")")
+                return
+            }
+            try await Task.sleep(nanoseconds: 200_000_000)
+        }
+        XCTFail("upload did not finish within \(Int(timeout))s")
+    }
 
     private func makeJPEGWithGPS(lat: Double, lng: Double) -> Data {
         let side = 16

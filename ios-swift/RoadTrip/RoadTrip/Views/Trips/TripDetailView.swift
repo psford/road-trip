@@ -268,27 +268,22 @@ struct TripDetailView: View {
         }
     }
 
-    /// Runs an upload under a background-execution assertion so a brief backgrounding
-    /// doesn't kill it mid-flight, then refreshes the map on success.
+    /// Hands the staged photo to the shared background uploader. It survives backgrounding and
+    /// force-quit (true background `URLSession`), persists `.failed` on exhaustion (the banner
+    /// surfaces Retry), and the committed pin appears via the photos `ValueObservation` on
+    /// revalidate — no manual reload here.
     private func startUpload(_ item: UploadQueueItem) {
-        Task { @MainActor in
-            // UIApplication is main-actor; begin/end must pair on the main thread.
-            let taskId = UIApplication.shared.beginBackgroundTask(withName: "photo-upload")
-            defer { UIApplication.shared.endBackgroundTask(taskId) }
-            // The uploader persists .failed on error; the banner surfaces it + Retry.
-            // The committed photo appears via the photos ValueObservation — no manual reload.
-            try? await UploadCoordinator(database: database, keychain: keychain).upload(item)
-        }
+        BackgroundUploadSession.shared?.start(item.uploadId)
     }
 
     private func retryUpload(_ item: UploadQueueItem) async {
-        startUpload(item)
+        BackgroundUploadSession.shared?.retry(item.uploadId)
     }
 
-    /// Removes a stuck/failed upload (and its staged file) so the banner can be cleared
-    /// even when retry is futile (e.g. the source photo is gone).
+    /// Removes a stuck/failed upload (its row, staged file, and block files) so the banner can
+    /// be cleared even when retry is futile (e.g. the source photo is gone).
     private func dismissUpload(_ item: UploadQueueItem) {
-        Task { await UploadCoordinator(database: database, keychain: keychain).abort(item) }
+        BackgroundUploadSession.shared?.abort(item.uploadId)
     }
 
     private func deleteTrip() async {
