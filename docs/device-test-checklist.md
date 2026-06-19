@@ -33,17 +33,25 @@ the tactile pin drag, or TestFlight — so those wait for here.
 - [ ] HEIC photo from the camera roll uploads as JPEG with correct location/date.
 - [ ] Limited Photo Library permission still works for selected photos.
 
-## 3. Upload resilience — foreground + grace (built) 
-- [ ] Happy path against the dev slot: pick → progress banner → pin appears.
-- [ ] Background the app mid-upload briefly → it finishes (≈30s `beginBackgroundTask` grace).
+## 3. Upload resilience — background `URLSession` (built, Slice B.2; replaces the old foreground path)
+All uploads now run through `BackgroundUploadSession` (one `.background` session, file-based
+block `uploadTask`s, delegate-driven). The async/foreground `UploadCoordinator` + `beginBackgroundTask`
+grace are gone. The banner (ValueObservation) and Retry still surface progress/failures.
+- [ ] Happy path against the dev slot: pick → progress banner → pin appears (commit + revalidate).
 - [ ] Transient network blip (toggle Wi-Fi) → block retries with backoff, upload still completes.
-- [ ] Force a failure → banner shows **Retry**; tapping retries successfully.
+- [ ] Force a failure (e.g. bad token) → banner shows **Retry**; tapping retries successfully; **X** dismisses (row + staged + block files deleted).
 
-## 4. Upload survival — Slice B.2 (NOT BUILT YET; build, then verify here)
-- [ ] Force-quit mid-upload → relaunch → upload **resumes** (needs background `URLSession` +
-      `handleEventsForBackgroundURLSession` + file-based block tasks).
-- [ ] Long-queued upload (>1.75h, or simulated) → SAS refresh kicks in (`SASRefresher`).
-- [ ] Airplane mode → re-enable → queued upload completes.
+## 4. Upload survival — Slice B.2 (BUILT; verify on device — simulator can't prove force-quit survival)
+- [ ] **Background** the app mid-upload (multi-block photo) → upload continues; reopen → it's done / progressed (AC3.1).
+- [ ] **Force-quit** mid-upload → relaunch → `RoadTripApp.init` reconcile re-enqueues missing blocks and finishes (AC3.2).
+      Already-accepted blocks are NOT re-uploaded (check `completedBlockIndices` persistence).
+- [ ] **Airplane mode** on mid-upload → re-enable → queued upload resumes and commits.
+- [ ] Long-queued upload (>1.75h, or temporarily lower `SASRefresher.refreshAfterSeconds`) → SAS refresh path runs on resume.
+- [ ] No half-photos: a pin appears **only** after commit (AC3.6) — interrupting before commit never shows a partial pin.
+
+> Note: to exercise multi-block paths, a few-MB photo is usually a single 4 MB block. Use a
+> large/burst photo (or temporarily shrink `maxBlockSizeBytes` server-side) to get ≥2 blocks
+> so force-quit-resume actually has remaining blocks to re-enqueue.
 
 ## 5. TestFlight — Phase 8 (NOT BUILT YET)
 - [ ] App Store Connect record for `com.psford.roadtripmap.native`.
