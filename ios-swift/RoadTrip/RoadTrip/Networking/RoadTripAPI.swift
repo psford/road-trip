@@ -296,6 +296,17 @@ struct PhotoResponse: Codable {
 // Views/view models call these rather than juggling the three stores themselves.
 
 extension RoadTripAPI {
+    /// Pure parser: extracts a view token UUID from a server viewUrl path.
+    /// Input: nil, empty, "/trips/{uuid}", "https://host/trips/{uuid}", etc.
+    /// Returns: the UUID if the last path component is a valid UUID; nil otherwise.
+    /// No I/O, deterministic, idempotent.
+    nonisolated static func viewToken(fromViewUrl viewUrl: String?) -> UUID? {
+        guard let viewUrl = viewUrl, !viewUrl.isEmpty else { return nil }
+        let components = viewUrl.split(separator: "/").map(String.init)
+        guard let last = components.last, !last.isEmpty else { return nil }
+        return UUID(uuidString: last)
+    }
+
     /// AC1.1: create a trip on the server, store its tokens in the Keychain, and insert
     /// the local Trip row. Returns the inserted Trip. Throws on any server/Keychain error
     /// (the caller surfaces it; no partial local state is written on failure).
