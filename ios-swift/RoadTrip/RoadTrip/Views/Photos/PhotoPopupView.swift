@@ -31,96 +31,89 @@ struct PhotoPopupView: View {
                     .ignoresSafeArea()
                     .onTapGesture { onClose() }
 
-                TabView(selection: $selection) {
-                    ForEach(Array(photos.enumerated()), id: \.element.id) { index, photo in
-                        PhotoCard(photo: photo, imageHeight: imageHeight, captionHeight: captionHeight)
+                VStack(spacing: 0) {
+                    // Header bar with controls
+                    HStack {
+                        Button(action: onClose) {
+                            Image(systemName: "xmark")
+                                .font(.title3)
+                                .foregroundStyle(.white)
+                        }
+                        .frame(minWidth: 44, minHeight: 44)
+                        .contentShape(Rectangle())
+
+                        Spacer()
+
+                        if onMovePin != nil || onDelete != nil, let photo = currentPhoto {
+                            Menu {
+                                if let onMovePin {
+                                    Button { onMovePin(photo) } label: { Label("Move Pin", systemImage: "mappin.and.ellipse") }
+                                }
+                                if let onDelete {
+                                    Button(role: .destructive) { onDelete(photo) } label: { Label("Delete Photo", systemImage: "trash") }
+                                }
+                            } label: {
+                                Image(systemName: "ellipsis")
+                                    .font(.title3)
+                                    .foregroundStyle(.white)
+                            }
+                            .frame(minWidth: 44, minHeight: 44)
+                            .contentShape(Rectangle())
+                            .accessibilityLabel("Photo actions")
+                        }
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(.regularMaterial)
+
+                    // Paged photos
+                    TabView(selection: $selection) {
+                        ForEach(Array(photos.enumerated()), id: \.element.id) { index, photo in
+                            VStack(alignment: .leading, spacing: 0) {
+                                // A fixed-size clear box defines the slot; the image is an OVERLAY, so it can
+                                // never affect layout regardless of its aspect ratio (portrait, landscape, or
+                                // a rotated source). scaledToFill fills the slot, clipped() trims the overflow.
+                                Color.clear
+                                    .frame(maxWidth: .infinity)
+                                    .frame(height: imageHeight)
+                                    .overlay {
+                                        CachedImage(url: URL(string: photo.displayUrl), tripId: photo.tripId,
+                                                    photoId: photo.id, tier: .display) {
+                                            Color.secondary.opacity(0.12).overlay(ProgressView())
+                                        }
+                                    }
+                                    .clipped()
+
+                                VStack(alignment: .leading, spacing: 6) {
+                                    if let caption = photo.caption, !caption.isEmpty {
+                                        Text(caption).font(.headline).lineLimit(1)
+                                    }
+                                    Label(photo.placeName, systemImage: "mappin.and.ellipse")
+                                        .font(.subheadline)
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(2)
+                                    if let takenAt = photo.takenAt {
+                                        Label(takenAt.formatted(date: .abbreviated, time: .omitted), systemImage: "calendar")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                                .padding()
+                                // The page dots (multi-photo) render at the band's bottom — its padding gives room.
+                                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                            }
+                            .frame(height: imageHeight + captionHeight)
                             .padding(.horizontal, 20)
                             .tag(index)
-                    }
-                }
-                .tabViewStyle(.page(indexDisplayMode: photos.count > 1 ? .always : .never))
-                .frame(height: cardHeight)
-
-                VStack {
-                HStack {
-                    if onMovePin != nil || onDelete != nil, let photo = currentPhoto {
-                        Menu {
-                            if let onMovePin {
-                                Button { onMovePin(photo) } label: { Label("Move Pin", systemImage: "mappin.and.ellipse") }
-                            }
-                            if let onDelete {
-                                Button(role: .destructive) { onDelete(photo) } label: { Label("Delete Photo", systemImage: "trash") }
-                            }
-                        } label: {
-                            Image(systemName: "ellipsis.circle.fill")
-                                .font(.title)
-                                .symbolRenderingMode(.palette)
-                                .foregroundStyle(.white, .black.opacity(0.45))
                         }
-                        .padding()
-                        .accessibilityLabel("Photo actions")
                     }
-                    Spacer()
-                    Button(action: onClose) {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.title)
-                            .symbolRenderingMode(.palette)
-                            .foregroundStyle(.white, .black.opacity(0.45))
-                    }
-                    .padding()
-                    .accessibilityLabel("Close")
+                    .tabViewStyle(.page(indexDisplayMode: photos.count > 1 ? .always : .never))
+                    .frame(height: cardHeight)
                 }
-                Spacer()
-                }
+                .background(.regularMaterial)
+                .clipShape(RoundedRectangle(cornerRadius: 16))
+                .shadow(radius: 14)
             }
         }
-    }
-}
-
-/// A single photo card inside the popup: a fixed-height image slot, then a fixed-height
-/// caption band. Both heights are definite so the card can't resize when the image loads.
-private struct PhotoCard: View {
-    let photo: Photo
-    let imageHeight: CGFloat
-    let captionHeight: CGFloat
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            // A fixed-size clear box defines the slot; the image is an OVERLAY, so it can
-            // never affect layout regardless of its aspect ratio (portrait, landscape, or
-            // a rotated source). scaledToFill fills the slot, clipped() trims the overflow.
-            Color.clear
-                .frame(maxWidth: .infinity)
-                .frame(height: imageHeight)
-                .overlay {
-                    CachedImage(url: URL(string: photo.displayUrl), tripId: photo.tripId,
-                                photoId: photo.id, tier: .display) {
-                        Color.secondary.opacity(0.12).overlay(ProgressView())
-                    }
-                }
-                .clipped()
-
-            VStack(alignment: .leading, spacing: 6) {
-                if let caption = photo.caption, !caption.isEmpty {
-                    Text(caption).font(.headline).lineLimit(1)
-                }
-                Label(photo.placeName, systemImage: "mappin.and.ellipse")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-                if let takenAt = photo.takenAt {
-                    Label(takenAt.formatted(date: .abbreviated, time: .omitted), systemImage: "calendar")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .padding()
-            // The page dots (multi-photo) render at the band's bottom — its padding gives room.
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        }
-        .frame(height: imageHeight + captionHeight)
-        .background(.regularMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
-        .shadow(radius: 14)
     }
 }
