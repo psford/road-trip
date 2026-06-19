@@ -6,6 +6,13 @@ the tactile pin drag, or TestFlight — so those wait for here.
 
 **Prerequisites**
 - A physical iPhone (Patrick's + dad's for TestFlight).
+- **First device build on a new Mac (signing):** add the Apple ID for team `GP2M7H6R3U`
+  in Xcode → Settings → Accounts (Admin on the paid "Developer Team"), then build to the
+  device with automatic signing — Xcode creates the Apple Development cert + profile on
+  first build. Gotcha: a **pending Apple Developer Program License Agreement** blocks
+  provisioning and shows up as "No profiles for 'com.psford.roadtripmap.native'" /
+  "Failed to load provisioned devices" — accept it at developer.apple.com/account. On the
+  phone, trust the dev cert under Settings → General → VPN & Device Management.
 - Azure **dev slot** provisioned (design AC7) — until then, point at prod or a local backend
   reachable from the device.
 - Build/install the **Release-TestFlight** configuration (targets the dev slot via the

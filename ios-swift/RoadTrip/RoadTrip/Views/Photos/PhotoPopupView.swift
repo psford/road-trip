@@ -18,10 +18,13 @@ struct PhotoPopupView: View {
 
     var body: some View {
         GeometryReader { geo in
-            // Adaptive card height: cap it and leave generous top/bottom margins so the
-            // popup is always a contained, centered card — never running off-screen on any
-            // device (the old fixed 440 overran on larger phones / smaller safe areas).
-            let cardHeight = min(460, max(300, geo.size.height - 220))
+            // DEFINITE heights for both the image and the caption band. A flexible image
+            // frame let `scaledToFill` resize the card the instant the AsyncImage finished
+            // loading (~150ms after appear), pushing it past the screen. With fixed heights
+            // the loaded image is always clipped to its slot — the layout never changes.
+            let imageHeight = min(360, max(220, geo.size.height * 0.46))
+            let captionHeight: CGFloat = 104
+            let cardHeight = imageHeight + captionHeight
 
             ZStack {
                 Color.black.opacity(0.55)
@@ -30,7 +33,7 @@ struct PhotoPopupView: View {
 
                 TabView(selection: $selection) {
                     ForEach(Array(photos.enumerated()), id: \.element.id) { index, photo in
-                        PhotoCard(photo: photo, multiPhoto: photos.count > 1)
+                        PhotoCard(photo: photo, imageHeight: imageHeight, captionHeight: captionHeight)
                             .padding(.horizontal, 20)
                             .tag(index)
                     }
@@ -74,10 +77,12 @@ struct PhotoPopupView: View {
     }
 }
 
-/// A single photo card inside the popup: image (fills the card), then place + date.
+/// A single photo card inside the popup: a fixed-height image slot, then a fixed-height
+/// caption band. Both heights are definite so the card can't resize when the image loads.
 private struct PhotoCard: View {
     let photo: Photo
-    let multiPhoto: Bool
+    let imageHeight: CGFloat
+    let captionHeight: CGFloat
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -86,17 +91,18 @@ private struct PhotoCard: View {
             } placeholder: {
                 Color.secondary.opacity(0.12).overlay(ProgressView())
             }
-            // Fill the space left after the caption (no fixed height → no dead frosted gap).
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .frame(maxWidth: .infinity)
+            .frame(height: imageHeight)   // definite → loaded image is clipped, never resizes the card
             .clipped()
 
             VStack(alignment: .leading, spacing: 6) {
                 if let caption = photo.caption, !caption.isEmpty {
-                    Text(caption).font(.headline)
+                    Text(caption).font(.headline).lineLimit(1)
                 }
                 Label(photo.placeName, systemImage: "mappin.and.ellipse")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
+                    .lineLimit(2)
                 if let takenAt = photo.takenAt {
                     Label(takenAt.formatted(date: .abbreviated, time: .omitted), systemImage: "calendar")
                         .font(.caption)
@@ -104,11 +110,10 @@ private struct PhotoCard: View {
                 }
             }
             .padding()
-            // Leave room for the page dots so they don't overlap the caption.
-            .padding(.bottom, multiPhoto ? 14 : 0)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            // The page dots (multi-photo) render at the band's bottom — its padding gives room.
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
-        .frame(maxHeight: .infinity)
+        .frame(height: imageHeight + captionHeight)
         .background(.regularMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 16))
         .shadow(radius: 14)
