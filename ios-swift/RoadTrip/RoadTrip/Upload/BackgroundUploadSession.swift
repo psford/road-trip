@@ -283,7 +283,7 @@ final class BackgroundUploadSession: NSObject, @unchecked Sendable {
             let blockIds = (0..<total).map { BlockUpload.blockId(index: $0) }   // ordered list for Azure
             try await api.commitUpload(secretToken: token, photoId: photoId, blockIds: blockIds)
             // Re-hydrate so the committed photo becomes a local Photo row + map pin.
-            await api.revalidate(tripId: item.tripId, secretToken: token, into: database)
+            await api.revalidate(tripId: item.tripId, secretToken: token, into: database, keychain: keychain)
             try await store.delete(item.uploadId)
             fileWriter.cleanup(uploadId: item.uploadId)
             removeStagedOriginal(item)

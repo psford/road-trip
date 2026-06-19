@@ -74,7 +74,7 @@ struct TripListView: View {
         let known = (try? await database.dbQueue.read { try Trip.fetchAll($0) }) ?? []
         for trip in known {
             guard let token = try? keychain.token(kind: .secret, tripId: trip.id) else { continue }
-            await RoadTripAPI.shared.revalidate(tripId: trip.id, secretToken: token.uuidString, into: database)
+            await RoadTripAPI.shared.revalidate(tripId: trip.id, secretToken: token.uuidString, into: database, keychain: keychain)
         }
     }
 }

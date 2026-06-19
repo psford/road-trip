@@ -332,6 +332,8 @@ extension RoadTripAPI {
     /// trip + photos, stores the token in the Keychain, and upserts a fresh local trip.
     /// `tokenString` must be a GUID; an invalid/unknown token surfaces as a thrown error
     /// (AC1.5) with no Keychain or GRDB write.
+    /// AC2.2: Also parses and stores the view token from viewUrl if present; a missing
+    /// viewUrl does not abort the import (AC2.4 — import still succeeds).
     func importTrip(tokenString: String,
                     into database: AppDatabase, keychain: KeychainStore) async throws -> Trip {
         let trimmed = tokenString.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -343,6 +345,10 @@ extension RoadTripAPI {
 
         let tripId = UUID()
         try keychain.setToken(secret, kind: .secret, tripId: tripId)
+        // AC2.2: Store view token if available; nil viewUrl is not an error (AC2.4).
+        if let viewToken = Self.viewToken(fromViewUrl: tripDTO.viewUrl) {
+            try? keychain.setToken(viewToken, kind: .view, tripId: tripId)
+        }
         let trip = Trip(id: tripId, name: tripDTO.name, description: tripDTO.description,
                         slug: nil, photoCount: tripDTO.photoCount,
                         createdAt: tripDTO.createdAt, cachedAt: Date())
@@ -356,7 +362,9 @@ extension RoadTripAPI {
 
     /// Stale-while-revalidate: refresh one already-owned trip's metadata + photos in place.
     /// Best-effort — failures leave the existing cache untouched.
-    func revalidate(tripId: UUID, secretToken: String, into database: AppDatabase) async {
+    /// AC2.3: If the trip lacks a view token, backfill it from the server's viewUrl.
+    func revalidate(tripId: UUID, secretToken: String, into database: AppDatabase,
+                    keychain: KeychainStore) async {
         do {
             let tripDTO = try await tripForPost(secretToken: secretToken)
             let photoDTOs = try await photosForPost(secretToken: secretToken)
@@ -371,6 +379,11 @@ extension RoadTripAPI {
                 try trip.update(db)
                 try Photo.filter(Column("tripId") == tripId).deleteAll(db)
                 for photo in photos { try photo.insert(db) }
+            }
+            // AC2.3: Backfill view token if missing (best-effort, swallow errors).
+            let existingView = (try? keychain.token(kind: .view, tripId: tripId)) ?? nil
+            if existingView == nil, let viewToken = Self.viewToken(fromViewUrl: tripDTO.viewUrl) {
+                try? keychain.setToken(viewToken, kind: .view, tripId: tripId)
             }
         } catch {
             print("revalidate(\(tripId)): \(error)")
