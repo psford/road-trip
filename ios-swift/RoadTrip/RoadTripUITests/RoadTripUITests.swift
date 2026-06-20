@@ -218,10 +218,11 @@ final class RoadTripUITests: XCTestCase {
         XCTAssertTrue(trip.waitForExistence(timeout: 10), "seed trip should appear in the list")
         trip.tap()
 
-        // Wait for detail view to load before asserting Share button state.
-        // The detail view title and controls are populated asynchronously via .task { loadShareTokens() }.
-        let detailTitle = app.staticTexts["Pacific Coast Highway"]
-        XCTAssertTrue(detailTitle.waitForExistence(timeout: 5), "detail view should load with trip name")
+        // Wait for detail view to load by anchoring on the "Add Photo" button, a detail-only
+        // toolbar item. This avoids false-positive waits on the trip title, which exists in
+        // both the list row and the detail view's navigation title.
+        let addPhotoButton = app.buttons["Add Photo"]
+        XCTAssertTrue(addPhotoButton.waitForExistence(timeout: 5), "detail view should load with Add Photo button")
 
         // AC3.5: the Share button should not exist for a SampleData trip (no secret token)
         let shareButton = app.buttons["Share"]
