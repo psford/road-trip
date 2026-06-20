@@ -62,7 +62,20 @@ grace are gone. The banner (ValueObservation) and Retry still surface progress/f
 - [ ] **Invite to edit**: tapping "Invite to edit" opens the system share sheet; the shared text contains the secret token (UUID) and the formatted message `"Join my Road Trip \"{name}\" — open the app → Import via Token → paste: {token}"`.
 - [ ] **SampleData trips**: the Share button is absent (no secret token).
 
-## 6. TestFlight — Phase 8 (NOT BUILT YET)
+## 6. Dad's trip — Prod→Dev migration (Phase 4 AC5)
+
+> Migration done 2026-06-19: prod trip "Ford 2026 xcountry" (slug `ford-2026-xcountry`) copied into
+> the dev slot as trip Id **105** with **120 photos** (all `legacy`/`committed`), tokens preserved
+> verbatim. 360 blobs (original/display/thumb) copied `road-trip-photos` → `road-trip-photos-dev`.
+> Verified: dev-slot endpoint serves all 3 sizes as JPEG 200. Import uses the **secret** token
+> (the `a952bd97…` value Patrick had is the *view* token); grab the secret via the prod app's
+> "Invite to edit" share.
+
+- [ ] **Dad's trip import**: on a fresh install of the dev-slot (Release-TestFlight) build, Import via Token using Dad's **secret** token → the trip imports with all 120 photos pinned (AC5.3).
+- [ ] **Photos render** on the map and in the popup (served from `road-trip-photos-dev`).
+- [ ] **Write access** works: add a test photo, confirm it commits, then remove it.
+
+## 7. TestFlight — Phase 8 (NOT BUILT YET)
 - [ ] App Store Connect record for `com.psford.roadtripmap.native`.
 - [ ] `PrivacyInfo.xcprivacy` (photo library, network, no tracking, no third-party SDKs).
 - [ ] Archive **Release-TestFlight** → upload via `xcrun altool`/`notarytool` → processed without rejection.
