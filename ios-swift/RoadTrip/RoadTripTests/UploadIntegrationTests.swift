@@ -92,6 +92,29 @@ final class UploadIntegrationTests: XCTestCase {
         XCTAssertTrue(afterDelete.isEmpty, "server deleted the photo")
     }
 
+    /// AC2.1 regression guard: Creating a trip stores its view token in the Keychain.
+    func testCreateTripStoresViewToken() async throws {
+        let api = RoadTripAPI.shared
+        let db = try AppDatabase.makeInMemory()
+        let keychain = KeychainStore(service: "com.psford.roadtripmap.native.tests.create-view.\(UUID().uuidString)")
+
+        // Create a trip server-side.
+        let createdTrip: Trip
+        do {
+            createdTrip = try await api.createTrip(name: "Create View Token IT", description: nil, into: db, keychain: keychain)
+        } catch {
+            throw XCTSkip("Local backend not reachable on :5100 — skipping create test (\(error))")
+        }
+        defer { Task { try? await api.deleteTrip(createdTrip, from: db, keychain: keychain) } }
+
+        // Assert both the view and secret tokens are stored after create.
+        let viewToken = try keychain.token(kind: .view, tripId: createdTrip.id)
+        XCTAssertNotNil(viewToken, "creating a trip should store its view token in the Keychain (.view) — AC2.1")
+
+        let secretToken = try keychain.token(kind: .secret, tripId: createdTrip.id)
+        XCTAssertNotNil(secretToken, "creating a trip should also store its secret token in the Keychain (.secret)")
+    }
+
     /// AC2.2: Importing a trip parses the view token from server viewUrl and stores it.
     func testImportTripsStoresViewToken() async throws {
         let api = RoadTripAPI.shared
