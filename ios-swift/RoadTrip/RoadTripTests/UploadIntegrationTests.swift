@@ -179,6 +179,45 @@ final class UploadIntegrationTests: XCTestCase {
         XCTAssertTrue(hasSecret, "import must preserve the secret token")
     }
 
+    /// AC4.2 integration test: importTrip tolerates messy paste (UUID embedded in text).
+    /// Creates a trip, extracts its secret token, wraps it in a message (as a user might paste),
+    /// then imports from the messy text end-to-end. The critical path: extracting the UUID from
+    /// messy text and passing it (not the raw text) to the server lookups.
+    func testImportTripsFromMessyPastedText() async throws {
+        let api = RoadTripAPI.shared
+        let db = try AppDatabase.makeInMemory()
+        let keychain = KeychainStore(service: "com.psford.roadtripmap.native.tests.import-messy.\(UUID().uuidString)")
+
+        // Create a trip server-side.
+        let createdTrip: Trip
+        do {
+            createdTrip = try await api.createTrip(name: "Messy Import IT", description: nil, into: db, keychain: keychain)
+        } catch {
+            throw XCTSkip("Local backend not reachable on :5100 — skipping integration test (\(error))")
+        }
+        let secretTokenString = try XCTUnwrap(try keychain.token(kind: .secret, tripId: createdTrip.id)).uuidString
+        defer { Task { try? await api.deleteTrip(createdTrip, from: db, keychain: keychain) } }
+
+        // Simulate a user pasting text from an invite message or a web page.
+        // AC4.2: The token is embedded in readable prose; importTrip must extract it.
+        let messyPastedText = """
+        Join my Road Trip "\(createdTrip.name)" — open the app → Import via Token → paste: \(secretTokenString)
+        """
+
+        // Import from the messy text into a fresh device.
+        let importDb = try AppDatabase.makeInMemory()
+        let importKeychain = KeychainStore(service: "com.psford.roadtripmap.native.tests.import-messy-fresh.\(UUID().uuidString)")
+        let importedTrip = try await api.importTrip(tokenString: messyPastedText, into: importDb, keychain: importKeychain)
+
+        // Verify the import succeeded and both tokens are stored.
+        let importedSecret = try XCTUnwrap(try importKeychain.token(kind: .secret, tripId: importedTrip.id))
+        XCTAssertEqual(importedSecret.uuidString.lowercased(), secretTokenString.lowercased(),
+                       "messy paste should extract and store the correct secret token (AC4.2)")
+
+        let importedView = try importKeychain.token(kind: .view, tripId: importedTrip.id)
+        XCTAssertNotNil(importedView, "import should also parse and store the view token (AC2.2)")
+    }
+
     // MARK: - Helpers
 
     /// Drives a staged item through the real `BackgroundUploadSession` end-to-end. Uses an

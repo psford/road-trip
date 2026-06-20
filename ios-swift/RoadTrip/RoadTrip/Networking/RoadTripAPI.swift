@@ -373,8 +373,10 @@ extension RoadTripAPI {
         guard let secret else { throw RoadTripAPIError.notFound }
 
         // Fetch first; only touch local stores once the server confirms the token is valid.
-        let tripDTO = try await tripForPost(secretToken: trimmed)
-        let photoDTOs = try await photosForPost(secretToken: trimmed)
+        // AC4.2: Use the resolved UUID (secret) instead of the raw messy string (trimmed).
+        let tokenForServer = secret.uuidString
+        let tripDTO = try await tripForPost(secretToken: tokenForServer)
+        let photoDTOs = try await photosForPost(secretToken: tokenForServer)
 
         let tripId = UUID()
         try keychain.setToken(secret, kind: .secret, tripId: tripId)

@@ -76,8 +76,7 @@ final class TokenPasteTests: XCTestCase {
 
     // AC4.3: UUID-like but invalid format returns nil
     func testInvalidUUIDFormatReturnsNil() {
-        let text = "This has 12345678-1234-1234-1234-123456789012 which looks like UUID format"
-        // Create an invalid UUID-looking string
+        // Create an invalid UUID-looking string with non-hex characters
         let invalid = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
         let result = RoadTripAPI.firstUUID(in: invalid)
         XCTAssertNil(result, "should return nil for invalid UUID hex characters")
@@ -85,10 +84,12 @@ final class TokenPasteTests: XCTestCase {
 
     // AC4.3: Case-insensitive UUID extraction
     func testExtractsLowercaseUUID() {
-        let uuid = UUID()
-        let lowercase = uuid.uuidString.lowercased()
-        let result = RoadTripAPI.firstUUID(in: lowercase)
-        XCTAssertEqual(result, uuid, "should extract lowercase UUID")
+        // Use a hardcoded mixed-case UUID to genuinely exercise case handling.
+        // UUID(uuidString:) is case-insensitive, so this ensures the regex and parser work correctly.
+        let mixedCaseString = "550e8400-E29b-41d4-a716-446655440000"
+        let expected = UUID(uuidString: "550E8400-E29B-41D4-A716-446655440000")!
+        let result = RoadTripAPI.firstUUID(in: mixedCaseString)
+        XCTAssertEqual(result, expected, "should extract UUID regardless of hex case")
     }
 
     // AC4.2: UUID surrounded by newlines
