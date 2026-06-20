@@ -146,7 +146,7 @@ ios-swift/RoadTrip/                       # Swift package + Xcode project, separ
 
 ### Cross-Cutting Architecture Decisions
 
-- **UI: 100% SwiftUI, iOS 17+ minimum.** `@Observable` macro for view-model state (not Combine). `async/await` for foreground HTTP. `NavigationStack` + native large-title chrome.
+- **UI: SwiftUI-first, iOS 17+ minimum.** `@Observable` macro for view-model state (not Combine). `async/await` for foreground HTTP. `NavigationStack` + native large-title chrome. **Guideline (updated 2026-06-18):** prefer the modern framework (SwiftUI) to avoid technical debt, but best practices override when SwiftUI isn't there yet. Where SwiftUI's `Map` can't deliver a native, HIG-compliant interaction (reliable long-press-to-drop and a truly draggable pin — confirmed gaps as of iOS 17/18), drop to a focused `UIViewRepresentable` over `MKMapView` for that surface rather than ship a non-native workaround (e.g. a fixed center reticle). Keep such bridges small and local; revisit when SwiftUI closes the gap.
 - **Local storage: GRDB.swift.** Schema-versioned migrations via `DatabaseMigrator`. Records mirror server contract for read speed. `ValueObservation` drives SwiftUI updates (analog to `@Query`).
 - **Keychain: tokens only.** One `kSecClassGenericPassword` entry per trip, service `com.psford.roadtripmap.native`, account `trip-secret-{tripId}`, value is the SecretToken Guid.
 - **File cache: `~/Library/Caches/Photos/{tripId}/{photoId}_{tier}.jpg`.** Eviction is LRU with a ~1 GB ceiling. Cache directory is purgeable by iOS under storage pressure — acceptable.

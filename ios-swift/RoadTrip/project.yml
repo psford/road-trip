@@ -1,0 +1,104 @@
+# XcodeGen project spec — the source of truth for the native iOS app.
+# The .xcodeproj is GENERATED from this file (and gitignored); never edited by hand.
+#
+# Container Claude authors this file + the Swift sources. The Mac (native Claude /
+# Patrick, via the Xcode MCP bridge) runs `xcodegen generate` then builds/tests.
+# See README.md in this directory for the loop.
+name: RoadTrip
+
+# Build configurations. Debug → local backend; Release → prod; Release-TestFlight →
+# Azure dev slot (the DEVSLOT compilation flag selects it in APIEnvironment).
+configs:
+  Debug: debug
+  Release: release
+  Release-TestFlight: release
+
+options:
+  bundleIdPrefix: com.psford.roadtripmap.native
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+  generateEmptyDirectories: true
+
+settings:
+  base:
+    DEVELOPMENT_TEAM: GP2M7H6R3U          # Patrick's Apple Developer team (per design doc Phase 1)
+    SWIFT_VERSION: "5.9"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    SWIFT_STRICT_CONCURRENCY: complete    # surface actor/Sendable issues early (background URLSession work in Phase 6)
+    GENERATE_INFOPLIST_FILE: YES          # all targets (app + test bundles) get a synthesized Info.plist
+
+packages:
+  GRDB:
+    url: https://github.com/groue/GRDB.swift
+    # Pinned to the version SPM resolved and the Mac verified building (2026-06-15):
+    # GRDB 6.29.3. `from:` allows in-range patch/minor updates within the 6.x line.
+    from: "6.29.3"
+
+targets:
+  RoadTrip:
+    type: application
+    platform: iOS
+    sources:
+      - path: RoadTrip
+    dependencies:
+      - package: GRDB
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.psford.roadtripmap.native
+        GENERATE_INFOPLIST_FILE: YES                       # modern Xcode: Info.plist synthesized from build settings (no plist file to maintain)
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_CFBundleDisplayName: Road Trip
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+        INFOPLIST_KEY_NSLocationWhenInUseUsageDescription: "Road Trip centers the map on your location, including when a trip has no photos yet."
+        INFOPLIST_KEY_NSPhotoLibraryUsageDescription: "Road Trip reads the photos you pick so it can keep their location and date, then pin them on your trip map."
+        # ATS exception so the simulator app can talk to the local dev backend over http://localhost:5100 (Phase 3 integration).
+        INFOPLIST_KEY_NSAppTransportSecurity__NSAllowsLocalNetworking: "YES"
+        TARGETED_DEVICE_FAMILY: "1"                        # iPhone only (design excludes iPad)
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+      configs:
+        Release-TestFlight:
+          # Selects the Azure dev slot base URL in APIEnvironment (#elseif DEVSLOT).
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: $(inherited) DEVSLOT
+
+  RoadTripTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: RoadTripTests
+    dependencies:
+      - target: RoadTrip
+      - package: GRDB        # tests exercise the DB directly (in-memory queue, raw schema checks)
+
+  RoadTripUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: RoadTripUITests
+    dependencies:
+      - target: RoadTrip
+
+schemes:
+  RoadTrip:
+    build:
+      targets:
+        RoadTrip: all
+    run:
+      config: Debug
+      # Point Debug runs at the Azure dev slot so on-device builds reach a real backend
+      # (localhost is unreachable from a phone). Baked in here so `xcodegen generate` can't
+      # wipe it the way a manually-added scheme env var gets wiped. Only the run action —
+      # the test action stays on the APIEnvironment default (localhost) for integration tests.
+      environmentVariables:
+        - variable: API_BASE_URL
+          value: https://app-roadtripmap-prod-dev.azurewebsites.net
+          isEnabled: true
+    test:
+      config: Debug
+      targets:
+        - RoadTripTests
+        - RoadTripUITests
+    archive:
+      config: Release-TestFlight   # TestFlight archives target the dev slot

@@ -627,8 +627,8 @@ CLI tool to seed the `PointsOfInterest` and `ParkBoundaries` tables from externa
 
 | Resource | Name | Resource Group |
 |----------|------|---------------|
-| App Service Plan | `asp-roadtripmap-prod` | `rg-roadtripmap-prod` |
-| App Service | `app-roadtripmap-prod` | `rg-roadtripmap-prod` |
+| App Service Plan | `asp-stockanalyzer` (P0v3, shared) | `rg-stockanalyzer-prod` (cross-RG) |
+| App Service | `app-roadtripmap-prod` | `rg-stockanalyzer-prod` (cross-RG) |
 | SQL Server | `sql-roadtripmap-prod` | `rg-roadtripmap-prod` |
 | SQL Database | `roadtripmap-db` | `rg-roadtripmap-prod` |
 | Key Vault | (road-trip KV) | `rg-roadtripmap-prod` |
@@ -639,7 +639,7 @@ CLI tool to seed the `PointsOfInterest` and `ParkBoundaries` tables from externa
 
 ### 12.2 Bicep Source of Truth
 
-`infrastructure/azure/main.bicep` is the authoritative description of all prod resources in `rg-roadtripmap-prod`. It is authored so that `az deployment group what-if` against the current prod state shows zero drift.
+`infrastructure/azure/main.bicep` is the authoritative description of road-trip's prod resources. SQL + Key Vault deploy to `rg-roadtripmap-prod` (its target scope); the App Service is created by `modules/app-service.bicep`, scoped cross-RG into `rg-stockanalyzer-prod` on the shared `asp-stockanalyzer` (P0v3) plan (consolidated 2026-06-17). It is authored so that `az deployment group what-if` against the current prod state shows zero drift.
 
 Key design points:
 - `@secure()` params for SQL admin password and ACR registry password — never stored in the file.
