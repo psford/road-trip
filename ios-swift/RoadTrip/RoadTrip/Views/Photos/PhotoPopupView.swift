@@ -42,7 +42,7 @@ struct PhotoPopupView: View {
                         Button(action: onClose) {
                             Image(systemName: "xmark")
                                 .font(.title3)
-                                .foregroundStyle(.white)
+                                .foregroundStyle(.primary)
                         }
                         .frame(minWidth: 44, minHeight: 44)
                         .contentShape(Rectangle())
@@ -61,7 +61,7 @@ struct PhotoPopupView: View {
                             } label: {
                                 Image(systemName: "ellipsis")
                                     .font(.title3)
-                                    .foregroundStyle(.white)
+                                    .foregroundStyle(.primary)
                             }
                             .frame(minWidth: 44, minHeight: 44)
                             .contentShape(Rectangle())
@@ -69,7 +69,7 @@ struct PhotoPopupView: View {
                         }
                     }
                     .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
+                    .padding(.vertical, 2)
                     .background(.regularMaterial)
 
                     // Paged photos
@@ -109,7 +109,6 @@ struct PhotoPopupView: View {
                                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                             }
                             .frame(height: imageHeight + captionHeight)
-                            .padding(.horizontal, 20)
                             .tag(index)
                         }
                     }
