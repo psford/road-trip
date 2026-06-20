@@ -33,6 +33,8 @@ struct TripDetailView: View {
     @State private var photoToMove: Photo?
     @State private var stagedNeedingLocation: UploadQueueItem?
     @State private var pendingPost: IdentifiableCoordinate?
+    @State private var shareViewToken: UUID?
+    @State private var secretToken: UUID?
 
     var body: some View {
         ZStack {
@@ -85,6 +87,21 @@ struct TripDetailView: View {
         .navigationTitle(trip.name)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                if let secretToken {                     // owned-trip gate (AC3.5: no token → no button)
+                    Menu {
+                        if let shareViewToken {          // older imports lacking a view token: item simply omitted
+                            ShareLink(item: TripShareLinks.shareViewURL(viewToken: shareViewToken,
+                                                                        baseURL: APIEnvironment.baseURL)) {
+                                Label("Share view link", systemImage: "link")
+                            }
+                        }
+                        ShareLink(item: inviteText(name: trip.name, secret: secretToken)) {
+                            Label("Invite to edit", systemImage: "person.badge.plus")
+                        }
+                    } label: { Label("Share", systemImage: "square.and.arrow.up") }
+                }
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 PhotosPicker(selection: $pickedItem, matching: .images,
                              preferredItemEncoding: .current, photoLibrary: .shared()) {
@@ -147,6 +164,17 @@ struct TripDetailView: View {
         }
         .task { await observePhotos() }
         .task { await observeUploads() }
+        .task { loadShareTokens() }
+    }
+
+    private func loadShareTokens() {
+        // Compute tokens once, handling UUID?? by flattening with ?? nil
+        shareViewToken = (try? keychain.token(kind: .view, tripId: trip.id)) ?? nil
+        secretToken = (try? keychain.token(kind: .secret, tripId: trip.id)) ?? nil
+    }
+
+    private func inviteText(name: String, secret: UUID) -> String {
+        "Join my Road Trip \"\(name)\" — open the app → Import via Token → paste: \(secret.uuidString)"
     }
 
     /// Streams this trip's photos so optimistic delete/move (and committed uploads) reflect

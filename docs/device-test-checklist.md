@@ -55,7 +55,14 @@ grace are gone. The banner (ValueObservation) and Retry still surface progress/f
 > large/burst photo (or temporarily shrink `maxBlockSizeBytes` server-side) to get ≥2 blocks
 > so force-quit-resume actually has remaining blocks to re-enqueue.
 
-## 5. TestFlight — Phase 8 (NOT BUILT YET)
+## 5. Trip sharing (new — Phase 3 AC3)
+- [ ] **Share button** appears in the toolbar on an owned trip (one with a secret token).
+- [ ] **Share view link**: tapping "Share view link" opens the system share sheet; the link is the absolute URL to the read-only web view (e.g., `https://app-roadtripmap-prod-dev.azurewebsites.net/trips/{viewToken}`).
+- [ ] **Web view page** opens on a device WITHOUT the app installed (web browser or another app); shows the trip's name and read-only pins without requiring authentication.
+- [ ] **Invite to edit**: tapping "Invite to edit" opens the system share sheet; the shared text contains the secret token (UUID) and the formatted message `"Join my Road Trip \"{name}\" — open the app → Import via Token → paste: {token}"`.
+- [ ] **SampleData trips**: the Share button is absent (no secret token).
+
+## 6. TestFlight — Phase 8 (NOT BUILT YET)
 - [ ] App Store Connect record for `com.psford.roadtripmap.native`.
 - [ ] `PrivacyInfo.xcprivacy` (photo library, network, no tracking, no third-party SDKs).
 - [ ] Archive **Release-TestFlight** → upload via `xcrun altool`/`notarytool` → processed without rejection.

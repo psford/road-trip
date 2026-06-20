@@ -209,6 +209,22 @@ final class RoadTripUITests: XCTestCase {
         attach(app.screenshot(), name: "AC5.4-empty-state")
     }
 
+    /// AC3.5 (Edge): a SampleData trip (no secret token) must NOT show the Share button.
+    /// Opens a SampleData trip and asserts the Share toolbar button does not exist.
+    func testSampleDataTripHidesShareButton() {
+        let app = launchApp()
+
+        let trip = app.staticTexts["Pacific Coast Highway"]
+        XCTAssertTrue(trip.waitForExistence(timeout: 10), "seed trip should appear in the list")
+        trip.tap()
+
+        // AC3.5: the Share button should not exist for a SampleData trip (no secret token)
+        let shareButton = app.buttons["Share"]
+        XCTAssertFalse(shareButton.exists,
+                       "SampleData trip should NOT show a Share button (AC3.5 — no secret token)")
+        attach(app.screenshot(), name: "AC3.5-share-button-absent")
+    }
+
     private func attach(_ screenshot: XCUIScreenshot, name: String) {
         let attachment = XCTAttachment(screenshot: screenshot)
         attachment.name = name
