@@ -39,3 +39,15 @@ enum APIEnvironment {
         #endif
     }
 }
+
+/// Pure URL builder for trip sharing links (AC3.2).
+/// Constructs shareable read-only view URLs from a view token and base host.
+enum TripShareLinks {
+    /// AC3.2: Builds the absolute shareable view URL for a trip.
+    /// Input: viewToken (UUID), baseURL (scheme + host, e.g. from APIEnvironment).
+    /// Output: URL in the form `<baseURL>/trips/{viewToken.uuidString}`.
+    /// Pure, no I/O, deterministic, idempotent.
+    static func shareViewURL(viewToken: UUID, baseURL: URL) -> URL {
+        return baseURL.appendingPathComponent("trips/\(viewToken.uuidString)")
+    }
+}
