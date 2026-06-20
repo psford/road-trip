@@ -344,7 +344,7 @@ app.MapGet("/api/trips/view/{viewToken}/photos", async (string viewToken, RoadTr
     // route line connects photos in chronological order even when DateTimeOriginal is
     // missing (camera capture). Mirrors PhotoReadService.GetPhotosForTripAsync.
     var photos = await db.Photos
-        .Where(p => p.TripId == trip.Id)
+        .Where(p => p.TripId == trip.Id && p.Status == "committed")
         .OrderBy(p => p.TakenAt ?? p.CreatedAt)
         .Select(p => new PhotoResponse
         {
