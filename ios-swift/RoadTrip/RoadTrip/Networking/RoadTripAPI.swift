@@ -312,6 +312,21 @@ extension RoadTripAPI {
         return UUID(uuidString: last)
     }
 
+    /// AC4.2: Extract the first UUID found in arbitrary text (pure function).
+    /// Handles messy paste: bare UUID, sentence with UUID, URL path with UUID, etc.
+    /// Input: any string, may contain whitespace, newlines, other text.
+    /// Returns: the first valid UUID found (canonical format: 8-4-4-4-12 hex), or nil.
+    /// Implementation: uses regex to find the UUID pattern, then validates with UUID(uuidString:).
+    /// No I/O, deterministic, idempotent.
+    nonisolated static func firstUUID(in text: String) -> UUID? {
+        let uuidPattern = "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
+        guard let range = text.range(of: uuidPattern, options: .regularExpression) else {
+            return nil
+        }
+        let uuidString = String(text[range])
+        return UUID(uuidString: uuidString)
+    }
+
     /// Testable seam: stores a view token parsed from viewUrl, if present.
     /// Parses `viewUrl` using `viewToken(fromViewUrl:)` and stores the result if non-nil.
     /// No-ops silently if viewUrl is nil, empty, or contains no valid UUID (AC2.4).
@@ -348,10 +363,14 @@ extension RoadTripAPI {
     /// (AC1.5) with no Keychain or GRDB write.
     /// AC2.2: Also parses and stores the view token from viewUrl if present; a missing
     /// viewUrl does not abort the import (AC2.4 — import still succeeds).
+    /// AC4.2: Falls back to extracting the first UUID from messy pasted text if bare-UUID
+    /// parse fails; throws .notFound if no UUID is found (AC4.3).
     func importTrip(tokenString: String,
                     into database: AppDatabase, keychain: KeychainStore) async throws -> Trip {
         let trimmed = tokenString.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let secret = UUID(uuidString: trimmed) else { throw RoadTripAPIError.notFound }
+        // AC4.1: Try bare-UUID parse first (the happy path).
+        let secret = UUID(uuidString: trimmed) ?? Self.firstUUID(in: trimmed)
+        guard let secret else { throw RoadTripAPIError.notFound }
 
         // Fetch first; only touch local stores once the server confirms the token is valid.
         let tripDTO = try await tripForPost(secretToken: trimmed)
