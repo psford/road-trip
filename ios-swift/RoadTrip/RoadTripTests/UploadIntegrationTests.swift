@@ -143,8 +143,11 @@ final class UploadIntegrationTests: XCTestCase {
         XCTAssertNotNil(restored, "revalidate should backfill the view token when missing (AC2.3)")
     }
 
-    /// AC2.4 (mandatory assertion, not optional): import succeeds even without viewUrl.
-    /// Tests that a nil/garbage viewUrl doesn't crash or fail the import.
+    /// AC2.4 integration test: import succeeds and stores the secret token.
+    /// Tests via the live backend that import doesn't crash when called normally.
+    /// AC2.4 correctness for nil/garbage viewUrl is covered by unit tests in ViewTokenParsingTests
+    /// (testStoreViewTokenNilViewUrlNeverWritesToken, testStoreViewTokenGarbageViewUrlNeverWritesToken)
+    /// which exercise the storeViewToken seam directly without requiring backend availability.
     func testImportWithoutViewUrlStillSucceeds() async throws {
         let api = RoadTripAPI.shared
         let db = try AppDatabase.makeInMemory()
@@ -155,7 +158,7 @@ final class UploadIntegrationTests: XCTestCase {
         do {
             trip = try await api.createTrip(name: "Import No View IT", description: nil, into: db, keychain: keychain)
         } catch {
-            throw XCTSkip("Local backend not reachable on :5100 — skipping no-view test (\(error))")
+            throw XCTSkip("Local backend not reachable on :5100 — skipping integration test (\(error))")
         }
         let secretTokenString = try XCTUnwrap(try keychain.token(kind: .secret, tripId: trip.id)).uuidString
         defer { Task { try? await api.deleteTrip(trip, from: db, keychain: keychain) } }
@@ -164,18 +167,16 @@ final class UploadIntegrationTests: XCTestCase {
         let importDb = try AppDatabase.makeInMemory()
         let importKeychain = KeychainStore(service: "com.psford.roadtripmap.native.tests.import-no-view-fresh.\(UUID().uuidString)")
 
-        // The testable seam: try importing with the known secret token.
-        // Even if the server doesn't return viewUrl, the import must succeed.
+        // Import with the known secret token — the live backend will return a viewUrl.
         let importedTrip = try await api.importTrip(tokenString: secretTokenString, into: importDb, keychain: importKeychain)
 
-        // Mandatory assertion for AC2.4: import completed, secret token is present.
+        // Verify the import succeeded and the secret token is present.
         let secretToken = try importKeychain.token(kind: .secret, tripId: importedTrip.id)
-        XCTAssertNotNil(secretToken, "import must not throw or abort when viewUrl is missing (AC2.4)")
+        XCTAssertNotNil(secretToken, "import must succeed and store the secret token")
 
-        // The view token may or may not be present, but at least the import succeeded
-        // with the essential secret token intact.
+        // The view token should be present when the backend provides viewUrl.
         let hasSecret = (try? importKeychain.token(kind: .secret, tripId: importedTrip.id)) != nil
-        XCTAssertTrue(hasSecret, "import must preserve the secret token even if view token is unavailable")
+        XCTAssertTrue(hasSecret, "import must preserve the secret token")
     }
 
     // MARK: - Helpers

@@ -297,14 +297,28 @@ struct PhotoResponse: Codable {
 
 extension RoadTripAPI {
     /// Pure parser: extracts a view token UUID from a server viewUrl path.
-    /// Input: nil, empty, "/trips/{uuid}", "https://host/trips/{uuid}", etc.
+    /// Input: nil, empty, "/trips/{uuid}", "https://host/trips/{uuid}", "/trips/{uuid}?x=1", etc.
+    /// Strips query strings (`?...`) and fragments (`#...`) before parsing.
     /// Returns: the UUID if the last path component is a valid UUID; nil otherwise.
     /// No I/O, deterministic, idempotent.
     nonisolated static func viewToken(fromViewUrl viewUrl: String?) -> UUID? {
         guard let viewUrl = viewUrl, !viewUrl.isEmpty else { return nil }
-        let components = viewUrl.split(separator: "/").map(String.init)
+        // Strip query string and fragment before splitting
+        let cleaned = viewUrl
+            .split(separator: "?", maxSplits: 1)[0]  // Remove ?query...
+            .split(separator: "#", maxSplits: 1)[0]  // Remove #fragment...
+        let components = cleaned.split(separator: "/").map(String.init)
         guard let last = components.last, !last.isEmpty else { return nil }
         return UUID(uuidString: last)
+    }
+
+    /// Testable seam: stores a view token parsed from viewUrl, if present.
+    /// Parses `viewUrl` using `viewToken(fromViewUrl:)` and stores the result if non-nil.
+    /// No-ops silently if viewUrl is nil, empty, or contains no valid UUID (AC2.4).
+    /// Never throws — best-effort writes to keychain.
+    nonisolated func storeViewToken(from viewUrl: String?, tripId: UUID, keychain: KeychainStore) {
+        guard let viewToken = Self.viewToken(fromViewUrl: viewUrl) else { return }
+        try? keychain.setToken(viewToken, kind: .view, tripId: tripId)
     }
 
     /// AC1.1: create a trip on the server, store its tokens in the Keychain, and insert
@@ -346,9 +360,7 @@ extension RoadTripAPI {
         let tripId = UUID()
         try keychain.setToken(secret, kind: .secret, tripId: tripId)
         // AC2.2: Store view token if available; nil viewUrl is not an error (AC2.4).
-        if let viewToken = Self.viewToken(fromViewUrl: tripDTO.viewUrl) {
-            try? keychain.setToken(viewToken, kind: .view, tripId: tripId)
-        }
+        storeViewToken(from: tripDTO.viewUrl, tripId: tripId, keychain: keychain)
         let trip = Trip(id: tripId, name: tripDTO.name, description: tripDTO.description,
                         slug: nil, photoCount: tripDTO.photoCount,
                         createdAt: tripDTO.createdAt, cachedAt: Date())
