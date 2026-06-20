@@ -6,7 +6,7 @@ import GRDB
 /// Only photos that have fully committed (all three blob tiers) ever become a `Photo`
 /// row — an in-flight upload lives in `UploadQueueItem` until commit succeeds. That
 /// guarantees there are never half-uploaded photos visible (design AC3.6).
-struct Photo: Codable, Identifiable, Equatable {
+struct Photo: Codable, Identifiable, Equatable, Hashable {
     /// Server-assigned id (`PhotoResponse.id`). Globally unique; the primary key.
     var id: Int
 

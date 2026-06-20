@@ -48,6 +48,9 @@ param acrPassword string
 @description('Container image tag deployed to App Service. Bump each deploy.')
 param containerImageTag string = 'prod-70'
 
+@description('Container image tag the dev slot runs (design AC7). deploy-dev.yml overrides at deploy time; defaults to the prod tag so the slot starts on a known-good image.')
+param devContainerImageTag string = containerImageTag
+
 @description('Ephemeral dev firewall rule for SQL (WSL tunnel). IP only, no pw.')
 param wsl2TempFirewallIp string = '38.42.115.201'
 
@@ -76,6 +79,15 @@ var keyVaultName = 'kv-roadtripmap-prod'
 var acrLoginServer = 'acrstockanalyzerer34ug.azurecr.io'
 var acrUsername = 'acrstockanalyzerer34ug'
 
+// Dev-slot resources (design AC7) — additive; dev iteration without touching prod.
+var sqlDatabaseDevName = 'roadtripmap-db-dev'
+var keyVaultDevName = 'kv-roadtripmap-dev'
+var devBlobContainerName = 'road-trip-photos-dev'
+
+// Key Vault Secrets User role definition (subscription-level).
+var kvSecretsUserRoleId = '4633458b-17de-408a-b874-0445c86b69e6'
+var storageBlobDataContributorRoleId = 'ba92f5b4-2d11-453d-a403-e96b0029c9fe'
+
 // --------------------------------------------------------------------------
 // SQL Server + Database + firewall
 // --------------------------------------------------------------------------
@@ -95,6 +107,22 @@ resource sqlServer 'Microsoft.Sql/servers@2024-11-01-preview' = {
 resource sqlDatabase 'Microsoft.Sql/servers/databases@2024-11-01-preview' = {
   parent: sqlServer
   name: sqlDatabaseName
+  location: location
+  sku: {
+    name: 'Basic'
+    tier: 'Basic'
+    capacity: 5
+  }
+  properties: {
+    collation: 'SQL_Latin1_General_CP1_CI_AS'
+    maxSizeBytes: 2147483648
+  }
+}
+
+// Dev database on the same SQL server (Basic DTU 5, ~$5/mo) — design AC7.2.
+resource sqlDatabaseDev 'Microsoft.Sql/servers/databases@2024-11-01-preview' = {
+  parent: sqlServer
+  name: sqlDatabaseDevName
   location: location
   sku: {
     name: 'Basic'
@@ -153,6 +181,21 @@ resource keyVault 'Microsoft.KeyVault/vaults@2024-04-01-preview' existing = {
 //   BlobStorageConnection  — `stockanalyzerblob` connection string
 //   NpsApiKey              — National Park Service API key
 
+// Dev Key Vault (design AC7) — backs the dev slot's @Microsoft.KeyVault references.
+// Same out-of-band secret policy: after first deploy, populate kv-roadtripmap-dev with
+// DbConnectionString (→ roadtripmap-db-dev), BlobStorageConnection, NpsApiKey.
+module kvDev 'br:acrstockanalyzerer34ug.azurecr.io/bicep/modules/key-vault:1.0.0' = {
+  name: 'kv-dev'
+  params: {
+    keyVaultName: keyVaultDevName
+    location: location
+  }
+}
+
+resource keyVaultDev 'Microsoft.KeyVault/vaults@2024-04-01-preview' existing = {
+  name: keyVaultDevName
+}
+
 // --------------------------------------------------------------------------
 // App Service (cross-RG: runs in rg-stockanalyzer-prod on the shared P0v3 plan)
 // --------------------------------------------------------------------------
@@ -172,6 +215,8 @@ module appService 'modules/app-service.bicep' = {
     keyVaultName: keyVaultName
     blobAccountName: sharedStorageAccountName
     clientSideProcessingEnabled: 'true'
+    devKeyVaultName: keyVaultDevName
+    devContainerImageTag: devContainerImageTag
   }
 }
 
@@ -239,8 +284,62 @@ module roleStorageBlobAppService 'modules/storage-rbac.bicep' = {
   params: {
     storageAccountName: sharedStorageAccountName
     principalId: appService.outputs.principalId
-    roleDefinitionId: 'ba92f5b4-2d11-453d-a403-e96b0029c9fe'
+    roleDefinitionId: storageBlobDataContributorRoleId
     roleAssignmentName: '46c19f15-0fa8-4bb3-8171-e56f670d0cf4'
+  }
+}
+
+// --------------------------------------------------------------------------
+// Dev-slot role assignments + dev blob container (design AC7)
+// --------------------------------------------------------------------------
+// New assignment names use guid() (deterministic from scope+principal+role) rather
+// than hand-picked literals — Bicep updates the same assignment instead of duplicating.
+
+// Dev slot MSI → KV Secrets User on the DEV vault. (Literal name: a role-assignment
+// name must be calculable at deploy start, so it can't derive from the slot's runtime
+// principalId output — only the assignment's `principalId` property can.)
+resource roleKvDevSlot 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  scope: keyVaultDev
+  name: '32c8384d-d36a-4d25-9413-42e878300e95'
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', kvSecretsUserRoleId)
+    principalId: appService.outputs.devSlotPrincipalId
+    principalType: 'ServicePrincipal'
+  }
+  dependsOn: [ kvDev ]
+}
+
+// github-deploy-rt SP → KV Secrets User on the DEV vault (CI preflight reads dev secrets).
+resource roleKvDevGithubDeployRt 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  scope: keyVaultDev
+  name: guid(keyVaultDev.id, githubDeployRtObjectId, kvSecretsUserRoleId)
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', kvSecretsUserRoleId)
+    principalId: githubDeployRtObjectId
+    principalType: 'ServicePrincipal'
+  }
+  dependsOn: [ kvDev ]
+}
+
+// Dev slot MSI → Storage Blob Data Contributor on the shared account (per-trip dev blobs).
+module roleStorageBlobDevSlot 'modules/storage-rbac.bicep' = {
+  name: 'role-storage-blob-dev-slot'
+  scope: resourceGroup(sharedInfraResourceGroup)
+  params: {
+    storageAccountName: sharedStorageAccountName
+    principalId: appService.outputs.devSlotPrincipalId
+    roleDefinitionId: storageBlobDataContributorRoleId
+    roleAssignmentName: 'a84422d4-26ad-4f0b-9373-fb6e8577685d'
+  }
+}
+
+// Dev base container in the shared account (additive child — does not touch CORS).
+module devBlobContainer 'modules/blob-container.bicep' = {
+  name: 'dev-blob-container'
+  scope: resourceGroup(sharedInfraResourceGroup)
+  params: {
+    storageAccountName: sharedStorageAccountName
+    containerName: devBlobContainerName
   }
 }
 
@@ -252,3 +351,8 @@ output sqlServerFqdn string = sqlServer.properties.fullyQualifiedDomainName
 output sqlDatabaseName string = sqlDatabase.name
 output webAppUrl string = 'https://${appService.outputs.defaultHostName}'
 output appServicePrincipalId string = appService.outputs.principalId
+
+// Dev-slot outputs (design AC7)
+output sqlDatabaseDevName string = sqlDatabaseDev.name
+output devSlotUrl string = 'https://${appService.outputs.devSlotHostName}'
+output devSlotPrincipalId string = appService.outputs.devSlotPrincipalId

@@ -1,0 +1,135 @@
+name: Deploy to Azure Dev Slot
+
+# DEV SLOT DEPLOYMENT - Manual trigger only (design AC7.3).
+# Builds a dev-tagged image, pushes to ACR, deploys to the `dev` slot of
+# app-roadtripmap-prod. Never auto-deploys; slot-swap dev→prod stays manual (AC7.5).
+#
+# Prerequisites (one-time, out-of-band):
+#   1. Deploy main.bicep so the dev slot + roadtripmap-db-dev + kv-roadtripmap-dev exist.
+#   2. Populate kv-roadtripmap-dev secrets: DbConnectionString (→ roadtripmap-db-dev),
+#      BlobStorageConnection, NpsApiKey. Until these exist the slot won't start healthy.
+
+on:
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Reason for the dev deploy (shown in logs)'
+        required: true
+        type: string
+
+env:
+  AZURE_WEBAPP_NAME: app-roadtripmap-prod
+  SLOT_NAME: dev
+  RESOURCE_GROUP: rg-stockanalyzer-prod
+  DOTNET_VERSION: '8.0.x'
+  ACR_NAME: acrstockanalyzerer34ug
+  ACR_LOGIN_SERVER: acrstockanalyzerer34ug.azurecr.io
+  IMAGE_NAME: roadtripmap
+  SLOT_URL: https://app-roadtripmap-prod-dev.azurewebsites.net
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore dependencies
+        run: dotnet restore RoadTripMap.sln
+
+      - name: Build
+        run: dotnet build RoadTripMap.sln --configuration Release --no-restore
+
+      - name: Test
+        run: dotnet test RoadTripMap.sln --configuration Release --no-build --verbosity normal
+
+  build-container:
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    outputs:
+      image-tag: dev-${{ github.run_number }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Azure Login
+        uses: azure/login@v3
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Log in to ACR
+        run: az acr login --name ${{ env.ACR_NAME }}
+
+      - name: Build and push to ACR
+        run: |
+          TAG=dev-${{ github.run_number }}
+          docker build -t ${{ env.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:$TAG .
+          docker push ${{ env.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:$TAG
+          echo "## Dev Container Image" >> $GITHUB_STEP_SUMMARY
+          echo "**Tag:** $TAG" >> $GITHUB_STEP_SUMMARY
+
+      - name: Azure Logout
+        if: always()
+        run: az logout || true
+
+  deploy:
+    needs: build-container
+    runs-on: ubuntu-latest
+    environment:
+      name: dev
+      url: https://app-roadtripmap-prod-dev.azurewebsites.net
+    steps:
+      - name: Azure Login
+        uses: azure/login@v3
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Deploy image to dev slot
+        run: |
+          TAG=dev-${{ github.run_number }}
+          echo "Deploying $TAG to slot '${{ env.SLOT_NAME }}'"
+
+          az webapp config container set \
+            --name ${{ env.AZURE_WEBAPP_NAME }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --slot ${{ env.SLOT_NAME }} \
+            --container-image-name ${{ env.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:$TAG \
+            --container-registry-url https://${{ env.ACR_LOGIN_SERVER }} \
+            --container-registry-user ${{ env.ACR_NAME }} \
+            --container-registry-password ${{ secrets.ACR_PASSWORD }}
+
+          az webapp restart \
+            --name ${{ env.AZURE_WEBAPP_NAME }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --slot ${{ env.SLOT_NAME }}
+
+          echo "✅ Dev slot container updated"
+
+      - name: Wait for container startup
+        run: sleep 30
+
+      - name: Health check with retry (AC7.2)
+        run: |
+          for i in 1 2 3 4 5; do
+            echo "Health check attempt $i..."
+            response=$(curl -s -o /dev/null -w "%{http_code}" "${{ env.SLOT_URL }}/api/health" --max-time 30 || echo "000")
+            if [ "$response" = "200" ]; then
+              echo "✅ Dev slot healthy"
+              version=$(curl -s "${{ env.SLOT_URL }}/api/version" --max-time 30 || echo "?")
+              echo "## Dev Deploy Successful" >> $GITHUB_STEP_SUMMARY
+              echo "Dev slot live at ${{ env.SLOT_URL }} — \`/api/version\` → $version" >> $GITHUB_STEP_SUMMARY
+              echo "**Image:** dev-${{ github.run_number }}" >> $GITHUB_STEP_SUMMARY
+              exit 0
+            fi
+            echo "Health check returned $response, waiting 30s..."
+            sleep 30
+          done
+          echo "::error::Dev slot health check failed. If this is the first deploy, confirm kv-roadtripmap-dev secrets are populated."
+          exit 1
+
+      - name: Azure Logout
+        if: always()
+        run: az logout || true

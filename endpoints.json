@@ -2,6 +2,40 @@
   "$schema": "./endpoints.schema.json",
   "project": "road-trip",
   "environments": {
+    "staging": {
+      "database": {
+        "source": "keyvault",
+        "vault": "kv-roadtripmap-dev",
+        "secret": "DbConnectionString",
+        "description": "Azure SQL dev slot (roadtripmap-db-dev on sql-roadtripmap-prod)"
+      },
+      "blobStorage": {
+        "source": "keyvault",
+        "vault": "kv-roadtripmap-dev",
+        "secret": "BlobStorageConnection",
+        "description": "Azure Blob Storage (shared stockanalyzerblob account, dev container)"
+      },
+      "nominatim": {
+        "source": "literal",
+        "value": "https://nominatim.openstreetmap.org",
+        "description": "Geocoding API (same in all environments)"
+      },
+      "overpass": {
+        "source": "literal",
+        "value": "https://overpass-api.de/api/interpreter",
+        "description": "Overpass API (same in all environments)"
+      },
+      "padUs": {
+        "source": "literal",
+        "value": "https://edits.nationalmap.gov/arcgis/rest/services/PAD-US/PAD_US/MapServer/0/query",
+        "description": "PAD-US ArcGIS boundary service"
+      },
+      "npsApi": {
+        "baseUrl": { "source": "literal", "value": "https://developer.nps.gov/api/v1" },
+        "apiKey": { "source": "keyvault", "vault": "kv-roadtripmap-dev", "secret": "NpsApiKey" },
+        "description": "National Park Service API"
+      }
+    },
     "dev": {
       "database": {
         "source": "env",

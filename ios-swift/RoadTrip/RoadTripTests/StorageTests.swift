@@ -80,6 +80,32 @@ final class StorageTests: XCTestCase {
         }
     }
 
+    // MARK: - Delete trip local cleanup (AC1.4)
+
+    func testDeleteLocallyRemovesTripPhotosAndToken() async throws {
+        let appDB = try AppDatabase.makeInMemory()
+        let keychain = KeychainStore(service: "com.psford.roadtripmap.native.tests.\(UUID().uuidString)")
+        let trip = makeTrip()
+        let photo = Photo(id: 1, tripId: trip.id, thumbnailUrl: "t", displayUrl: "d",
+                          originalUrl: "o", lat: 47.6, lng: -122.3, placeName: "Seattle",
+                          caption: nil, takenAt: fixedDate, uploadId: nil)
+        try await appDB.dbQueue.write { db in
+            try trip.insert(db)
+            try photo.insert(db)
+        }
+        try keychain.setToken(UUID(), kind: .secret, tripId: trip.id)
+        try keychain.setToken(UUID(), kind: .view, tripId: trip.id)
+
+        try await RoadTripAPI.deleteLocally(tripId: trip.id, from: appDB, keychain: keychain)
+
+        try await appDB.dbQueue.read { db in
+            XCTAssertEqual(try Trip.fetchCount(db), 0, "trip row removed")
+            XCTAssertEqual(try Photo.fetchCount(db), 0, "photos cascade-delete with the trip")
+        }
+        XCTAssertNil(try keychain.token(kind: .secret, tripId: trip.id), "secret token removed")
+        XCTAssertNil(try keychain.token(kind: .view, tripId: trip.id), "view token removed")
+    }
+
     // MARK: - Keychain
 
     func testKeychainRoundTrip() throws {

@@ -39,6 +39,17 @@ param blobAccountName string
 @description('Client-side image processing dark-release flag, as a string ("true"/"false").')
 param clientSideProcessingEnabled string
 
+// --- dev deployment slot (design AC7) -------------------------------------
+
+@description('Key Vault backing the dev slot\'s @Microsoft.KeyVault references (kv-roadtripmap-dev, in rg-roadtripmap-prod).')
+param devKeyVaultName string
+
+@description('Container image tag the dev slot runs. deploy-dev.yml overrides this at deploy time; the default just keeps `what-if` honest.')
+param devContainerImageTag string
+
+@description('ASPNETCORE_ENVIRONMENT for the dev slot. "Staging" selects the endpoints.json `staging` environment, which resolves secrets from kv-roadtripmap-dev (dev DB + dev blob). EndpointRegistry.NormalizeEnvironment lowercases unknown values, so "Staging" → "staging".')
+param devEnvironment string = 'Staging'
+
 resource sharedPlan 'Microsoft.Web/serverfarms@2024-11-01' existing = {
   name: sharedPlanName
 }
@@ -85,5 +96,66 @@ resource appServiceSettings 'Microsoft.Web/sites/config@2024-11-01' = {
   }
 }
 
+// Sticky settings: these names stay with their slot across a swap, so a manual
+// dev→prod swap (AC7.5) never drags dev's DB/Storage/KV/env into prod (or vice versa).
+// Slot-sticky-ness is declared on the PRODUCTION site via slotConfigNames.
+resource slotConfigNames 'Microsoft.Web/sites/config@2024-11-01' = {
+  parent: appService
+  name: 'slotConfigNames'
+  properties: {
+    appSettingNames: [
+      'ASPNETCORE_ENVIRONMENT'
+      'ConnectionStrings__DefaultConnection'
+      'ConnectionStrings__AzureStorage'
+      'NPS_API_KEY'
+    ]
+  }
+}
+
+// Dev slot — runs on the same shared plan; its own system-assigned identity gets
+// KV/Storage roles in main.bicep. Container image is set imperatively by deploy-dev.yml.
+resource devSlot 'Microsoft.Web/sites/slots@2024-11-01' = {
+  parent: appService
+  name: 'dev'
+  location: location
+  kind: 'app,linux,container'
+  identity: {
+    type: 'SystemAssigned'
+  }
+  properties: {
+    serverFarmId: sharedPlan.id
+    httpsOnly: true
+    siteConfig: {
+      linuxFxVersion: 'DOCKER|${acrLoginServer}/roadtripmap:${devContainerImageTag}'
+      alwaysOn: true
+      ftpsState: 'FtpsOnly'
+      numberOfWorkers: 1
+      localMySqlEnabled: false
+      netFrameworkVersion: 'v4.6'
+    }
+  }
+}
+
+resource devSlotSettings 'Microsoft.Web/sites/slots/config@2024-11-01' = {
+  parent: devSlot
+  name: 'appsettings'
+  properties: {
+    WEBSITES_ENABLE_APP_SERVICE_STORAGE: 'false'
+    ASPNETCORE_ENVIRONMENT: devEnvironment
+    WEBSITES_PORT: '5100'
+    DOCKER_REGISTRY_SERVER_URL: 'https://${acrLoginServer}'
+    DOCKER_REGISTRY_SERVER_USERNAME: acrUsername
+    DOCKER_REGISTRY_SERVER_PASSWORD: acrPassword
+    Blob__AccountName: blobAccountName
+    Upload__ClientSideProcessingEnabled: clientSideProcessingEnabled
+    // Dev slot resolves secrets from the DEV vault → dev DB + dev blob connection.
+    ConnectionStrings__DefaultConnection: '@Microsoft.KeyVault(VaultName=${devKeyVaultName};SecretName=DbConnectionString)'
+    ConnectionStrings__AzureStorage: '@Microsoft.KeyVault(VaultName=${devKeyVaultName};SecretName=BlobStorageConnection)'
+    NPS_API_KEY: '@Microsoft.KeyVault(VaultName=${devKeyVaultName};SecretName=NpsApiKey)'
+  }
+}
+
 output principalId string = appService.identity.principalId
 output defaultHostName string = appService.properties.defaultHostName
+output devSlotPrincipalId string = devSlot.identity.principalId
+output devSlotHostName string = devSlot.properties.defaultHostName
