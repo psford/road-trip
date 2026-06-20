@@ -374,7 +374,7 @@ extension RoadTripAPI {
 
         // Fetch first; only touch local stores once the server confirms the token is valid.
         // AC4.2: Use the resolved UUID (secret) instead of the raw messy string (trimmed).
-        let tokenForServer = secret.uuidString
+        let tokenForServer = secret.uuidString.lowercased()
         let tripDTO = try await tripForPost(secretToken: tokenForServer)
         let photoDTOs = try await photosForPost(secretToken: tokenForServer)
 

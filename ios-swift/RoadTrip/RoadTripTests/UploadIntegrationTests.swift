@@ -148,7 +148,7 @@ final class UploadIntegrationTests: XCTestCase {
     /// AC2.4 correctness for nil/garbage viewUrl is covered by unit tests in ViewTokenParsingTests
     /// (testStoreViewTokenNilViewUrlNeverWritesToken, testStoreViewTokenGarbageViewUrlNeverWritesToken)
     /// which exercise the storeViewToken seam directly without requiring backend availability.
-    func testImportWithoutViewUrlStillSucceeds() async throws {
+    func testImportSucceedsAndStoresSecretToken() async throws {
         let api = RoadTripAPI.shared
         let db = try AppDatabase.makeInMemory()
         let keychain = KeychainStore(service: "com.psford.roadtripmap.native.tests.import-no-view.\(UUID().uuidString)")
