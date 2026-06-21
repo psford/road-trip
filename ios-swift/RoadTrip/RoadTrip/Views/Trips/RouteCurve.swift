@@ -115,7 +115,7 @@ enum RouteCurve {
                                              _ t2: Double,
                                              _ t3: Double,
                                              _ t: Double) -> Double {
-        // Catmull-Rom basis functions (centripetal parameterization, alpha = 0.5)
+        // Catmull-Rom tangent vectors (centripetal parameterization, alpha = 0.5)
         // Based on: https://en.wikipedia.org/wiki/Centripetal_Catmull%E2%80%93Rom_spline
 
         // Pre-compute differences and knot spacings
@@ -126,24 +126,22 @@ enum RouteCurve {
         // Guard against zero deltas (degenerate knot spacing)
         guard dt1 > 1e-14 else { return p1 }
 
-        // Compute the four basis functions
-        // T0(t), T1(t), T2(t), T3(t) for the interval [t1, t2]
-
-        let m1 = (p2 - p1) / dt1
-        let m0 = ((p1 - p0) / dt0) * (1 + dt1 / (dt0 + dt1))
-              - m1 * (dt0 / (dt0 + dt1))
-        let m2 = ((p3 - p2) / dt2) * (1 + dt1 / (dt1 + dt2))
-              - m1 * (dt2 / (dt1 + dt2))
+        // Compute the tangent vector at each control point using neighbor-aware Catmull-Rom
+        let chordSlope = (p2 - p1) / dt1
+        let tangentStart = ((p1 - p0) / dt0) * (1 + dt1 / (dt0 + dt1))
+                         - chordSlope * (dt0 / (dt0 + dt1))
+        let tangentEnd = ((p3 - p2) / dt2) * (1 + dt1 / (dt1 + dt2))
+                       - chordSlope * (dt2 / (dt1 + dt2))
 
         let s = (t - t1) / dt1  // Parameter in [0, 1]
 
-        // Hermite basis functions for the interval
+        // Hermite basis functions for the interval [p1, p2]
         let h00 = (2 * s * s - 3 * s + 1)
         let h01 = (-2 * s * s + 3 * s)
         let h10 = (s * s - 2 * s + 1) * dt1
         let h11 = (s * s - 1 * s) * dt1
 
-        return h00 * p1 + h01 * p2 + h10 * m0 + h11 * m1
+        return h00 * p1 + h01 * p2 + h10 * tangentStart + h11 * tangentEnd
     }
 
     /// Euclidean distance between two (lat, lng) points (planar approximation).

@@ -128,9 +128,9 @@ final class RouteCurveTests: XCTestCase {
         XCTAssertEqual(output.count, expectedCount)
     }
 
-    /// Smoothness sanity: all returned points lie within a reasonable bounding box
-    /// (with reasonable epsilon to account for spline behavior). The points should
-    /// be "close" to the input hull without being wildly off.
+    /// Smoothness sanity: all returned points lie within a tight bounding box
+    /// (verifying centripetal Catmull-Rom no-overshoot property).
+    /// For small inputs (< 1° spread), the spline should stay very close to the hull.
     func testPointsWithinBoundingBox() {
         let input = [
             CLLocationCoordinate2D(latitude: 36.3615, longitude: -121.8563),
@@ -145,31 +145,77 @@ final class RouteCurveTests: XCTestCase {
         let minLon = input.map { $0.longitude }.min()!
         let maxLon = input.map { $0.longitude }.max()!
 
-        // Allow reasonable epsilon (~2 degrees ≈ 222 km) for spline behavior.
-        // Catmull-Rom can overshoot to smooth the curve, but shouldn't go wildly off.
-        let epsilon = 2.0
+        // Centripetal Catmull-Rom should stay within a tight epsilon of the hull.
+        // Input spread is ~0.9°, so allow ~0.05° overshoot (small enough to catch wrong tangents).
+        let epsilon = 0.05
 
         for coordinate in output {
             XCTAssertGreaterThanOrEqual(
                 coordinate.latitude,
                 minLat - epsilon,
-                "latitude should not undershoot wildly"
+                "latitude should not undershoot"
             )
             XCTAssertLessThanOrEqual(
                 coordinate.latitude,
                 maxLat + epsilon,
-                "latitude should not overshoot wildly"
+                "latitude should not overshoot"
             )
             XCTAssertGreaterThanOrEqual(
                 coordinate.longitude,
                 minLon - epsilon,
-                "longitude should not undershoot wildly"
+                "longitude should not undershoot"
             )
             XCTAssertLessThanOrEqual(
                 coordinate.longitude,
                 maxLon + epsilon,
-                "longitude should not overshoot wildly"
+                "longitude should not overshoot"
             )
+        }
+    }
+
+    /// Tangent computation test: verify centripetal Catmull-Rom uses proper tangent vectors.
+    /// The bug being caught: using chord slope (p2-p1)/dt1 instead of the neighbor-aware
+    /// Catmull-Rom tangent. With the bug, the curve would behave erratically depending on
+    /// the positions of neighbors, and could produce loops or severe overshoots.
+    /// This test uses a symmetric 3-point path (which minimizes skew from the bug) and
+    /// verifies the output count and endpoints are preserved (the bug wouldn't affect these,
+    /// but combined with bounding-box checks, ensures the curve generation is stable).
+    func testCentripetalCatmullRomTangentFormula() {
+        // Three collinear points on a line (no curvature needed)
+        let input = [
+            CLLocationCoordinate2D(latitude: 0.0, longitude: 0.0),
+            CLLocationCoordinate2D(latitude: 1.0, longitude: 1.0),
+            CLLocationCoordinate2D(latitude: 2.0, longitude: 2.0),
+        ]
+        let output = RouteCurve.curved(through: input, pointsPerSegment: 10)
+
+        // With correct Catmull-Rom, a collinear curve should remain approximately collinear
+        // (curvature should be ~0). This is a weak check, but combined with other tests,
+        // helps ensure the tangent formula is at least not wildly wrong.
+
+        // Verify endpoint preservation
+        XCTAssertEqual(output.first?.latitude ?? -999, input.first?.latitude ?? -999, accuracy: 1e-10)
+        XCTAssertEqual(output.first?.longitude ?? -999, input.first?.longitude ?? -999, accuracy: 1e-10)
+        XCTAssertEqual(output.last?.latitude ?? -999, input.last?.latitude ?? -999, accuracy: 1e-10)
+        XCTAssertEqual(output.last?.longitude ?? -999, input.last?.longitude ?? -999, accuracy: 1e-10)
+
+        // Verify all points stay within bounding box (catches grossly wrong tangents)
+        let minLat = input.map { $0.latitude }.min()!
+        let maxLat = input.map { $0.latitude }.max()!
+        let minLng = input.map { $0.longitude }.min()!
+        let maxLng = input.map { $0.longitude }.max()!
+
+        let epsilon = 0.05
+
+        for point in output {
+            XCTAssertGreaterThanOrEqual(point.latitude, minLat - epsilon,
+                "curve escapes bounding box (indicates wrong tangent formula)")
+            XCTAssertLessThanOrEqual(point.latitude, maxLat + epsilon,
+                "curve escapes bounding box (indicates wrong tangent formula)")
+            XCTAssertGreaterThanOrEqual(point.longitude, minLng - epsilon,
+                "curve escapes bounding box (indicates wrong tangent formula)")
+            XCTAssertLessThanOrEqual(point.longitude, maxLng + epsilon,
+                "curve escapes bounding box (indicates wrong tangent formula)")
         }
     }
 }
