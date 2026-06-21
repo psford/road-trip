@@ -84,3 +84,8 @@ grace are gone. The banner (ValueObservation) and Retry still surface progress/f
 - [ ] Archive **Release-TestFlight** → upload via `xcrun altool`/`notarytool` → processed without rejection.
 - [ ] Patrick + dad enrolled as internal testers; build installs on both iPhones.
 - [ ] End-to-end on device: create trip → upload real photo → pin on map → open share link in Safari (the .NET view page still serves).
+
+## 9. Camera capture (Phase 4)
+- [ ] **AC3.2/AC3.3 (device):** Take Photo → with Location allowed, the photo stages and uploads tagged with the current coordinate (pin appears at your location).
+- [ ] **AC3.4 (device):** Take Photo with Location denied (or no fix) → the pin-drop sheet appears; setting a pin stages/uploads the capture; nothing is lost; no crash.
+- [ ] **AC3.1/AC3.5 (device):** The `+` menu shows Take Photo + Choose from Library; library selection still stages as before.
