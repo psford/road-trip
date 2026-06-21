@@ -10,6 +10,7 @@ struct ArchivedTripsView: View {
     @State private var trips: [Trip] = []
     @State private var pendingDelete: Trip?
     @State private var deleteError: String?
+    @State private var restoreError: String?
 
     var body: some View {
         archivedContent
@@ -38,6 +39,14 @@ struct ArchivedTripsView: View {
                 Button("OK", role: .cancel) {}
             } message: {
                 Text(deleteError ?? "")
+            }
+            .alert("Couldn't restore trip", isPresented: Binding(
+                get: { restoreError != nil },
+                set: { if !$0 { restoreError = nil } }
+            )) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(restoreError ?? "")
             }
             .task { await observeArchived() }
     }
@@ -78,13 +87,18 @@ struct ArchivedTripsView: View {
     /// Restores a trip by setting `archivedAt = nil`.
     /// Captured `trip.id` is immutable and safe for async closure (@Sendable).
     /// ValueObservation automatically removes it from the archived list via the filter.
+    /// Surfaces errors via .alert for symmetry with deletePermanently.
     private func restore(_ trip: Trip) {
         let id = trip.id
         Task {
-            try? await database.dbQueue.write { db in
-                guard var t = try Trip.fetchOne(db, key: id) else { return }
-                t.archivedAt = nil
-                try t.update(db)
+            do {
+                try await database.dbQueue.write { db in
+                    guard var t = try Trip.fetchOne(db, key: id) else { return }
+                    t.archivedAt = nil
+                    try t.update(db)
+                }
+            } catch {
+                restoreError = "Couldn't restore trip. Please try again."
             }
         }
     }
@@ -129,6 +143,7 @@ private struct ArchivedTripRow: View {
                 Label("Restore", systemImage: "arrow.uturn.backward")
             }
             .tint(.blue)
+            .accessibilityIdentifier("restore-trip")
 
             Button {
                 onDelete()
@@ -136,6 +151,7 @@ private struct ArchivedTripRow: View {
                 Label("Delete permanently", systemImage: "trash")
             }
             .tint(.red)
+            .accessibilityIdentifier("delete-permanently-action")
         }
     }
 }
