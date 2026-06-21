@@ -52,3 +52,6 @@ raw tokens live in the Keychain only.
   MUST decide its archive filter explicitly or it will show archived rows.
 - The Xcode project is generated from `project.yml` by XcodeGen — adding a Storage file means
   editing sources + `project.yml`, then regenerating on the Mac (never edit `.xcodeproj`).
+- `project.yml` must keep `excludes: ["**/*.md"]` on the RoadTrip target's source path. The
+  per-directory `CLAUDE.md` files would otherwise be bundled as app resources and collide
+  (multiple same-named files) — removing this exclude re-breaks the build. Don't drop it.

@@ -35,6 +35,10 @@ delete UX and the trip-route map rendering.
 - **`@AppStorage("showRoute")` (first `@AppStorage` in the app)** — TripDetailView gates the
   curved dashed route line on this flag, toggled by an on-map overlay button. Persists across
   launches via `UserDefaults`. Route only draws when `showRoute && routeCoordinates.count >= 2`.
+  Because it persists, UI tests need a known starting value: `AppBootstrap.prepare()` forces
+  `UserDefaults.standard.set(true, forKey: "showRoute")` on `-uitest` launches (a plain write,
+  not `removePersistentDomain`, to avoid corrupting the defaults cache). Route-toggle UI tests
+  rely on this; don't remove it.
 - **Permanent delete moved out of trip detail** — destructive server delete now lives behind the
   archive flow (archive → Archived list → confirm → delete). TripDetailView's prior Delete action
   is gone, so the map screen has no irreversible action.
