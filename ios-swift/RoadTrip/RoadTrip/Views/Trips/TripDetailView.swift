@@ -122,8 +122,13 @@ struct TripDetailView: View {
                 Task { await stage(picked, overrideCoordinate: post.coordinate) }
             }
         }
+        // `photoLibrary: .shared()` is REQUIRED, not optional: the staging pipeline resolves the
+        // picked item to a PHAsset via `item.itemIdentifier` (PhotosPicker strips EXIF, so we read
+        // raw bytes from the asset to keep location). `itemIdentifier` is only populated when the
+        // picker is bound to the shared library — drop `.shared()` and every pick throws
+        // CaptureError.noAsset ("Couldn't read that photo from your library"). See PhotoCaptureCoordinator.loadImageData.
         .photosPicker(isPresented: $showLibraryPicker, selection: $pickedItem, matching: .images,
-                      preferredItemEncoding: .current)
+                      preferredItemEncoding: .current, photoLibrary: .shared())
         .sheet(isPresented: $showCamera) {
             CameraPicker { image in
                 guard let image else { return }
