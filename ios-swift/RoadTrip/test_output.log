@@ -1,0 +1,452 @@
+Command line invocation:
+    /Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild -project RoadTrip.xcodeproj -scheme RoadTrip -destination "platform=iOS Simulator,name=iPhone 17" -derivedDataPath .build-dd test "-only-testing:RoadTripTests"
+
+Resolve Package Graph
+
+
+Resolved source packages:
+  GRDB: https://github.com/groue/GRDB.swift @ 6.29.3
+
+ComputePackagePrebuildTargetDependencyGraph
+
+Prepare packages
+
+CreateBuildRequest
+
+SendProjectDescription
+
+CreateBuildOperation
+
+ComputeTargetDependencyGraph
+note: Building targets in dependency order
+note: Target dependency graph (7 targets)
+    Target 'RoadTripUITests' in project 'RoadTrip'
+        ➜ Explicit dependency on target 'RoadTrip' in project 'RoadTrip'
+    Target 'RoadTripTests' in project 'RoadTrip'
+        ➜ Explicit dependency on target 'RoadTrip' in project 'RoadTrip'
+        ➜ Explicit dependency on target 'GRDB' in project 'GRDB'
+    Target 'RoadTrip' in project 'RoadTrip'
+        ➜ Explicit dependency on target 'GRDB' in project 'GRDB'
+    Target 'GRDB' in project 'GRDB'
+        ➜ Explicit dependency on target 'GRDB' in project 'GRDB'
+        ➜ Explicit dependency on target 'GRDB_GRDB' in project 'GRDB'
+    Target 'GRDB' in project 'GRDB'
+        ➜ Explicit dependency on target 'GRDB_GRDB' in project 'GRDB'
+        ➜ Explicit dependency on target 'CSQLite' in project 'GRDB'
+    Target 'CSQLite' in project 'GRDB' (no dependencies)
+    Target 'GRDB_GRDB' in project 'GRDB' (no dependencies)
+
+GatherProvisioningInputs
+
+CreateBuildDescription
+
+ClangStatCache /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang-stat-cache /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator26.4.sdk /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/SDKStatCaches.noindex/iphonesimulator26.4-23E237-686eebb5dc1d8ecb277353a59184f4aa.sdkstatcache
+    cd /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/RoadTrip.xcodeproj
+    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang-stat-cache /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator26.4.sdk -o /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/SDKStatCaches.noindex/iphonesimulator26.4-23E237-686eebb5dc1d8ecb277353a59184f4aa.sdkstatcache
+
+SwiftDriver RoadTripTests normal arm64 com.apple.xcode.tools.swift.compiler (in target 'RoadTripTests' from project 'RoadTrip')
+    cd /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip
+    builtin-SwiftDriver -- /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc -module-name RoadTripTests -Onone @/Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Intermediates.noindex/RoadTrip.build/Debug-iphonesimulator/RoadTripTests.build/Objects-normal/arm64/RoadTripTests.SwiftFileList -DDEBUG -Xcc -fmodule-map-file\=/Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/SourcePackages/checkouts/GRDB.swift/Sources/CSQLite/module.modulemap -Xcc -fmodule-map-file\=/Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/SourcePackages/checkouts/GRDB.swift/Sources/CSQLite/module.modulemap -plugin-path /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing -enable-upcoming-feature StrictConcurrency -enable-bare-slash-regex -enable-experimental-feature DebugDescriptionMacro -sdk /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator26.4.sdk -target arm64-apple-ios17.0-simulator -g -module-cache-path /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/ModuleCache.noindex -Xfrontend -serialize-debugging-options -enable-testing -index-store-path /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Index.noindex/DataStore -Xcc -D_LIBCPP_HARDENING_MODE\=_LIBCPP_HARDENING_MODE_DEBUG -swift-version 5 -I /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Products/Debug-iphonesimulator -Isystem /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/usr/lib -F /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Products/Debug-iphonesimulator/PackageFrameworks -F /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Products/Debug-iphonesimulator/PackageFrameworks -F /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Products/Debug-iphonesimulator -F /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/Library/Frameworks -F /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator26.4.sdk/Developer/Library/Frameworks -c -j10 -enable-batch-mode -incremental -Xcc -ivfsstatcache -Xcc /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/SDKStatCaches.noindex/iphonesimulator26.4-23E237-686eebb5dc1d8ecb277353a59184f4aa.sdkstatcache -output-file-map /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Intermediates.noindex/RoadTrip.build/Debug-iphonesimulator/RoadTripTests.build/Objects-normal/arm64/RoadTripTests-OutputFileMap.json -use-frontend-parseable-output -save-temps -no-color-diagnostics -explicit-module-build -module-cache-path /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules -clang-scanner-module-cache-path /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/ModuleCache.noindex -sdk-module-cache-path /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/ModuleCache.noindex -serialize-diagnostics -emit-dependencies -emit-module -emit-module-path /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Intermediates.noindex/RoadTrip.build/Debug-iphonesimulator/RoadTripTests.build/Objects-normal/arm64/RoadTripTests.swiftmodule -validate-clang-modules-once -clang-build-session-file /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/ModuleCache.noindex/Session.modulevalidation -Xcc -I/Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Intermediates.noindex/RoadTrip.build/Debug-iphonesimulator/RoadTripTests.build/swift-overrides.hmap -emit-const-values -Xfrontend -const-gather-protocols-file -Xfrontend /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Intermediates.noindex/RoadTrip.build/Debug-iphonesimulator/RoadTripTests.build/Objects-normal/arm64/RoadTripTests_const_extract_protocols.json -Xcc -iquote -Xcc /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Intermediates.noindex/RoadTrip.build/Debug-iphonesimulator/RoadTripTests.build/RoadTripTests-generated-files.hmap -Xcc -I/Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Intermediates.noindex/RoadTrip.build/Debug-iphonesimulator/RoadTripTests.build/RoadTripTests-own-target-headers.hmap -Xcc -I/Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Intermediates.noindex/RoadTrip.build/Debug-iphonesimulator/RoadTripTests.build/RoadTripTests-all-non-framework-target-headers.hmap -Xcc -ivfsoverlay -Xcc /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Intermediates.noindex/RoadTrip.build/Debug-iphonesimulator/RoadTrip-09ca582446851977ce7da337e9c7f98b-VFS-iphonesimulator/all-product-headers.yaml -Xcc -iquote -Xcc /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Intermediates.noindex/RoadTrip.build/Debug-iphonesimulator/RoadTripTests.build/RoadTripTests-project-headers.hmap -Xcc -I/Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Products/Debug-iphonesimulator/include -Xcc -I/Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Intermediates.noindex/RoadTrip.build/Debug-iphonesimulator/RoadTripTests.build/DerivedSources-normal/arm64 -Xcc -I/Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Intermediates.noindex/RoadTrip.build/Debug-iphonesimulator/RoadTripTests.build/DerivedSources/arm64 -Xcc -I/Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Intermediates.noindex/RoadTrip.build/Debug-iphonesimulator/RoadTripTests.build/DerivedSources -Xcc -DDEBUG\=1 -emit-objc-header -emit-objc-header-path /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Intermediates.noindex/RoadTrip.build/Debug-iphonesimulator/RoadTripTests.build/Objects-normal/arm64/RoadTripTests-Swift.h -working-directory /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip -experimental-emit-module-separately -disable-cmo
+
+CodeSign /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Products/Debug-iphonesimulator/RoadTrip.app/PlugIns/RoadTripTests.xctest/Frameworks/GRDB_5DC4DB053_PackageProduct.framework (in target 'RoadTripTests' from project 'RoadTrip')
+    cd /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip
+    
+    Signing Identity:     "Sign to Run Locally"
+    
+    /usr/bin/codesign --force --sign - --timestamp\=none --preserve-metadata\=identifier,entitlements,flags --generate-entitlement-der /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Products/Debug-iphonesimulator/RoadTrip.app/PlugIns/RoadTripTests.xctest/Frameworks/GRDB_5DC4DB053_PackageProduct.framework
+/Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Products/Debug-iphonesimulator/RoadTrip.app/PlugIns/RoadTripTests.xctest/Frameworks/GRDB_5DC4DB053_PackageProduct.framework: replacing existing signature
+
+SwiftEmitModule normal arm64 Emitting\ module\ for\ RoadTripTests (in target 'RoadTripTests' from project 'RoadTrip')
+
+EmitSwiftModule normal arm64 (in target 'RoadTripTests' from project 'RoadTrip')
+    cd /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip
+    
+
+SwiftCompile normal arm64 Compiling\ UploadIntegrationTests.swift /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/RoadTripTests/UploadIntegrationTests.swift (in target 'RoadTripTests' from project 'RoadTrip')
+SwiftCompile normal arm64 /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/RoadTripTests/UploadIntegrationTests.swift (in target 'RoadTripTests' from project 'RoadTrip')
+    cd /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip
+    
+
+SwiftDriverJobDiscovery normal arm64 Emitting module for RoadTripTests (in target 'RoadTripTests' from project 'RoadTrip')
+
+SwiftDriver\ Compilation\ Requirements RoadTripTests normal arm64 com.apple.xcode.tools.swift.compiler (in target 'RoadTripTests' from project 'RoadTrip')
+    cd /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip
+    builtin-Swift-Compilation-Requirements -- /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc -module-name RoadTripTests -Onone @/Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Intermediates.noindex/RoadTrip.build/Debug-iphonesimulator/RoadTripTests.build/Objects-normal/arm64/RoadTripTests.SwiftFileList -DDEBUG -Xcc -fmodule-map-file\=/Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/SourcePackages/checkouts/GRDB.swift/Sources/CSQLite/module.modulemap -Xcc -fmodule-map-file\=/Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/SourcePackages/checkouts/GRDB.swift/Sources/CSQLite/module.modulemap -plugin-path /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing -enable-upcoming-feature StrictConcurrency -enable-bare-slash-regex -enable-experimental-feature DebugDescriptionMacro -sdk /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator26.4.sdk -target arm64-apple-ios17.0-simulator -g -module-cache-path /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/ModuleCache.noindex -Xfrontend -serialize-debugging-options -enable-testing -index-store-path /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Index.noindex/DataStore -Xcc -D_LIBCPP_HARDENING_MODE\=_LIBCPP_HARDENING_MODE_DEBUG -swift-version 5 -I /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Products/Debug-iphonesimulator -Isystem /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/usr/lib -F /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Products/Debug-iphonesimulator/PackageFrameworks -F /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Products/Debug-iphonesimulator/PackageFrameworks -F /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Products/Debug-iphonesimulator -F /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/Library/Frameworks -F /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator26.4.sdk/Developer/Library/Frameworks -c -j10 -enable-batch-mode -incremental -Xcc -ivfsstatcache -Xcc /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/SDKStatCaches.noindex/iphonesimulator26.4-23E237-686eebb5dc1d8ecb277353a59184f4aa.sdkstatcache -output-file-map /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Intermediates.noindex/RoadTrip.build/Debug-iphonesimulator/RoadTripTests.build/Objects-normal/arm64/RoadTripTests-OutputFileMap.json -use-frontend-parseable-output -save-temps -no-color-diagnostics -explicit-module-build -module-cache-path /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules -clang-scanner-module-cache-path /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/ModuleCache.noindex -sdk-module-cache-path /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/ModuleCache.noindex -serialize-diagnostics -emit-dependencies -emit-module -emit-module-path /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Intermediates.noindex/RoadTrip.build/Debug-iphonesimulator/RoadTripTests.build/Objects-normal/arm64/RoadTripTests.swiftmodule -validate-clang-modules-once -clang-build-session-file /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/ModuleCache.noindex/Session.modulevalidation -Xcc -I/Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Intermediates.noindex/RoadTrip.build/Debug-iphonesimulator/RoadTripTests.build/swift-overrides.hmap -emit-const-values -Xfrontend -const-gather-protocols-file -Xfrontend /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Intermediates.noindex/RoadTrip.build/Debug-iphonesimulator/RoadTripTests.build/Objects-normal/arm64/RoadTripTests_const_extract_protocols.json -Xcc -iquote -Xcc /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Intermediates.noindex/RoadTrip.build/Debug-iphonesimulator/RoadTripTests.build/RoadTripTests-generated-files.hmap -Xcc -I/Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Intermediates.noindex/RoadTrip.build/Debug-iphonesimulator/RoadTripTests.build/RoadTripTests-own-target-headers.hmap -Xcc -I/Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Intermediates.noindex/RoadTrip.build/Debug-iphonesimulator/RoadTripTests.build/RoadTripTests-all-non-framework-target-headers.hmap -Xcc -ivfsoverlay -Xcc /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Intermediates.noindex/RoadTrip.build/Debug-iphonesimulator/RoadTrip-09ca582446851977ce7da337e9c7f98b-VFS-iphonesimulator/all-product-headers.yaml -Xcc -iquote -Xcc /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Intermediates.noindex/RoadTrip.build/Debug-iphonesimulator/RoadTripTests.build/RoadTripTests-project-headers.hmap -Xcc -I/Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Products/Debug-iphonesimulator/include -Xcc -I/Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Intermediates.noindex/RoadTrip.build/Debug-iphonesimulator/RoadTripTests.build/DerivedSources-normal/arm64 -Xcc -I/Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Intermediates.noindex/RoadTrip.build/Debug-iphonesimulator/RoadTripTests.build/DerivedSources/arm64 -Xcc -I/Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Intermediates.noindex/RoadTrip.build/Debug-iphonesimulator/RoadTripTests.build/DerivedSources -Xcc -DDEBUG\=1 -emit-objc-header -emit-objc-header-path /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Intermediates.noindex/RoadTrip.build/Debug-iphonesimulator/RoadTripTests.build/Objects-normal/arm64/RoadTripTests-Swift.h -working-directory /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip -experimental-emit-module-separately -disable-cmo
+
+Copy /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Products/Debug-iphonesimulator/RoadTripTests.swiftmodule/Project/arm64-apple-ios-simulator.swiftsourceinfo /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Intermediates.noindex/RoadTrip.build/Debug-iphonesimulator/RoadTripTests.build/Objects-normal/arm64/RoadTripTests.swiftsourceinfo (in target 'RoadTripTests' from project 'RoadTrip')
+    cd /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip
+    builtin-copy -exclude .DS_Store -exclude CVS -exclude .svn -exclude .git -exclude .hg -resolve-src-symlinks -rename /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Intermediates.noindex/RoadTrip.build/Debug-iphonesimulator/RoadTripTests.build/Objects-normal/arm64/RoadTripTests.swiftsourceinfo /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Products/Debug-iphonesimulator/RoadTripTests.swiftmodule/Project/arm64-apple-ios-simulator.swiftsourceinfo
+
+Copy /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Products/Debug-iphonesimulator/RoadTripTests.swiftmodule/arm64-apple-ios-simulator.swiftdoc /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Intermediates.noindex/RoadTrip.build/Debug-iphonesimulator/RoadTripTests.build/Objects-normal/arm64/RoadTripTests.swiftdoc (in target 'RoadTripTests' from project 'RoadTrip')
+    cd /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip
+    builtin-copy -exclude .DS_Store -exclude CVS -exclude .svn -exclude .git -exclude .hg -resolve-src-symlinks -rename /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Intermediates.noindex/RoadTrip.build/Debug-iphonesimulator/RoadTripTests.build/Objects-normal/arm64/RoadTripTests.swiftdoc /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Products/Debug-iphonesimulator/RoadTripTests.swiftmodule/arm64-apple-ios-simulator.swiftdoc
+
+Copy /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Products/Debug-iphonesimulator/RoadTripTests.swiftmodule/arm64-apple-ios-simulator.abi.json /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Intermediates.noindex/RoadTrip.build/Debug-iphonesimulator/RoadTripTests.build/Objects-normal/arm64/RoadTripTests.abi.json (in target 'RoadTripTests' from project 'RoadTrip')
+    cd /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip
+    builtin-copy -exclude .DS_Store -exclude CVS -exclude .svn -exclude .git -exclude .hg -resolve-src-symlinks -rename /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Intermediates.noindex/RoadTrip.build/Debug-iphonesimulator/RoadTripTests.build/Objects-normal/arm64/RoadTripTests.abi.json /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Products/Debug-iphonesimulator/RoadTripTests.swiftmodule/arm64-apple-ios-simulator.abi.json
+
+Copy /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Products/Debug-iphonesimulator/RoadTripTests.swiftmodule/arm64-apple-ios-simulator.swiftmodule /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Intermediates.noindex/RoadTrip.build/Debug-iphonesimulator/RoadTripTests.build/Objects-normal/arm64/RoadTripTests.swiftmodule (in target 'RoadTripTests' from project 'RoadTrip')
+    cd /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip
+    builtin-copy -exclude .DS_Store -exclude CVS -exclude .svn -exclude .git -exclude .hg -resolve-src-symlinks -rename /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Intermediates.noindex/RoadTrip.build/Debug-iphonesimulator/RoadTripTests.build/Objects-normal/arm64/RoadTripTests.swiftmodule /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Products/Debug-iphonesimulator/RoadTripTests.swiftmodule/arm64-apple-ios-simulator.swiftmodule
+
+SwiftDriverJobDiscovery normal arm64 Compiling UploadIntegrationTests.swift (in target 'RoadTripTests' from project 'RoadTrip')
+
+SwiftDriver\ Compilation RoadTripTests normal arm64 com.apple.xcode.tools.swift.compiler (in target 'RoadTripTests' from project 'RoadTrip')
+    cd /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip
+    builtin-Swift-Compilation -- /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc -module-name RoadTripTests -Onone @/Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Intermediates.noindex/RoadTrip.build/Debug-iphonesimulator/RoadTripTests.build/Objects-normal/arm64/RoadTripTests.SwiftFileList -DDEBUG -Xcc -fmodule-map-file\=/Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/SourcePackages/checkouts/GRDB.swift/Sources/CSQLite/module.modulemap -Xcc -fmodule-map-file\=/Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/SourcePackages/checkouts/GRDB.swift/Sources/CSQLite/module.modulemap -plugin-path /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing -enable-upcoming-feature StrictConcurrency -enable-bare-slash-regex -enable-experimental-feature DebugDescriptionMacro -sdk /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator26.4.sdk -target arm64-apple-ios17.0-simulator -g -module-cache-path /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/ModuleCache.noindex -Xfrontend -serialize-debugging-options -enable-testing -index-store-path /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Index.noindex/DataStore -Xcc -D_LIBCPP_HARDENING_MODE\=_LIBCPP_HARDENING_MODE_DEBUG -swift-version 5 -I /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Products/Debug-iphonesimulator -Isystem /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/usr/lib -F /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Products/Debug-iphonesimulator/PackageFrameworks -F /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Products/Debug-iphonesimulator/PackageFrameworks -F /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Products/Debug-iphonesimulator -F /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/Library/Frameworks -F /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator26.4.sdk/Developer/Library/Frameworks -c -j10 -enable-batch-mode -incremental -Xcc -ivfsstatcache -Xcc /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/SDKStatCaches.noindex/iphonesimulator26.4-23E237-686eebb5dc1d8ecb277353a59184f4aa.sdkstatcache -output-file-map /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Intermediates.noindex/RoadTrip.build/Debug-iphonesimulator/RoadTripTests.build/Objects-normal/arm64/RoadTripTests-OutputFileMap.json -use-frontend-parseable-output -save-temps -no-color-diagnostics -explicit-module-build -module-cache-path /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules -clang-scanner-module-cache-path /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/ModuleCache.noindex -sdk-module-cache-path /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/ModuleCache.noindex -serialize-diagnostics -emit-dependencies -emit-module -emit-module-path /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Intermediates.noindex/RoadTrip.build/Debug-iphonesimulator/RoadTripTests.build/Objects-normal/arm64/RoadTripTests.swiftmodule -validate-clang-modules-once -clang-build-session-file /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/ModuleCache.noindex/Session.modulevalidation -Xcc -I/Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Intermediates.noindex/RoadTrip.build/Debug-iphonesimulator/RoadTripTests.build/swift-overrides.hmap -emit-const-values -Xfrontend -const-gather-protocols-file -Xfrontend /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Intermediates.noindex/RoadTrip.build/Debug-iphonesimulator/RoadTripTests.build/Objects-normal/arm64/RoadTripTests_const_extract_protocols.json -Xcc -iquote -Xcc /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Intermediates.noindex/RoadTrip.build/Debug-iphonesimulator/RoadTripTests.build/RoadTripTests-generated-files.hmap -Xcc -I/Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Intermediates.noindex/RoadTrip.build/Debug-iphonesimulator/RoadTripTests.build/RoadTripTests-own-target-headers.hmap -Xcc -I/Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Intermediates.noindex/RoadTrip.build/Debug-iphonesimulator/RoadTripTests.build/RoadTripTests-all-non-framework-target-headers.hmap -Xcc -ivfsoverlay -Xcc /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Intermediates.noindex/RoadTrip.build/Debug-iphonesimulator/RoadTrip-09ca582446851977ce7da337e9c7f98b-VFS-iphonesimulator/all-product-headers.yaml -Xcc -iquote -Xcc /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Intermediates.noindex/RoadTrip.build/Debug-iphonesimulator/RoadTripTests.build/RoadTripTests-project-headers.hmap -Xcc -I/Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Products/Debug-iphonesimulator/include -Xcc -I/Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Intermediates.noindex/RoadTrip.build/Debug-iphonesimulator/RoadTripTests.build/DerivedSources-normal/arm64 -Xcc -I/Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Intermediates.noindex/RoadTrip.build/Debug-iphonesimulator/RoadTripTests.build/DerivedSources/arm64 -Xcc -I/Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Intermediates.noindex/RoadTrip.build/Debug-iphonesimulator/RoadTripTests.build/DerivedSources -Xcc -DDEBUG\=1 -emit-objc-header -emit-objc-header-path /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Intermediates.noindex/RoadTrip.build/Debug-iphonesimulator/RoadTripTests.build/Objects-normal/arm64/RoadTripTests-Swift.h -working-directory /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip -experimental-emit-module-separately -disable-cmo
+
+Ld /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Products/Debug-iphonesimulator/RoadTrip.app/PlugIns/RoadTripTests.xctest/RoadTripTests normal (in target 'RoadTripTests' from project 'RoadTrip')
+    cd /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip
+    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -Xlinker -reproducible -target arm64-apple-ios17.0-simulator -bundle -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator26.4.sdk -O0 -L/Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Intermediates.noindex/EagerLinkingTBDs/Debug-iphonesimulator -L/Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Products/Debug-iphonesimulator -L/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/usr/lib -F/Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Intermediates.noindex/EagerLinkingTBDs/Debug-iphonesimulator -F/Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Products/Debug-iphonesimulator/PackageFrameworks -F/Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Products/Debug-iphonesimulator/PackageFrameworks -F/Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Products/Debug-iphonesimulator -iframework /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/Library/Frameworks -iframework /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator26.4.sdk/Developer/Library/Frameworks -filelist /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Intermediates.noindex/RoadTrip.build/Debug-iphonesimulator/RoadTripTests.build/Objects-normal/arm64/RoadTripTests.LinkFileList -Xlinker -rpath -Xlinker /usr/lib/swift -Xlinker -rpath -Xlinker /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Products/Debug-iphonesimulator/PackageFrameworks -Xlinker -rpath -Xlinker @loader_path/Frameworks -Xlinker -rpath -Xlinker @executable_path/Frameworks -Xlinker -dead_strip -bundle_loader /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Products/Debug-iphonesimulator/RoadTrip.app/RoadTrip -Xlinker -object_path_lto -Xlinker /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Intermediates.noindex/RoadTrip.build/Debug-iphonesimulator/RoadTripTests.build/Objects-normal/arm64/RoadTripTests_lto.o -rdynamic -Xlinker -no_deduplicate -Xlinker -objc_abi_version -Xlinker 2 -Xlinker -dependency_info -Xlinker /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Intermediates.noindex/RoadTrip.build/Debug-iphonesimulator/RoadTripTests.build/Objects-normal/arm64/RoadTripTests_dependency_info.dat -fobjc-link-runtime -L/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/iphonesimulator -L/usr/lib/swift -Xlinker -add_ast_path -Xlinker /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Intermediates.noindex/RoadTrip.build/Debug-iphonesimulator/RoadTripTests.build/Objects-normal/arm64/RoadTripTests.swiftmodule @/Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Intermediates.noindex/RoadTrip.build/Debug-iphonesimulator/RoadTripTests.build/Objects-normal/arm64/RoadTripTests-linker-args.resp -Wl,-no_warn_duplicate_libraries -Wl,-no_warn_duplicate_libraries -Xlinker -needed_framework -Xlinker XCTest -framework XCTest -Xlinker -needed-lXCTestSwiftSupport -lXCTestSwiftSupport /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Products/Debug-iphonesimulator/PackageFrameworks/GRDB_5DC4DB053_PackageProduct.framework/GRDB_5DC4DB053_PackageProduct /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Products/Debug-iphonesimulator/RoadTrip.app/RoadTrip.debug.dylib -Xlinker -no_adhoc_codesign -o /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Products/Debug-iphonesimulator/RoadTrip.app/PlugIns/RoadTripTests.xctest/RoadTripTests
+
+CopySwiftLibs /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Products/Debug-iphonesimulator/RoadTrip.app/PlugIns/RoadTripTests.xctest (in target 'RoadTripTests' from project 'RoadTrip')
+    cd /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip
+    builtin-swiftStdLibTool --copy --verbose --sign - --scan-executable /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Products/Debug-iphonesimulator/RoadTrip.app/PlugIns/RoadTripTests.xctest/RoadTripTests --scan-folder /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Products/Debug-iphonesimulator/RoadTrip.app/PlugIns/RoadTripTests.xctest/Frameworks --scan-folder /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Products/Debug-iphonesimulator/RoadTrip.app/PlugIns/RoadTripTests.xctest/PlugIns --scan-folder /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Products/Debug-iphonesimulator/RoadTrip.app/PlugIns/RoadTripTests.xctest/SystemExtensions --scan-folder /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Products/Debug-iphonesimulator/RoadTrip.app/PlugIns/RoadTripTests.xctest/Extensions --scan-folder /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Products/Debug-iphonesimulator/PackageFrameworks/GRDB_5DC4DB053_PackageProduct.framework --platform iphonesimulator --toolchain /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain --destination /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Products/Debug-iphonesimulator/RoadTrip.app/PlugIns/RoadTripTests.xctest/Frameworks --strip-bitcode --scan-executable /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/usr/lib/libXCTestSwiftSupport.dylib --strip-bitcode-tool /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/bitcode_strip --emit-dependency-info /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Intermediates.noindex/RoadTrip.build/Debug-iphonesimulator/RoadTripTests.build/SwiftStdLibToolInputDependencies.dep --filter-for-swift-os
+
+ExtractAppIntentsMetadata (in target 'RoadTripTests' from project 'RoadTrip')
+    cd /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip
+    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/appintentsmetadataprocessor --toolchain-dir /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain --module-name RoadTripTests --sdk-root /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator26.4.sdk --xcode-version 17E192 --platform-family iOS --deployment-target 17.0 --bundle-identifier com.psford.roadtripmap.native.RoadTripTests --output /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Products/Debug-iphonesimulator/RoadTrip.app/PlugIns/RoadTripTests.xctest --target-triple arm64-apple-ios17.0-simulator --binary-file /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Products/Debug-iphonesimulator/RoadTrip.app/PlugIns/RoadTripTests.xctest/RoadTripTests --dependency-file /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Intermediates.noindex/RoadTrip.build/Debug-iphonesimulator/RoadTripTests.build/Objects-normal/arm64/RoadTripTests_dependency_info.dat --stringsdata-file /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Intermediates.noindex/RoadTrip.build/Debug-iphonesimulator/RoadTripTests.build/Objects-normal/arm64/ExtractedAppShortcutsMetadata.stringsdata --source-file-list /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Intermediates.noindex/RoadTrip.build/Debug-iphonesimulator/RoadTripTests.build/Objects-normal/arm64/RoadTripTests.SwiftFileList --metadata-file-list /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Intermediates.noindex/RoadTrip.build/Debug-iphonesimulator/RoadTripTests.build/RoadTripTests.DependencyMetadataFileList --static-metadata-file-list /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Intermediates.noindex/RoadTrip.build/Debug-iphonesimulator/RoadTripTests.build/RoadTripTests.DependencyStaticMetadataFileList --swift-const-vals-list /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Intermediates.noindex/RoadTrip.build/Debug-iphonesimulator/RoadTripTests.build/Objects-normal/arm64/RoadTripTests.SwiftConstValuesFileList --compile-time-extraction --deployment-aware-processing --validate-assistant-intents --no-app-shortcuts-localization
+2026-06-20 02:09:25.978 appintentsmetadataprocessor[91848:31671705] Starting appintentsmetadataprocessor export
+2026-06-20 02:09:25.983 appintentsmetadataprocessor[91848:31671705] warning: Metadata extraction skipped. No AppIntents.framework dependency found.
+
+CodeSign /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Products/Debug-iphonesimulator/RoadTrip.app/PlugIns/RoadTripTests.xctest (in target 'RoadTripTests' from project 'RoadTrip')
+    cd /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip
+    
+    Signing Identity:     "Sign to Run Locally"
+    
+    /usr/bin/codesign --force --sign - --timestamp\=none --generate-entitlement-der /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Products/Debug-iphonesimulator/RoadTrip.app/PlugIns/RoadTripTests.xctest
+
+CodeSign /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Products/Debug-iphonesimulator/RoadTrip.app/RoadTrip.debug.dylib (in target 'RoadTrip' from project 'RoadTrip')
+    cd /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip
+    
+    Signing Identity:     "Sign to Run Locally"
+    
+    /usr/bin/codesign --force --sign - --timestamp\=none --generate-entitlement-der /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Products/Debug-iphonesimulator/RoadTrip.app/RoadTrip.debug.dylib
+/Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Products/Debug-iphonesimulator/RoadTrip.app/RoadTrip.debug.dylib: replacing existing signature
+
+CodeSign /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Products/Debug-iphonesimulator/RoadTrip.app/__preview.dylib (in target 'RoadTrip' from project 'RoadTrip')
+    cd /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip
+    
+    Signing Identity:     "Sign to Run Locally"
+    
+    /usr/bin/codesign --force --sign - --timestamp\=none --generate-entitlement-der /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Products/Debug-iphonesimulator/RoadTrip.app/__preview.dylib
+/Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Products/Debug-iphonesimulator/RoadTrip.app/__preview.dylib: replacing existing signature
+
+CodeSign /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Products/Debug-iphonesimulator/RoadTrip.app (in target 'RoadTrip' from project 'RoadTrip')
+    cd /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip
+    
+    Signing Identity:     "Sign to Run Locally"
+    
+    /usr/bin/codesign --force --sign - --timestamp\=none --generate-entitlement-der /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Products/Debug-iphonesimulator/RoadTrip.app
+/Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Products/Debug-iphonesimulator/RoadTrip.app: replacing existing signature
+
+Validate /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Products/Debug-iphonesimulator/RoadTrip.app (in target 'RoadTrip' from project 'RoadTrip')
+    cd /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip
+    builtin-validationUtility /Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Build/Products/Debug-iphonesimulator/RoadTrip.app -shallow-bundle -infoplist-subpath Info.plist
+
+Test Suite 'All tests' started at 2026-06-20 02:09:32.990.
+Test Suite 'RoadTripTests.xctest' started at 2026-06-20 02:09:32.991.
+Test Suite 'APIEnvironmentTests' started at 2026-06-20 02:09:32.991.
+Test Case '-[RoadTripTests.APIEnvironmentTests testDebugBuildTargetsLocalBackend]' started.
+Test Case '-[RoadTripTests.APIEnvironmentTests testDebugBuildTargetsLocalBackend]' passed (0.002 seconds).
+Test Case '-[RoadTripTests.APIEnvironmentTests testEmptyOrInvalidOverrideFallsBackToDefault]' started.
+Test Case '-[RoadTripTests.APIEnvironmentTests testEmptyOrInvalidOverrideFallsBackToDefault]' passed (0.001 seconds).
+Test Case '-[RoadTripTests.APIEnvironmentTests testNilOverrideUsesDefault]' started.
+Test Case '-[RoadTripTests.APIEnvironmentTests testNilOverrideUsesDefault]' passed (0.001 seconds).
+Test Case '-[RoadTripTests.APIEnvironmentTests testOverrideURLWins]' started.
+Test Case '-[RoadTripTests.APIEnvironmentTests testOverrideURLWins]' passed (0.001 seconds).
+Test Suite 'APIEnvironmentTests' passed at 2026-06-20 02:09:32.997.
+	 Executed 4 tests, with 0 failures (0 unexpected) in 0.004 (0.006) seconds
+Test Suite 'AppBootstrapTests' started at 2026-06-20 02:09:32.997.
+Test Case '-[RoadTripTests.AppBootstrapTests testNormalLaunchStartsEmpty]' started.
+Test Case '-[RoadTripTests.AppBootstrapTests testNormalLaunchStartsEmpty]' passed (0.006 seconds).
+Test Case '-[RoadTripTests.AppBootstrapTests testUITestLaunchSeedsSampleData]' started.
+Test Case '-[RoadTripTests.AppBootstrapTests testUITestLaunchSeedsSampleData]' passed (0.008 seconds).
+Test Suite 'AppBootstrapTests' passed at 2026-06-20 02:09:33.012.
+	 Executed 2 tests, with 0 failures (0 unexpected) in 0.014 (0.015) seconds
+Test Suite 'BackgroundUploadSessionTests' started at 2026-06-20 02:09:33.041.
+Test Case '-[RoadTripTests.BackgroundUploadSessionTests testAbortRemovesQueueRowStagedFileAndBlockFiles]' started.
+Test Case '-[RoadTripTests.BackgroundUploadSessionTests testAbortRemovesQueueRowStagedFileAndBlockFiles]' passed (0.124 seconds).
+Test Suite 'BackgroundUploadSessionTests' passed at 2026-06-20 02:09:33.166.
+	 Executed 1 test, with 0 failures (0 unexpected) in 0.124 (0.125) seconds
+Test Suite 'BlockUploadTests' started at 2026-06-20 02:09:33.166.
+Test Case '-[RoadTripTests.BlockUploadTests testBlockIdEncodesIndexAsBigEndianInt64InLast8Bytes]' started.
+Test Case '-[RoadTripTests.BlockUploadTests testBlockIdEncodesIndexAsBigEndianInt64InLast8Bytes]' passed (0.001 seconds).
+Test Case '-[RoadTripTests.BlockUploadTests testBlockIdsAreConstantLength]' started.
+Test Case '-[RoadTripTests.BlockUploadTests testBlockIdsAreConstantLength]' passed (0.001 seconds).
+Test Case '-[RoadTripTests.BlockUploadTests testBlockIdZeroIsAllZeroBytes]' started.
+Test Case '-[RoadTripTests.BlockUploadTests testBlockIdZeroIsAllZeroBytes]' passed (0.001 seconds).
+Test Case '-[RoadTripTests.BlockUploadTests testBlockPutURLAppendsBlockParamsAndPercentEncodesBase64]' started.
+Test Case '-[RoadTripTests.BlockUploadTests testBlockPutURLAppendsBlockParamsAndPercentEncodesBase64]' passed (0.001 seconds).
+Test Case '-[RoadTripTests.BlockUploadTests testBlockPutURLUsesQuestionMarkWhenSasHasNoQuery]' started.
+Test Case '-[RoadTripTests.BlockUploadTests testBlockPutURLUsesQuestionMarkWhenSasHasNoQuery]' passed (0.001 seconds).
+Test Case '-[RoadTripTests.BlockUploadTests testChunkRangesCoverFileExactlyAndContiguously]' started.
+Test Case '-[RoadTripTests.BlockUploadTests testChunkRangesCoverFileExactlyAndContiguously]' passed (0.001 seconds).
+Test Case '-[RoadTripTests.BlockUploadTests testEmptyFileYieldsNoRanges]' started.
+Test Case '-[RoadTripTests.BlockUploadTests testEmptyFileYieldsNoRanges]' passed (0.001 seconds).
+Test Case '-[RoadTripTests.BlockUploadTests testExactMultipleChunkBoundary]' started.
+Test Case '-[RoadTripTests.BlockUploadTests testExactMultipleChunkBoundary]' passed (0.001 seconds).
+Test Suite 'BlockUploadTests' passed at 2026-06-20 02:09:33.177.
+	 Executed 8 tests, with 0 failures (0 unexpected) in 0.006 (0.010) seconds
+Test Suite 'EXIFExtractorTests' started at 2026-06-20 02:09:33.177.
+Test Case '-[RoadTripTests.EXIFExtractorTests testAppliesSouthernAndEasternHemisphereRefs]' started.
+Test Case '-[RoadTripTests.EXIFExtractorTests testAppliesSouthernAndEasternHemisphereRefs]' passed (0.035 seconds).
+Test Case '-[RoadTripTests.EXIFExtractorTests testExtractsNorthWestCoordinateAndDate]' started.
+Test Case '-[RoadTripTests.EXIFExtractorTests testExtractsNorthWestCoordinateAndDate]' passed (0.005 seconds).
+Test Case '-[RoadTripTests.EXIFExtractorTests testNoGPSReturnsNilCoordinate]' started.
+Test Case '-[RoadTripTests.EXIFExtractorTests testNoGPSReturnsNilCoordinate]' passed (0.001 seconds).
+Test Suite 'EXIFExtractorTests' passed at 2026-06-20 02:09:33.224.
+	 Executed 3 tests, with 0 failures (0 unexpected) in 0.041 (0.047) seconds
+Test Suite 'HEICTranscoderTests' started at 2026-06-20 02:09:33.224.
+Test Case '-[RoadTripTests.HEICTranscoderTests testHEICIsDetected]' started.
+2026-06-20 02:09:33.240552-0400 RoadTrip[91871:31672072] [RoadTrip] writeImageAtIndex:1094: ⭕️ ERROR: 'RoadTrip' is trying to save an opaque image (8x8) with 'AlphaLast'. This would unnecessarily increase the file size and will double (!!!) the required memory when decoding the image --> ignoring alpha.
+Test Case '-[RoadTripTests.HEICTranscoderTests testHEICIsDetected]' passed (0.130 seconds).
+Test Case '-[RoadTripTests.HEICTranscoderTests testJPEGIsNotDetectedAsHEIC]' started.
+Test Case '-[RoadTripTests.HEICTranscoderTests testJPEGIsNotDetectedAsHEIC]' passed (0.001 seconds).
+Test Case '-[RoadTripTests.HEICTranscoderTests testTranscodeProducesDecodableJPEG]' started.
+2026-06-20 02:09:33.356819-0400 RoadTrip[91871:31672072] [RoadTrip] writeImageAtIndex:1094: ⭕️ ERROR: 'RoadTrip' is trying to save an opaque image (8x8) with 'AlphaLast'. This would unnecessarily increase the file size and will double (!!!) the required memory when decoding the image --> ignoring alpha.
+Test Case '-[RoadTripTests.HEICTranscoderTests testTranscodeProducesDecodableJPEG]' passed (0.064 seconds).
+Test Suite 'HEICTranscoderTests' passed at 2026-06-20 02:09:33.421.
+	 Executed 3 tests, with 0 failures (0 unexpected) in 0.196 (0.197) seconds
+Test Suite 'ImageLoaderTests' started at 2026-06-20 02:09:33.421.
+Test Case '-[RoadTripTests.ImageLoaderTests testDownloadsOnceThenServesFromMemory]' started.
+Test Case '-[RoadTripTests.ImageLoaderTests testDownloadsOnceThenServesFromMemory]' passed (0.008 seconds).
+Test Case '-[RoadTripTests.ImageLoaderTests testMissWritesToDiskCache]' started.
+Test Case '-[RoadTripTests.ImageLoaderTests testMissWritesToDiskCache]' passed (0.004 seconds).
+Test Case '-[RoadTripTests.ImageLoaderTests testServesFromDiskWithoutFetching]' started.
+Test Case '-[RoadTripTests.ImageLoaderTests testServesFromDiskWithoutFetching]' passed (0.003 seconds).
+Test Suite 'ImageLoaderTests' passed at 2026-06-20 02:09:33.438.
+	 Executed 3 tests, with 0 failures (0 unexpected) in 0.015 (0.016) seconds
+Test Suite 'MapFramingTests' started at 2026-06-20 02:09:33.438.
+Test Case '-[RoadTripTests.MapFramingTests testEmptyCoordinatesReturnsNil]' started.
+Test Case '-[RoadTripTests.MapFramingTests testEmptyCoordinatesReturnsNil]' passed (0.001 seconds).
+Test Case '-[RoadTripTests.MapFramingTests testFramedRectContainsAllCoordinates]' started.
+Test Case '-[RoadTripTests.MapFramingTests testFramedRectContainsAllCoordinates]' passed (0.001 seconds).
+Test Case '-[RoadTripTests.MapFramingTests testFramedRectIsLargerThanBoundingRect]' started.
+Test Case '-[RoadTripTests.MapFramingTests testFramedRectIsLargerThanBoundingRect]' passed (0.001 seconds).
+Test Case '-[RoadTripTests.MapFramingTests testSinglePinGetsMinimumSpan]' started.
+Test Case '-[RoadTripTests.MapFramingTests testSinglePinGetsMinimumSpan]' passed (0.001 seconds).
+Test Suite 'MapFramingTests' passed at 2026-06-20 02:09:33.443.
+	 Executed 4 tests, with 0 failures (0 unexpected) in 0.003 (0.005) seconds
+Test Suite 'OptimisticMutationTests' started at 2026-06-20 02:09:33.443.
+Test Case '-[RoadTripTests.OptimisticMutationTests testApplyFailureDoesNotCallServerOrRevert]' started.
+Test Case '-[RoadTripTests.OptimisticMutationTests testApplyFailureDoesNotCallServerOrRevert]' passed (0.002 seconds).
+Test Case '-[RoadTripTests.OptimisticMutationTests testServerFailureRevertsAndRethrows]' started.
+Test Case '-[RoadTripTests.OptimisticMutationTests testServerFailureRevertsAndRethrows]' passed (0.003 seconds).
+Test Case '-[RoadTripTests.OptimisticMutationTests testServerSuccessAppliesAndKeepsChange]' started.
+Test Case '-[RoadTripTests.OptimisticMutationTests testServerSuccessAppliesAndKeepsChange]' passed (0.001 seconds).
+Test Suite 'OptimisticMutationTests' passed at 2026-06-20 02:09:33.451.
+	 Executed 3 tests, with 0 failures (0 unexpected) in 0.007 (0.008) seconds
+Test Suite 'PhotoCaptureCoordinatorTests' started at 2026-06-20 02:09:33.451.
+Test Case '-[RoadTripTests.PhotoCaptureCoordinatorTests testNormalizeBakesNonUprightOrientationUpright]' started.
+Test Case '-[RoadTripTests.PhotoCaptureCoordinatorTests testNormalizeBakesNonUprightOrientationUpright]' passed (0.004 seconds).
+Test Case '-[RoadTripTests.PhotoCaptureCoordinatorTests testNormalizeUprightJPEGStaysUpright]' started.
+Test Case '-[RoadTripTests.PhotoCaptureCoordinatorTests testNormalizeUprightJPEGStaysUpright]' passed (0.001 seconds).
+Test Case '-[RoadTripTests.PhotoCaptureCoordinatorTests testOverrideCoordinateWinsOverEXIF]' started.
+Test Case '-[RoadTripTests.PhotoCaptureCoordinatorTests testOverrideCoordinateWinsOverEXIF]' passed (0.010 seconds).
+Test Case '-[RoadTripTests.PhotoCaptureCoordinatorTests testStageHEICTranscodesToJPEGAndStoresEXIF]' started.
+2026-06-20 02:09:33.472151-0400 RoadTrip[91871:31672285] [RoadTrip] writeImageAtIndex:1094: ⭕️ ERROR: 'RoadTrip' is trying to save an opaque image (8x8) with 'AlphaLast'. This would unnecessarily increase the file size and will double (!!!) the required memory when decoding the image --> ignoring alpha.
+Test Case '-[RoadTripTests.PhotoCaptureCoordinatorTests testStageHEICTranscodesToJPEGAndStoresEXIF]' passed (0.026 seconds).
+Test Case '-[RoadTripTests.PhotoCaptureCoordinatorTests testStageJPEGWithoutGPSHasNilCoordinates]' started.
+Test Case '-[RoadTripTests.PhotoCaptureCoordinatorTests testStageJPEGWithoutGPSHasNilCoordinates]' passed (0.007 seconds).
+Test Suite 'PhotoCaptureCoordinatorTests' passed at 2026-06-20 02:09:33.505.
+	 Executed 5 tests, with 0 failures (0 unexpected) in 0.047 (0.054) seconds
+Test Suite 'RoadTripTests' started at 2026-06-20 02:09:33.505.
+Test Case '-[RoadTripTests.RoadTripTests testAppTypeExists]' started.
+Test Case '-[RoadTripTests.RoadTripTests testAppTypeExists]' passed (0.001 seconds).
+Test Suite 'RoadTripTests' passed at 2026-06-20 02:09:33.506.
+	 Executed 1 test, with 0 failures (0 unexpected) in 0.001 (0.001) seconds
+Test Suite 'StorageTests' started at 2026-06-20 02:09:33.507.
+Test Case '-[RoadTripTests.StorageTests testDeleteLocallyRemovesTripPhotosAndToken]' started.
+Test Case '-[RoadTripTests.StorageTests testDeleteLocallyRemovesTripPhotosAndToken]' passed (0.039 seconds).
+Test Case '-[RoadTripTests.StorageTests testDeleteTripCascadesPhotosAndQueueItems]' started.
+Test Case '-[RoadTripTests.StorageTests testDeleteTripCascadesPhotosAndQueueItems]' passed (0.011 seconds).
+Test Case '-[RoadTripTests.StorageTests testFileCacheEvictsLeastRecentlyUsed]' started.
+Test Case '-[RoadTripTests.StorageTests testFileCacheEvictsLeastRecentlyUsed]' passed (0.004 seconds).
+Test Case '-[RoadTripTests.StorageTests testFileCacheRoundTripAndRemoveAll]' started.
+Test Case '-[RoadTripTests.StorageTests testFileCacheRoundTripAndRemoveAll]' passed (0.002 seconds).
+Test Case '-[RoadTripTests.StorageTests testImportedTripHasNilSlug]' started.
+Test Case '-[RoadTripTests.StorageTests testImportedTripHasNilSlug]' passed (0.003 seconds).
+Test Case '-[RoadTripTests.StorageTests testKeychainRoundTrip]' started.
+Test Case '-[RoadTripTests.StorageTests testKeychainRoundTrip]' passed (0.014 seconds).
+Test Case '-[RoadTripTests.StorageTests testMigrationCreatesSchema]' started.
+Test Case '-[RoadTripTests.StorageTests testMigrationCreatesSchema]' passed (0.006 seconds).
+Test Case '-[RoadTripTests.StorageTests testTripRoundTrip]' started.
+Test Case '-[RoadTripTests.StorageTests testTripRoundTrip]' passed (0.005 seconds).
+Test Suite 'StorageTests' passed at 2026-06-20 02:09:33.595.
+	 Executed 8 tests, with 0 failures (0 unexpected) in 0.085 (0.089) seconds
+Test Suite 'TokenPasteTests' started at 2026-06-20 02:09:33.595.
+Test Case '-[RoadTripTests.TokenPasteTests testBareUUIDStringParses]' started.
+Test Case '-[RoadTripTests.TokenPasteTests testBareUUIDStringParses]' passed (0.006 seconds).
+Test Case '-[RoadTripTests.TokenPasteTests testBareUUIDWithWhitespace]' started.
+Test Case '-[RoadTripTests.TokenPasteTests testBareUUIDWithWhitespace]' passed (0.001 seconds).
+Test Case '-[RoadTripTests.TokenPasteTests testEmptyStringReturnsNil]' started.
+Test Case '-[RoadTripTests.TokenPasteTests testEmptyStringReturnsNil]' passed (0.001 seconds).
+Test Case '-[RoadTripTests.TokenPasteTests testExtractsFirstUUIDWhenMultiple]' started.
+Test Case '-[RoadTripTests.TokenPasteTests testExtractsFirstUUIDWhenMultiple]' passed (0.001 seconds).
+Test Case '-[RoadTripTests.TokenPasteTests testExtractsLowercaseUUID]' started.
+Test Case '-[RoadTripTests.TokenPasteTests testExtractsLowercaseUUID]' passed (0.001 seconds).
+Test Case '-[RoadTripTests.TokenPasteTests testExtractsUUIDFromPostPath]' started.
+Test Case '-[RoadTripTests.TokenPasteTests testExtractsUUIDFromPostPath]' passed (0.001 seconds).
+Test Case '-[RoadTripTests.TokenPasteTests testExtractsUUIDFromSentence]' started.
+Test Case '-[RoadTripTests.TokenPasteTests testExtractsUUIDFromSentence]' passed (0.001 seconds).
+Test Case '-[RoadTripTests.TokenPasteTests testExtractsUUIDFromURLPath]' started.
+Test Case '-[RoadTripTests.TokenPasteTests testExtractsUUIDFromURLPath]' passed (0.001 seconds).
+Test Case '-[RoadTripTests.TokenPasteTests testExtractsUUIDFromURLWithQuery]' started.
+Test Case '-[RoadTripTests.TokenPasteTests testExtractsUUIDFromURLWithQuery]' passed (0.001 seconds).
+Test Case '-[RoadTripTests.TokenPasteTests testExtractsUUIDWithNewlines]' started.
+Test Case '-[RoadTripTests.TokenPasteTests testExtractsUUIDWithNewlines]' passed (0.001 seconds).
+Test Case '-[RoadTripTests.TokenPasteTests testInvalidUUIDFormatReturnsNil]' started.
+Test Case '-[RoadTripTests.TokenPasteTests testInvalidUUIDFormatReturnsNil]' passed (0.001 seconds).
+Test Case '-[RoadTripTests.TokenPasteTests testNoUUIDReturnsNil]' started.
+Test Case '-[RoadTripTests.TokenPasteTests testNoUUIDReturnsNil]' passed (0.001 seconds).
+Test Suite 'TokenPasteTests' passed at 2026-06-20 02:09:33.613.
+	 Executed 12 tests, with 0 failures (0 unexpected) in 0.014 (0.018) seconds
+Test Suite 'TripShareLinkTests' started at 2026-06-20 02:09:33.614.
+Test Case '-[RoadTripTests.TripShareLinkTests testBuildsCorrectViewURLWithDevHost]' started.
+Test Case '-[RoadTripTests.TripShareLinkTests testBuildsCorrectViewURLWithDevHost]' passed (0.018 seconds).
+Test Case '-[RoadTripTests.TripShareLinkTests testBuildsCorrectViewURLWithLocalhost]' started.
+Test Case '-[RoadTripTests.TripShareLinkTests testBuildsCorrectViewURLWithLocalhost]' passed (0.002 seconds).
+Test Case '-[RoadTripTests.TripShareLinkTests testBuildsCorrectViewURLWithProdHost]' started.
+Test Case '-[RoadTripTests.TripShareLinkTests testBuildsCorrectViewURLWithProdHost]' passed (0.001 seconds).
+Test Case '-[RoadTripTests.TripShareLinkTests testHandlesBaseURLWithTrailingSlash]' started.
+Test Case '-[RoadTripTests.TripShareLinkTests testHandlesBaseURLWithTrailingSlash]' passed (0.001 seconds).
+Test Case '-[RoadTripTests.TripShareLinkTests testIsIdempotent]' started.
+Test Case '-[RoadTripTests.TripShareLinkTests testIsIdempotent]' passed (0.001 seconds).
+Test Case '-[RoadTripTests.TripShareLinkTests testPreservesSchemeAndHost]' started.
+Test Case '-[RoadTripTests.TripShareLinkTests testPreservesSchemeAndHost]' passed (0.020 seconds).
+Test Case '-[RoadTripTests.TripShareLinkTests testPreservesUUIDCase]' started.
+Test Case '-[RoadTripTests.TripShareLinkTests testPreservesUUIDCase]' passed (0.001 seconds).
+Test Suite 'TripShareLinkTests' passed at 2026-06-20 02:09:33.659.
+	 Executed 7 tests, with 0 failures (0 unexpected) in 0.042 (0.046) seconds
+Test Suite 'UploadBlockFileWriterTests' started at 2026-06-20 02:09:33.659.
+Test Case '-[RoadTripTests.UploadBlockFileWriterTests testCleanupRemovesPerUploadDirectory]' started.
+Test Case '-[RoadTripTests.UploadBlockFileWriterTests testCleanupRemovesPerUploadDirectory]' passed (0.003 seconds).
+Test Case '-[RoadTripTests.UploadBlockFileWriterTests testPreparePartialIndexReadsCorrectSliceOnly]' started.
+Test Case '-[RoadTripTests.UploadBlockFileWriterTests testPreparePartialIndexReadsCorrectSliceOnly]' passed (0.002 seconds).
+Test Case '-[RoadTripTests.UploadBlockFileWriterTests testPrepareSlicesAllBlocksToFilesThatReconstructTheOriginal]' started.
+Test Case '-[RoadTripTests.UploadBlockFileWriterTests testPrepareSlicesAllBlocksToFilesThatReconstructTheOriginal]' passed (0.003 seconds).
+Test Suite 'UploadBlockFileWriterTests' passed at 2026-06-20 02:09:33.669.
+	 Executed 3 tests, with 0 failures (0 unexpected) in 0.009 (0.010) seconds
+Test Suite 'UploadIntegrationTests' started at 2026-06-20 02:09:33.673.
+Test Case '-[RoadTripTests.UploadIntegrationTests testCreateTripStoresViewToken]' started.
+Test Case '-[RoadTripTests.UploadIntegrationTests testCreateTripStoresViewToken]' passed (1.071 seconds).
+Test Case '-[RoadTripTests.UploadIntegrationTests testImportSucceedsAndStoresSecretToken]' started.
+Test Case '-[RoadTripTests.UploadIntegrationTests testImportSucceedsAndStoresSecretToken]' passed (0.761 seconds).
+Test Case '-[RoadTripTests.UploadIntegrationTests testImportTripsFromMessyPastedText]' started.
+Test Case '-[RoadTripTests.UploadIntegrationTests testImportTripsFromMessyPastedText]' passed (0.486 seconds).
+Test Case '-[RoadTripTests.UploadIntegrationTests testImportTripsStoresViewToken]' started.
+Test Case '-[RoadTripTests.UploadIntegrationTests testImportTripsStoresViewToken]' passed (0.439 seconds).
+Test Case '-[RoadTripTests.UploadIntegrationTests testMoveThenDeletePhotoAgainstLiveBackend]' started.
+Test Case '-[RoadTripTests.UploadIntegrationTests testMoveThenDeletePhotoAgainstLiveBackend]' passed (2.308 seconds).
+Test Case '-[RoadTripTests.UploadIntegrationTests testRevalidateBackfillsViewToken]' started.
+Test Case '-[RoadTripTests.UploadIntegrationTests testRevalidateBackfillsViewToken]' passed (0.425 seconds).
+Test Case '-[RoadTripTests.UploadIntegrationTests testStagedPhotoUploadsAndComesBackAsACommittedPhoto]' started.
+Test Case '-[RoadTripTests.UploadIntegrationTests testStagedPhotoUploadsAndComesBackAsACommittedPhoto]' passed (1.901 seconds).
+Test Suite 'UploadIntegrationTests' passed at 2026-06-20 02:09:41.068.
+	 Executed 7 tests, with 0 failures (0 unexpected) in 7.391 (7.395) seconds
+Test Suite 'UploadReconcilerTests' started at 2026-06-20 02:09:41.068.
+Test Case '-[RoadTripTests.UploadReconcilerTests testAllBlocksCompletedCommits]' started.
+Test Case '-[RoadTripTests.UploadReconcilerTests testAllBlocksCompletedCommits]' passed (0.001 seconds).
+Test Case '-[RoadTripTests.UploadReconcilerTests testCommittingStageCommits]' started.
+Test Case '-[RoadTripTests.UploadReconcilerTests testCommittingStageCommits]' passed (0.001 seconds).
+Test Case '-[RoadTripTests.UploadReconcilerTests testEmptyFileFails]' started.
+Test Case '-[RoadTripTests.UploadReconcilerTests testEmptyFileFails]' passed (0.001 seconds).
+Test Case '-[RoadTripTests.UploadReconcilerTests testFailedAndDoneItemsAreSkipped]' started.
+Test Case '-[RoadTripTests.UploadReconcilerTests testFailedAndDoneItemsAreSkipped]' passed (0.001 seconds).
+Test Case '-[RoadTripTests.UploadReconcilerTests testLiveTasksAreNotReEnqueued]' started.
+Test Case '-[RoadTripTests.UploadReconcilerTests testLiveTasksAreNotReEnqueued]' passed (0.001 seconds).
+Test Case '-[RoadTripTests.UploadReconcilerTests testMissingSourceFileFails]' started.
+Test Case '-[RoadTripTests.UploadReconcilerTests testMissingSourceFileFails]' passed (0.001 seconds).
+Test Case '-[RoadTripTests.UploadReconcilerTests testNothingMissingButTasksStillLiveWaits]' started.
+Test Case '-[RoadTripTests.UploadReconcilerTests testNothingMissingButTasksStillLiveWaits]' passed (0.001 seconds).
+Test Case '-[RoadTripTests.UploadReconcilerTests testPartialProgressResumesOnlyMissingBlocks]' started.
+Test Case '-[RoadTripTests.UploadReconcilerTests testPartialProgressResumesOnlyMissingBlocks]' passed (0.001 seconds).
+Test Case '-[RoadTripTests.UploadReconcilerTests testStagedWithNoPlanStartsFromScratch]' started.
+Test Case '-[RoadTripTests.UploadReconcilerTests testStagedWithNoPlanStartsFromScratch]' passed (0.001 seconds).
+Test Suite 'UploadReconcilerTests' passed at 2026-06-20 02:09:41.082.
+	 Executed 9 tests, with 0 failures (0 unexpected) in 0.008 (0.014) seconds
+Test Suite 'UploadResilienceTests' started at 2026-06-20 02:09:41.082.
+Test Case '-[RoadTripTests.UploadResilienceTests testBaseDelayCapsExponential]' started.
+Test Case '-[RoadTripTests.UploadResilienceTests testBaseDelayCapsExponential]' passed (0.001 seconds).
+Test Case '-[RoadTripTests.UploadResilienceTests testForbiddenIsSasExpired]' started.
+Test Case '-[RoadTripTests.UploadResilienceTests testForbiddenIsSasExpired]' passed (0.001 seconds).
+Test Case '-[RoadTripTests.UploadResilienceTests testJitterAddsBoundedDelay]' started.
+Test Case '-[RoadTripTests.UploadResilienceTests testJitterAddsBoundedDelay]' passed (0.001 seconds).
+Test Case '-[RoadTripTests.UploadResilienceTests testOtherStatusesArePermanent]' started.
+Test Case '-[RoadTripTests.UploadResilienceTests testOtherStatusesArePermanent]' passed (0.000 seconds).
+Test Case '-[RoadTripTests.UploadResilienceTests testSASNotStaleBeforeThreshold]' started.
+Test Case '-[RoadTripTests.UploadResilienceTests testSASNotStaleBeforeThreshold]' passed (0.016 seconds).
+Test Case '-[RoadTripTests.UploadResilienceTests testSASStaleAfterThreshold]' started.
+Test Case '-[RoadTripTests.UploadResilienceTests testSASStaleAfterThreshold]' passed (0.001 seconds).
+Test Case '-[RoadTripTests.UploadResilienceTests testSuccessStatusesClassifyAsNil]' started.
+Test Case '-[RoadTripTests.UploadResilienceTests testSuccessStatusesClassifyAsNil]' passed (0.001 seconds).
+Test Case '-[RoadTripTests.UploadResilienceTests testTransientStatusesAreRetryable]' started.
+Test Case '-[RoadTripTests.UploadResilienceTests testTransientStatusesAreRetryable]' passed (0.001 seconds).
+Test Suite 'UploadResilienceTests' passed at 2026-06-20 02:09:41.108.
+	 Executed 8 tests, with 0 failures (0 unexpected) in 0.022 (0.025) seconds
+Test Suite 'UploadStoreTests' started at 2026-06-20 02:09:41.108.
+Test Case '-[RoadTripTests.UploadStoreTests testClaimCommitHasExactlyOneWinner]' started.
+Test Case '-[RoadTripTests.UploadStoreTests testClaimCommitHasExactlyOneWinner]' passed (0.008 seconds).
+Test Case '-[RoadTripTests.UploadStoreTests testMarkBlockCompleteIsIdempotentAndCountsBytes]' started.
+Test Case '-[RoadTripTests.UploadStoreTests testMarkBlockCompleteIsIdempotentAndCountsBytes]' passed (0.004 seconds).
+Test Case '-[RoadTripTests.UploadStoreTests testPersistPlanStoresSASPhotoIdAndBlockSize]' started.
+Test Case '-[RoadTripTests.UploadStoreTests testPersistPlanStoresSASPhotoIdAndBlockSize]' passed (0.008 seconds).
+Test Case '-[RoadTripTests.UploadStoreTests testResetForRetryWipesProgress]' started.
+Test Case '-[RoadTripTests.UploadStoreTests testResetForRetryWipesProgress]' passed (0.005 seconds).
+Test Suite 'UploadStoreTests' passed at 2026-06-20 02:09:41.135.
+	 Executed 4 tests, with 0 failures (0 unexpected) in 0.025 (0.027) seconds
+Test Suite 'UploadTaskDescriptorTests' started at 2026-06-20 02:09:41.135.
+Test Case '-[RoadTripTests.UploadTaskDescriptorTests testDecodeRejectsMalformedOrForeignStrings]' started.
+Test Case '-[RoadTripTests.UploadTaskDescriptorTests testDecodeRejectsMalformedOrForeignStrings]' passed (0.001 seconds).
+Test Case '-[RoadTripTests.UploadTaskDescriptorTests testEncodeFormatIsPipeSeparated]' started.
+Test Case '-[RoadTripTests.UploadTaskDescriptorTests testEncodeFormatIsPipeSeparated]' passed (0.001 seconds).
+Test Case '-[RoadTripTests.UploadTaskDescriptorTests testRoundTripsThroughEncodeDecode]' started.
+Test Case '-[RoadTripTests.UploadTaskDescriptorTests testRoundTripsThroughEncodeDecode]' passed (0.001 seconds).
+Test Suite 'UploadTaskDescriptorTests' passed at 2026-06-20 02:09:41.138.
+	 Executed 3 tests, with 0 failures (0 unexpected) in 0.002 (0.003) seconds
+Test Suite 'ViewTokenParsingTests' started at 2026-06-20 02:09:41.138.
+Test Case '-[RoadTripTests.ViewTokenParsingTests testEmptyViewUrlReturnsNil]' started.
+Test Case '-[RoadTripTests.ViewTokenParsingTests testEmptyViewUrlReturnsNil]' passed (0.000 seconds).
+Test Case '-[RoadTripTests.ViewTokenParsingTests testExtractsFromAbsoluteUrl]' started.
+Test Case '-[RoadTripTests.ViewTokenParsingTests testExtractsFromAbsoluteUrl]' passed (0.001 seconds).
+Test Case '-[RoadTripTests.ViewTokenParsingTests testExtractsUUIDFromAbsoluteUrlWithQuery]' started.
+Test Case '-[RoadTripTests.ViewTokenParsingTests testExtractsUUIDFromAbsoluteUrlWithQuery]' passed (0.001 seconds).
+Test Case '-[RoadTripTests.ViewTokenParsingTests testExtractsUUIDFromPathWithFragment]' started.
+Test Case '-[RoadTripTests.ViewTokenParsingTests testExtractsUUIDFromPathWithFragment]' passed (0.000 seconds).
+Test Case '-[RoadTripTests.ViewTokenParsingTests testExtractsUUIDFromPathWithQueryString]' started.
+Test Case '-[RoadTripTests.ViewTokenParsingTests testExtractsUUIDFromPathWithQueryString]' passed (0.001 seconds).
+Test Case '-[RoadTripTests.ViewTokenParsingTests testExtractsViewTokenFromValidViewUrl]' started.
+Test Case '-[RoadTripTests.ViewTokenParsingTests testExtractsViewTokenFromValidViewUrl]' passed (0.000 seconds).
+Test Case '-[RoadTripTests.ViewTokenParsingTests testGarbageInputReturnsNil]' started.
+Test Case '-[RoadTripTests.ViewTokenParsingTests testGarbageInputReturnsNil]' passed (0.005 seconds).
+Test Case '-[RoadTripTests.ViewTokenParsingTests testHandlesLowercaseUUID]' started.
+Test Case '-[RoadTripTests.ViewTokenParsingTests testHandlesLowercaseUUID]' passed (0.001 seconds).
+Test Case '-[RoadTripTests.ViewTokenParsingTests testInvalidUUIDReturnsNil]' started.
+Test Case '-[RoadTripTests.ViewTokenParsingTests testInvalidUUIDReturnsNil]' passed (0.000 seconds).
+Test Case '-[RoadTripTests.ViewTokenParsingTests testMissingPathComponentReturnsNil]' started.
+Test Case '-[RoadTripTests.ViewTokenParsingTests testMissingPathComponentReturnsNil]' passed (0.000 seconds).
+Test Case '-[RoadTripTests.ViewTokenParsingTests testNilViewUrlReturnsNil]' started.
+Test Case '-[RoadTripTests.ViewTokenParsingTests testNilViewUrlReturnsNil]' passed (0.000 seconds).
+Test Case '-[RoadTripTests.ViewTokenParsingTests testStoreViewTokenGarbageViewUrlNeverWritesToken]' started.
+Test Case '-[RoadTripTests.ViewTokenParsingTests testStoreViewTokenGarbageViewUrlNeverWritesToken]' passed (0.001 seconds).
+Test Case '-[RoadTripTests.ViewTokenParsingTests testStoreViewTokenNilViewUrlNeverWritesToken]' started.
+Test Case '-[RoadTripTests.ViewTokenParsingTests testStoreViewTokenNilViewUrlNeverWritesToken]' passed (0.010 seconds).
+Test Case '-[RoadTripTests.ViewTokenParsingTests testStoreViewTokenValidViewUrlWritesToken]' started.
+Test Case '-[RoadTripTests.ViewTokenParsingTests testStoreViewTokenValidViewUrlWritesToken]' passed (0.004 seconds).
+Test Suite 'ViewTokenParsingTests' passed at 2026-06-20 02:09:41.166.
+	 Executed 14 tests, with 0 failures (0 unexpected) in 0.025 (0.029) seconds
+Test Suite 'RoadTripTests.xctest' passed at 2026-06-20 02:09:41.167.
+	 Executed 112 tests, with 0 failures (0 unexpected) in 8.079 (8.176) seconds
+Test Suite 'All tests' passed at 2026-06-20 02:09:41.167.
+	 Executed 112 tests, with 0 failures (0 unexpected) in 8.079 (8.177) seconds
+2026-06-20 02:09:41.529 xcodebuild[91738:31670989] [MT] IDETestOperationsObserverDebug: 15.255 elapsed -- Testing started completed.
+2026-06-20 02:09:41.529 xcodebuild[91738:31670989] [MT] IDETestOperationsObserverDebug: 0.000 sec, +0.000 sec -- start
+2026-06-20 02:09:41.529 xcodebuild[91738:31670989] [MT] IDETestOperationsObserverDebug: 15.255 sec, +15.255 sec -- end
+
+Test session results, code coverage, and logs:
+	/Users/patrickford/Dev/Projects/road-trip/ios-swift/RoadTrip/.build-dd/Logs/Test/Test-RoadTrip-2026.06.20_02-09-18--0400.xcresult
+
+** TEST SUCCEEDED **
+
+Testing started
