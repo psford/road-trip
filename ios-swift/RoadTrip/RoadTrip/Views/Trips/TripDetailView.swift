@@ -417,7 +417,8 @@ struct TripDetailView: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel(Text(showRoute ? "Hide route" : "Show route"))
                 .accessibilityIdentifier("route-toggle")
-                .padding(12)
+                .padding(.top, 70)
+                .padding(.trailing, 12)
             }
             // Long-press to post a photo at that spot (Apple Maps "drop a pin" pattern).
             // `.simultaneousGesture` keeps pan/zoom and pin taps working; the long-press

@@ -12,5 +12,8 @@ enum AppBootstrap {
         guard isUITest else { return }   // real launches: no sample data
         try database.wipeAllData()
         try SampleData.seedIfEmpty(database)
+        // Ensure the route toggle starts in a known state (shown) for deterministic test isolation.
+        // This is a normal write and doesn't corrupt UserDefaults cache like removePersistentDomain would.
+        UserDefaults.standard.set(true, forKey: "showRoute")
     }
 }
