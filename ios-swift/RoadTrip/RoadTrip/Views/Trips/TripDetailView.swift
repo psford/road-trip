@@ -89,35 +89,11 @@ struct TripDetailView: View {
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
-        .navigationTitle(trip.name)
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                if let secretToken {                     // owned-trip gate (AC3.5: no token → no button)
-                    Menu {
-                        if let shareViewToken {          // older imports lacking a view token: item simply omitted
-                            ShareLink(item: TripShareLinks.shareViewURL(viewToken: shareViewToken,
-                                                                        baseURL: APIEnvironment.baseURL)) {
-                                Label("Share view link", systemImage: "link")
-                            }
-                        }
-                        ShareLink(item: inviteText(name: trip.name, secret: secretToken)) {
-                            Label("Invite to edit", systemImage: "person.badge.plus")
-                        }
-                    } label: { Label("Share", systemImage: "square.and.arrow.up") }
-                }
-            }
-            ToolbarItem(placement: .topBarTrailing) {
-                addPhotoMenu
-            }
-            ToolbarItem(placement: .topBarTrailing) {
-                Button(role: .destructive) {
-                    showingDeleteConfirm = true
-                } label: {
-                    Label("Delete Trip", systemImage: "trash")
-                }
-                .disabled(isDeleting)
-            }
+        .toolbar(.hidden, for: .navigationBar)
+        .overlay(alignment: .top) {
+            floatingTopBar
+                .padding(.horizontal, 12)
+                .padding(.top, 8)
         }
         .onChange(of: pickedItem) { _, newItem in
             guard let newItem else { return }
@@ -175,6 +151,48 @@ struct TripDetailView: View {
         .task { await observePhotos() }
         .task { await observeUploads() }
         .task { loadShareTokens() }
+    }
+
+    @ViewBuilder private var floatingTopBar: some View {
+        HStack(spacing: 12) {
+            Button { dismiss() } label: {
+                Image(systemName: "chevron.backward")
+                    .font(.headline)
+            }
+            .accessibilityLabel(Text("Back"))
+            .accessibilityIdentifier("trip-back")
+
+            Text(trip.name)
+                .font(.headline)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            if secretToken != nil {
+                shareMenu
+            }
+            addPhotoMenu
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .shadow(radius: 4, y: 2)
+    }
+
+    @ViewBuilder private var shareMenu: some View {
+        if let secretToken {
+            Menu {
+                if let shareViewToken {
+                    ShareLink(item: TripShareLinks.shareViewURL(viewToken: shareViewToken,
+                                                                baseURL: APIEnvironment.baseURL)) {
+                        Label("Share view link", systemImage: "link")
+                    }
+                }
+                ShareLink(item: inviteText(name: trip.name, secret: secretToken)) {
+                    Label("Invite to edit", systemImage: "person.badge.plus")
+                }
+            } label: { Label("Share", systemImage: "square.and.arrow.up") }
+        }
     }
 
     @ViewBuilder private var addPhotoMenu: some View {
