@@ -37,6 +37,9 @@ struct TripDetailView: View {
     @State private var pendingPost: IdentifiableCoordinate?
     @State private var shareViewToken: UUID?
     @State private var secretToken: UUID?
+    @State private var showCamera = false
+    @State private var showLibraryPicker = false
+    @State private var locationProvider = OneShotLocationProvider()
 
     var body: some View {
         ZStack {
@@ -105,11 +108,7 @@ struct TripDetailView: View {
                 }
             }
             ToolbarItem(placement: .topBarTrailing) {
-                PhotosPicker(selection: $pickedItem, matching: .images,
-                             preferredItemEncoding: .current, photoLibrary: .shared()) {
-                    Label("Add Photo", systemImage: "plus")
-                }
-                .disabled(isStaging)
+                addPhotoMenu
             }
             ToolbarItem(placement: .topBarTrailing) {
                 Button(role: .destructive) {
@@ -164,9 +163,35 @@ struct TripDetailView: View {
                 Task { await stage(picked, overrideCoordinate: post.coordinate) }
             }
         }
+        .photosPicker(isPresented: $showLibraryPicker, selection: $pickedItem, matching: .images,
+                      preferredItemEncoding: .current)
+        .sheet(isPresented: $showCamera) {
+            CameraPicker { image in
+                guard let image else { return }
+                Task { await stageCameraImage(image) }
+            }
+            .ignoresSafeArea()
+        }
         .task { await observePhotos() }
         .task { await observeUploads() }
         .task { loadShareTokens() }
+    }
+
+    @ViewBuilder private var addPhotoMenu: some View {
+        Menu {
+            Button {
+                showCamera = true
+            } label: { Label("Take Photo", systemImage: "camera") }
+                .disabled(!UIImagePickerController.isSourceTypeAvailable(.camera))
+            Button {
+                showLibraryPicker = true
+            } label: { Label("Choose from Library", systemImage: "photo.on.rectangle") }
+        } label: {
+            Label("Add Photo", systemImage: "plus")
+        }
+        .accessibilityLabel(Text("Add Photo"))
+        .accessibilityIdentifier("Add Photo")
+        .disabled(isStaging)
     }
 
     private func loadShareTokens() {
@@ -230,6 +255,35 @@ struct TripDetailView: View {
             } catch {
                 showToast("Couldn’t move that pin — it’s back where it was.")
             }
+        }
+    }
+
+    /// Helper: race a one-shot location fetch against a timeout, returning nil on either denial or timeout.
+    private func locationWithTimeout(_ provider: OneShotLocationProvider, seconds: TimeInterval = 4) async -> CLLocationCoordinate2D? {
+        await withTaskGroup(of: CLLocationCoordinate2D?.self) { group in
+            group.addTask { await provider.currentCoordinate() }
+            group.addTask { try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000)); return nil }
+            let first = await group.next() ?? nil
+            group.cancelAll()
+            return first
+        }
+    }
+
+    /// Camera capture path: transcode JPEG, fetch one-shot location, stage, and handle no-GPS case.
+    private func stageCameraImage(_ image: UIImage) async {
+        guard let data = image.jpegData(compressionQuality: 0.9) else { return }
+        let coordinate = await locationWithTimeout(locationProvider)
+        let filename = "camera-\(UUID().uuidString).jpg"
+        do {
+            let item = try await PhotoCaptureCoordinator(database: database)
+                .stagePhoto(imageData: data, filename: filename, tripId: trip.id, overrideCoordinate: coordinate)
+            if item.exifLat == nil || item.exifLon == nil {
+                stagedNeedingLocation = item
+            } else {
+                startUpload(item)
+            }
+        } catch {
+            captureMessage = "Couldn't add that photo. Please try again."
         }
     }
 
