@@ -481,6 +481,41 @@ final class RoadTripUITests: XCTestCase {
         )
     }
 
+    /// AC3.1: the + menu offers "Take Photo" and "Choose from Library" buttons.
+    /// "Take Photo" is disabled on the simulator (no camera), so we assert it EXISTS
+    /// (as per AC3.1, don't test camera interactions on simulator). Verifies the menu
+    /// surfaces both options.
+    func testAddPhotoMenuOffersCameraAndLibrary() {
+        let app = launchApp()
+
+        let trip = app.staticTexts["Pacific Coast Highway"]
+        XCTAssertTrue(trip.waitForExistence(timeout: 10), "seed trip should appear in the list")
+        trip.tap()
+
+        // Anchor on "Add Photo" button to confirm detail view has loaded
+        let addPhotoButton = app.buttons["Add Photo"]
+        XCTAssertTrue(addPhotoButton.waitForExistence(timeout: 5), "detail view should load with Add Photo button")
+
+        // Tap the Add Photo menu to open it
+        addPhotoButton.tap()
+
+        // AC3.1: assert the menu surfaces "Take Photo" button (exists on simulator, disabled)
+        let takePhotoButton = app.buttons["Take Photo"]
+        XCTAssertTrue(takePhotoButton.waitForExistence(timeout: 5),
+                      "menu should offer 'Take Photo' button (AC3.1)")
+
+        // AC3.1: assert the menu surfaces "Choose from Library" button
+        let chooseFromLibraryButton = app.buttons["Choose from Library"]
+        XCTAssertTrue(chooseFromLibraryButton.waitForExistence(timeout: 5),
+                      "menu should offer 'Choose from Library' button (AC3.1)")
+
+        // Choose from Library should be hittable (camera interactions are device-only)
+        XCTAssertTrue(chooseFromLibraryButton.isHittable,
+                      "Choose from Library should be hittable")
+
+        attach(app.screenshot(), name: "AC3.1-add-photo-menu")
+    }
+
     private func attach(_ screenshot: XCUIScreenshot, name: String) {
         let attachment = XCTAttachment(screenshot: screenshot)
         attachment.name = name
