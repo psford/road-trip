@@ -32,9 +32,15 @@ enum RouteCurve {
             let P1 = points[i]
             let P2 = points[i + 1]
 
-            // Neighbors for Catmull-Rom: clamp/duplicate endpoints
-            let P0 = (i == 0) ? points[0] : points[i - 1]
-            let P3 = (i == points.count - 2) ? points[points.count - 1] : points[i + 2]
+            // Neighbors for Catmull-Rom: phantom endpoints via reflection to avoid zero knot deltas
+            let P0 = (i == 0) ?
+                CLLocationCoordinate2D(latitude: 2 * points[0].latitude - points[1].latitude,
+                                       longitude: 2 * points[0].longitude - points[1].longitude)
+                : points[i - 1]
+            let P3 = (i == points.count - 2) ?
+                CLLocationCoordinate2D(latitude: 2 * points[points.count - 1].latitude - points[points.count - 2].latitude,
+                                       longitude: 2 * points[points.count - 1].longitude - points[points.count - 2].longitude)
+                : points[i + 2]
 
             // Sample this segment
             let segmentPoints = catmullRomSegment(P0: P0, P1: P1, P2: P2, P3: P3,
@@ -135,11 +141,14 @@ enum RouteCurve {
 
         let s = (t - t1) / dt1  // Parameter in [0, 1]
 
-        // Hermite basis functions for the interval [p1, p2]
-        let h00 = (2 * s * s - 3 * s + 1)
-        let h01 = (-2 * s * s + 3 * s)
-        let h10 = (s * s - 2 * s + 1) * dt1
-        let h11 = (s * s - 1 * s) * dt1
+        // Cubic Hermite basis functions for the interval [p1, p2]
+        // Standard cubic Hermite basis: h_ij(s) where s in [0,1]
+        let s2 = s * s
+        let s3 = s2 * s
+        let h00 = 2 * s3 - 3 * s2 + 1          // interpolates p1 at s=0
+        let h01 = -2 * s3 + 3 * s2             // interpolates p2 at s=1
+        let h10 = (s3 - 2 * s2 + s) * dt1      // tangent at p1, scaled by dt1
+        let h11 = (s3 - s2) * dt1              // tangent at p2, scaled by dt1
 
         return h00 * p1 + h01 * p2 + h10 * tangentStart + h11 * tangentEnd
     }
