@@ -1,6 +1,6 @@
 # Networking (native SwiftUI app)
 
-Last verified: 2026-06-20
+Last verified: 2026-06-21
 
 ## Purpose
 Typed client for the .NET Road Trip backend plus the trip write-path orchestration
@@ -19,6 +19,8 @@ models call the orchestration methods here rather than juggling the three stores
     failures leave the cache untouched. **Takes `keychain:` (added this phase)** so it can
     backfill a missing view token from the server's `viewUrl`. All call sites must pass it.
   - `deleteTrip(_:from:keychain:)` — server delete (404 = already gone) then local cleanup.
+    The **only** caller is `Views/Trips/ArchivedTripsView` ("Delete permanently"); ordinary
+    trip removal is a local soft-archive (`Trip.archivedAt`), never this call.
 - **Pure helpers** (`nonisolated static`, no I/O, deterministic, idempotent — unit-test seams):
   - `viewToken(fromViewUrl:) -> UUID?` — parses the trailing UUID from a `/trips/{uuid}` path;
     strips `?query` and `#fragment`; nil on empty/invalid.
