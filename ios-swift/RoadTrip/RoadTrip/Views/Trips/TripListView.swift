@@ -38,6 +38,14 @@ struct TripListView: View {
             .navigationTitle("My Trips")
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
+                    NavigationLink {
+                        ArchivedTripsView(database: database, keychain: keychain)
+                    } label: {
+                        Label("Archived", systemImage: "archivebox")
+                    }
+                    .accessibilityLabel("Archived")
+                }
+                ToolbarItem(placement: .topBarLeading) {
                     Button { showingImport = true } label: {
                         Label("Import via Token", systemImage: "square.and.arrow.down")
                     }
