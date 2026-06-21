@@ -29,11 +29,18 @@ final class OneShotLocationProvider: NSObject, CLLocationManagerDelegate {
             return nil
         }
 
-        let fix = await withCheckedContinuation { (cont: CheckedContinuation<CLLocationCoordinate2D?, Never>) in
-            self.continuation = cont
-            self.manager.requestLocation()
+        let fix = await withTaskCancellationHandler {
+            await withCheckedContinuation { (cont: CheckedContinuation<CLLocationCoordinate2D?, Never>) in
+                self.continuation = cont
+                self.manager.requestLocation()
+            }
+        } onCancel: {
+            Task { @MainActor in
+                // Cancellation: resume with nil exactly once and stop the location request.
+                self.resume(with: nil)
+                self.manager.stopUpdatingLocation()
+            }
         }
-        // (Timeout handled by the caller-side race below; see note.)
         return fix
     }
 

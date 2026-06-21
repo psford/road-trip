@@ -271,6 +271,9 @@ struct TripDetailView: View {
 
     /// Camera capture path: transcode JPEG, fetch one-shot location, stage, and handle no-GPS case.
     private func stageCameraImage(_ image: UIImage) async {
+        isStaging = true
+        defer { isStaging = false }
+
         guard let data = image.jpegData(compressionQuality: 0.9) else { return }
         let coordinate = await locationWithTimeout(locationProvider)
         let filename = "camera-\(UUID().uuidString).jpg"
