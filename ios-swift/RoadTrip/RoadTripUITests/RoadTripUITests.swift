@@ -231,6 +231,48 @@ final class RoadTripUITests: XCTestCase {
         attach(app.screenshot(), name: "AC3.5-share-button-absent")
     }
 
+    /// AC1.3: the route toggle persists its state (via @AppStorage). Opens the "Pacific Coast
+    /// Highway" seed trip and exercises the toggle: tap to hide, verify label flips, tap again
+    /// to show, verify label flips back. (Persistence across app launches is optional per the
+    /// spec and may be added to the device checklist if full relaunch proves flaky in CI.)
+    func testRouteToggleShowsAndHides() {
+        let app = launchApp()
+
+        let trip = app.staticTexts["Pacific Coast Highway"]
+        XCTAssertTrue(trip.waitForExistence(timeout: 10), "seed trip should appear in the list")
+        trip.tap()
+
+        // Anchor on "Add Photo" to confirm detail view has loaded
+        let addPhotoButton = app.buttons["Add Photo"]
+        XCTAssertTrue(addPhotoButton.waitForExistence(timeout: 5), "detail view should load")
+
+        // Locate the route toggle button by its accessibility identifier
+        let routeToggle = app.buttons["route-toggle"]
+        XCTAssertTrue(routeToggle.waitForExistence(timeout: 5), "route toggle should exist and be accessible")
+        XCTAssertTrue(routeToggle.isHittable, "route toggle should be hittable")
+
+        // Initial label should be "Hide route" (toggle starts as true, showRoute = true)
+        var label = routeToggle.label
+        XCTAssertEqual(label, "Hide route", "route toggle should initially show 'Hide route'")
+
+        // Tap to hide the route
+        routeToggle.tap()
+
+        // After tapping, label should flip to "Show route"
+        label = routeToggle.label
+        XCTAssertEqual(label, "Show route", "after tap, route toggle should show 'Show route'")
+
+        // Tap again to show the route
+        routeToggle.tap()
+
+        // Label should flip back to "Hide route"
+        label = routeToggle.label
+        XCTAssertEqual(label, "Hide route", "after second tap, route toggle should show 'Hide route'")
+
+        // Attach screenshot for artifact trail
+        attach(app.screenshot(), name: "AC1.3-route-toggle")
+    }
+
     private func attach(_ screenshot: XCUIScreenshot, name: String) {
         let attachment = XCTAttachment(screenshot: screenshot)
         attachment.name = name
