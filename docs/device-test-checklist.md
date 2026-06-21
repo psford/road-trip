@@ -89,3 +89,8 @@ grace are gone. The banner (ValueObservation) and Retry still surface progress/f
 - [ ] **AC3.2/AC3.3 (device):** Take Photo → with Location allowed, the photo stages and uploads tagged with the current coordinate (pin appears at your location).
 - [ ] **AC3.4 (device):** Take Photo with Location denied (or no fix) → the pin-drop sheet appears; setting a pin stages/uploads the capture; nothing is lost; no crash.
 - [ ] **AC3.1/AC3.5 (device):** The `+` menu shows Take Photo + Choose from Library; library selection still stages as before.
+
+## 10. Floating top bar (Phase 5)
+- [ ] **AC4.1 (device):** Trip detail shows ONE floating inset bar over the map: back (left), trip name left-justified, then Share + +. Side margins look right; rounded; `.regularMaterial` legible over varied map content.
+- [ ] **Safe area:** the bar clears the notch/Dynamic Island and is not clipped; the route-toggle overlay (Phase 1) and map controls don't collide with it.
+- [ ] **AC4.2 (device):** Back returns to My Trips; Share hidden for SampleData (no secret token), shown for owned trips.
