@@ -264,16 +264,23 @@ final class RoadTripUITests: XCTestCase {
         // Tap to hide the route
         routeToggle.tap()
 
-        // After tapping, label should flip to "Show route"
-        label = routeToggle.label
-        XCTAssertEqual(label, "Show route", "after tap, route toggle should show 'Show route'")
+        // Wait for the label to flip to "Show route" using an expectation.
+        // This ensures SwiftUI has re-rendered the accessibility label after the state change.
+        let expectShowRoute = expectation(
+            for: NSPredicate(format: "label == %@", "Show route"),
+            evaluatedWith: routeToggle
+        )
+        wait(for: [expectShowRoute], timeout: 20)
 
         // Tap again to show the route
         routeToggle.tap()
 
-        // Label should flip back to "Hide route"
-        label = routeToggle.label
-        XCTAssertEqual(label, "Hide route", "after second tap, route toggle should show 'Hide route'")
+        // Wait for the label to flip back to "Hide route"
+        let expectHideRoute = expectation(
+            for: NSPredicate(format: "label == %@", "Hide route"),
+            evaluatedWith: routeToggle
+        )
+        wait(for: [expectHideRoute], timeout: 20)
 
         // Attach screenshot for artifact trail
         attach(app.screenshot(), name: "AC1.3-route-toggle")

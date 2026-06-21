@@ -42,6 +42,9 @@ targets:
     platform: iOS
     sources:
       - path: RoadTrip
+        # Exclude docs (CLAUDE.md etc.) so multiple same-named .md files don't collide as bundle resources
+        excludes:
+          - "**/*.md"
     dependencies:
       - package: GRDB
     settings:

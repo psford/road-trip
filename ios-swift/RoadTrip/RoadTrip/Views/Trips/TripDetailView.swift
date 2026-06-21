@@ -406,7 +406,7 @@ struct TripDetailView: View {
             }
             .overlay(alignment: .topTrailing) {
                 Button {
-                    showRoute.toggle()
+                    showRoute = !showRoute
                 } label: {
                     Image(systemName: showRoute ? "point.topleft.down.curvedto.point.bottomright.up"
                                                 : "point.topleft.down.curvedto.point.bottomright.up.fill")
