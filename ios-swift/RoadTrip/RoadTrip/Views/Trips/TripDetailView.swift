@@ -18,6 +18,8 @@ struct TripDetailView: View {
 
     @Environment(\.dismiss) private var dismiss
 
+    @AppStorage("showRoute") private var showRoute = true
+
     @State private var photos: [Photo] = []
     @State private var cameraPosition: MapCameraPosition = .automatic
     @State private var popupIndex: Int?   // index into `photos`; nil = closed
@@ -331,9 +333,13 @@ struct TripDetailView: View {
     private var mapSection: some View {
         MapReader { proxy in
             Map(position: $cameraPosition) {
-                if routeCoordinates.count >= 2 {
-                    MapPolyline(coordinates: routeCoordinates)
-                        .stroke(.tint, style: StrokeStyle(lineWidth: 3, lineCap: .round, lineJoin: .round))
+                if showRoute, routeCoordinates.count >= 2 {
+                    MapPolyline(coordinates: RouteCurve.curved(through: routeCoordinates))
+                        .stroke(.tint, style: StrokeStyle(
+                            lineWidth: 3,
+                            lineCap: .round,
+                            lineJoin: .round,
+                            dash: [2, 10]))
                 }
 
                 ForEach(Array(photos.enumerated()), id: \.element.id) { index, photo in
@@ -353,6 +359,21 @@ struct TripDetailView: View {
                 MapUserLocationButton()
                 MapCompass()
                 MapScaleView()
+            }
+            .overlay(alignment: .topTrailing) {
+                Button {
+                    showRoute.toggle()
+                } label: {
+                    Image(systemName: showRoute ? "point.topleft.down.curvedto.point.bottomright.up"
+                                                : "point.topleft.down.curvedto.point.bottomright.up.fill")
+                        .font(.title3)
+                        .padding(8)
+                        .background(.regularMaterial, in: Circle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(Text(showRoute ? "Hide route" : "Show route"))
+                .accessibilityIdentifier("route-toggle")
+                .padding(12)
             }
             // Long-press to post a photo at that spot (Apple Maps "drop a pin" pattern).
             // `.simultaneousGesture` keeps pan/zoom and pin taps working; the long-press
