@@ -77,35 +77,41 @@ final class RoadTripUITests: XCTestCase {
         attach(app.screenshot(), name: "imported-photo-popup")
     }
 
-    /// AC1.4: deleting a trip removes it from the list (server DELETE + local cascade +
-    /// Keychain cleanup). Creates an owned trip first so the server DELETE path runs.
-    func testDeleteTripFlow() {
+    /// AC4.3 + AC4.2: The trip detail screen has no Delete control (moved to Archived view in Phase 3).
+    /// Verifies the floating bar is present and the back button navigates home.
+    /// Permanent deletion is covered by testPermanentDeleteRequiresConfirmation (Phase 3, AC2.4),
+    /// which exercises the complete archive→delete flow in the Archived view.
+    func testTripDetailHasNoDeleteAndBackWorks() {
         let app = launchApp()
 
-        app.buttons["New Trip"].tap()
-        let nameField = app.textFields["Trip name"]
-        XCTAssertTrue(nameField.waitForExistence(timeout: 5))
-        nameField.tap()
-        nameField.typeText("Trip To Delete")
-        app.buttons["Create"].tap()
+        // Arrange: Open the "Pacific Coast Highway" seed trip (the anchor other detail tests use)
+        let trip = app.staticTexts["Pacific Coast Highway"]
+        XCTAssertTrue(trip.waitForExistence(timeout: 10), "seed trip should appear in the list")
+        trip.tap()
 
-        let created = app.staticTexts["Trip To Delete"]
-        XCTAssertTrue(created.waitForExistence(timeout: 15), "trip should be created")
-        created.tap()
+        // Wait for the detail view to load by anchoring on a detail-only element ("Add Photo")
+        let addPhotoButton = app.buttons["Add Photo"]
+        XCTAssertTrue(addPhotoButton.waitForExistence(timeout: 5), "detail view should load with Add Photo button")
 
+        // AC4.1: Assert the floating bar is present by checking for the back button
+        let backButton = app.buttons["trip-back"]
+        XCTAssertTrue(backButton.waitForExistence(timeout: 5),
+                      "floating bar should be present with back button (AC4.1)")
+
+        // AC4.3: Assert the "Delete Trip" button does NOT exist on the detail screen
         let deleteButton = app.buttons["Delete Trip"]
-        XCTAssertTrue(deleteButton.waitForExistence(timeout: 10), "detail view should have a delete control")
-        deleteButton.tap()
+        XCTAssertFalse(deleteButton.exists,
+                       "trip detail should NOT show a Delete button (AC4.3 — deletion is now in Archived view)")
 
-        // Confirm in the dialog (wait for it to present before tapping).
-        let confirm = app.buttons["Delete"]
-        XCTAssertTrue(confirm.waitForExistence(timeout: 5), "confirmation dialog should appear")
-        confirm.tap()
+        // AC4.2: Tap the back button and verify we're back on the My Trips list
+        backButton.tap()
 
-        XCTAssertTrue(
-            app.staticTexts["Trip To Delete"].waitForNonExistence(timeout: 15),
-            "deleted trip should disappear from the list (AC1.4)")
-        attach(app.screenshot(), name: "AC1.4-trip-deleted")
+        // Assert we're back on My Trips by checking for the list title or a known seed trip
+        let tripListTitle = app.staticTexts["My Trips"]
+        XCTAssertTrue(tripListTitle.waitForExistence(timeout: 5),
+                      "back button should return to My Trips list (AC4.2)")
+
+        attach(app.screenshot(), name: "AC4.3-no-delete-AC4.2-back-works")
     }
 
     /// AC1.5: an invalid token surfaces an error and adds no trip.
