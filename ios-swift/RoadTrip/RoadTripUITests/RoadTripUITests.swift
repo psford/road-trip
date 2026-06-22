@@ -150,35 +150,119 @@ final class RoadTripUITests: XCTestCase {
 
         pin.tap()
 
-        // The caption text is unique to the photo view, so its presence proves navigation.
-        let caption = app.staticTexts["Classic stop on Highway 1"]
-        XCTAssertTrue(caption.waitForExistence(timeout: 5),
-                      "tapping a pin should open the photo view (AC5.2)")
+        // Card mode shows only the photo (metadata lives in the immersive view), so the popup's
+        // presence is proved by the photo element rather than any caption text.
+        let popupPhoto = app.descendants(matching: .any).matching(identifier: "popup-photo").firstMatch
+        XCTAssertTrue(popupPhoto.waitForExistence(timeout: 5),
+                      "tapping a pin should open the photo popup (AC5.2)")
         attach(app.screenshot(), name: "AC5.2-photo-detail")
 
-        // AC1.2: verify the ✕ button exists and tapping it closes the popup
-        let closeButton = app.buttons["popup-close"]
-        XCTAssertTrue(closeButton.waitForExistence(timeout: 5),
-                      "popup should have a close button (AC1.2)")
-        closeButton.tap()
+        // AC1.2: the popup has no chrome — swipe down on the card dismisses it. Drive the swipe
+        // from the window centre (always on the visible card) rather than a specific element, whose
+        // frame may sit off-screen in the pager.
+        let window = app.windows.firstMatch
+        let cardStart = window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+        let cardEnd = window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 1.1))
+        cardStart.press(forDuration: 0.05, thenDragTo: cardEnd)
 
-        // Caption should now be gone, proving the popup closed
-        XCTAssertTrue(caption.waitForNonExistence(timeout: 5),
-                      "tapping the ✕ button should close the popup (AC1.2)")
-        attach(app.screenshot(), name: "AC1.2-popup-closed-via-close-button")
+        XCTAssertTrue(popupPhoto.waitForNonExistence(timeout: 5),
+                      "swiping the card down should close the popup (AC1.2)")
+        attach(app.screenshot(), name: "AC1.2-popup-closed-via-swipe-down")
 
         // AC1.3: verify backdrop-tap also closes the popup
         pin.tap()
-        XCTAssertTrue(caption.waitForExistence(timeout: 5),
+        XCTAssertTrue(popupPhoto.waitForExistence(timeout: 5),
                       "should be able to reopen the popup")
 
         // Tap the backdrop (dimmed area around the card) — use a coordinate outside the card
         let mapCoordinate = app.maps.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.1, dy: 0.1))
         mapCoordinate.tap()
 
-        XCTAssertTrue(caption.waitForNonExistence(timeout: 5),
+        XCTAssertTrue(popupPhoto.waitForNonExistence(timeout: 5),
                       "tapping the backdrop should close the popup (AC1.3)")
         attach(app.screenshot(), name: "AC1.3-popup-closed-via-backdrop")
+    }
+
+    /// The chrome-free popup's interactions: tap → immersive (full-black) and back, swipe to page
+    /// between photos, and long-press → Move Pin / Delete Photo. Drives each gesture and captures
+    /// screenshots for visual review; asserts the page change and the long-press menu.
+    func testPopupImmersivePagerAndLongPressMenu() {
+        let app = launchApp()
+
+        app.staticTexts["Pacific Coast Highway"].tap()
+        let pin = app.buttons["Bixby Bridge"]
+        XCTAssertTrue(pin.waitForExistence(timeout: 10), "trip map should render")
+        pin.tap()
+
+        // Card mode is photo-only (no metadata text); the photo element proves it opened.
+        let popupPhoto = app.descendants(matching: .any).matching(identifier: "popup-photo").firstMatch
+        XCTAssertTrue(popupPhoto.waitForExistence(timeout: 5), "popup should open on the tapped pin (index 0)")
+        attach(app.screenshot(), name: "popup-card-mode")
+
+        let window = app.windows.firstMatch
+        let photoPoint = window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35))
+
+        // Tap the photo → immersive (full black). Place/date now appear, pinned to the screen bottom.
+        photoPoint.tap()
+        let firstCaption = app.staticTexts["Classic stop on Highway 1"]
+        XCTAssertTrue(firstCaption.waitForExistence(timeout: 3), "place/date appear in immersive mode")
+        attach(app.screenshot(), name: "popup-immersive")
+
+        // Swipe left (in immersive) → page to the next photo; the bottom metadata follows selection.
+        let swipeStart = window.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.4))
+        let swipeEnd = window.coordinate(withNormalizedOffset: CGVector(dx: 0.15, dy: 0.4))
+        swipeStart.press(forDuration: 0.05, thenDragTo: swipeEnd)
+        let secondCaption = app.staticTexts["Sea otters everywhere"]
+        XCTAssertTrue(secondCaption.waitForExistence(timeout: 5), "swiping should page to the next photo")
+        attach(app.screenshot(), name: "popup-paged-next")
+
+        // Tap again → back to the card (metadata gone).
+        photoPoint.tap()
+        XCTAssertTrue(secondCaption.waitForNonExistence(timeout: 3), "card mode hides the metadata")
+        attach(app.screenshot(), name: "popup-card-after-immersive")
+
+        // Long-press the photo → Move Pin / Delete Photo (the only home for these, no visible chrome).
+        photoPoint.press(forDuration: 1.1)
+        XCTAssertTrue(app.buttons["Move Pin"].waitForExistence(timeout: 5),
+                      "long-press should surface the Move Pin action")
+        XCTAssertTrue(app.buttons["Delete Photo"].exists,
+                      "long-press should surface the Delete Photo action")
+        attach(app.screenshot(), name: "popup-longpress-menu")
+    }
+
+    /// Regression: immersive mode hides the map's floating title bar; dismissing from immersive
+    /// must restore it (the bar showed `trip.name`, which only appears in the bar on the detail
+    /// screen — so its presence/absence cleanly proves hidden vs. visible).
+    func testDismissingFromImmersiveRestoresTitleBar() {
+        let app = launchApp()
+
+        app.staticTexts["Pacific Coast Highway"].tap()
+        let pin = app.buttons["Bixby Bridge"]
+        XCTAssertTrue(pin.waitForExistence(timeout: 10), "trip map should render")
+
+        // The floating title bar is visible on the detail screen before any popup.
+        let titleBar = app.staticTexts["Pacific Coast Highway"]
+        XCTAssertTrue(titleBar.waitForExistence(timeout: 5), "title bar should show before opening a photo")
+
+        pin.tap()
+        let popupPhoto = app.descendants(matching: .any).matching(identifier: "popup-photo").firstMatch
+        XCTAssertTrue(popupPhoto.waitForExistence(timeout: 5), "popup should open")
+
+        // Tap into immersive → the title bar hides.
+        let window = app.windows.firstMatch
+        let photoPoint = window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35))
+        photoPoint.tap()
+        XCTAssertTrue(titleBar.waitForNonExistence(timeout: 5), "immersive mode should hide the title bar")
+
+        // Swipe down to dismiss straight from immersive.
+        let start = window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+        let end = window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 1.1))
+        start.press(forDuration: 0.05, thenDragTo: end)
+
+        XCTAssertTrue(popupPhoto.waitForNonExistence(timeout: 5), "swiping down should dismiss the popup")
+        XCTAssertTrue(titleBar.waitForExistence(timeout: 5),
+                      "dismissing from immersive must restore the title bar")
+        attach(app.screenshot(), name: "title-bar-restored-after-immersive-dismiss")
     }
 
     /// Long-press on the trip map offers to post a photo at that spot (Apple Maps drop-pin

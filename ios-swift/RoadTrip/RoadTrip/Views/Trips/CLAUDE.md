@@ -1,6 +1,6 @@
 # Views/Trips (native SwiftUI app)
 
-Last verified: 2026-06-21
+Last verified: 2026-06-22
 
 ## Purpose
 SwiftUI screens for the trip lifecycle: the My Trips list, trip detail (map + photos),
@@ -18,7 +18,10 @@ delete UX and the trip-route map rendering.
 - **`TripDetailView`** — map + photo detail. Custom **floating inset top bar** (system nav bar
   hidden via `.toolbar(.hidden, for: .navigationBar)`): back · left-justified title · Share
   menu · add-photo Menu. **No delete control** (removed this phase — deletion lives only in
-  `ArchivedTripsView`). Add-photo is a `Menu` (Take Photo / Choose from Library).
+  `ArchivedTripsView`). Add-photo is a `Menu` (Take Photo / Choose from Library). The floating
+  bar **hides whenever the photo popup is full-black immersive** (`PhotoPopupView`'s `immersive`
+  binds to `popupImmersive`); the bottom photo strip **centres the open photo's thumbnail** as the
+  popup pages (`ScrollViewReader` keyed on `popupIndex`).
 - **`RouteCurve.curved(through:pointsPerSegment:) -> [CLLocationCoordinate2D]`** — pure
   (Functional Core, no I/O). Centripetal Catmull-Rom (alpha 0.5) smoothing of the route line.
   Passthrough when `< 3` points; never emits NaN/infinite coords (degenerate segments fall back
@@ -44,6 +47,11 @@ delete UX and the trip-route map rendering.
   is gone, so the map screen has no irreversible action.
 - **Custom floating top bar over the system nav bar** — left-justified title + inset Share/+
   controls; the system bar is hidden.
+- **Chrome-free photo popup** — `PhotoPopupView` is a hand-rolled pager (not `TabView`): photo-only
+  cards in dimmed-map mode; tap → full-black immersive with place/date pinned to the screen bottom;
+  swipe-down/backdrop dismiss; long-press → Move Pin / Delete. **All dismissal goes through
+  `closePopup()`**, which MUST reset `popupImmersive` too — else dismissing from immersive leaves
+  the floating bar hidden until the next open.
 
 ## Invariants
 - My Trips shows active trips only; `ArchivedTripsView` shows archived only — both filter on

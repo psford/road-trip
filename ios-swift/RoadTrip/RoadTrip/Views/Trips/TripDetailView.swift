@@ -23,6 +23,7 @@ struct TripDetailView: View {
     @State private var photos: [Photo] = []
     @State private var cameraPosition: MapCameraPosition = .automatic
     @State private var popupIndex: Int?   // index into `photos`; nil = closed
+    @State private var popupImmersive = false   // popup tapped into full-black mode → hide the floating bar
     @State private var pickedItem: PhotosPickerItem?
     @State private var isStaging = false
     @State private var captureMessage: String?
@@ -54,9 +55,10 @@ struct TripDetailView: View {
                         get: { min(max(popupIndex ?? 0, 0), photos.count - 1) },
                         set: { popupIndex = $0 }
                     ),
-                    onClose: { withAnimation(.easeOut(duration: 0.2)) { popupIndex = nil } },
+                    immersive: $popupImmersive,
+                    onClose: { closePopup() },
                     onMovePin: { photo in
-                        withAnimation(.easeOut(duration: 0.2)) { popupIndex = nil }
+                        closePopup()
                         photoToMove = photo
                     },
                     onDelete: { photo in deletePhoto(photo) }
@@ -79,19 +81,23 @@ struct TripDetailView: View {
         .toolbar(.hidden, for: .navigationBar)
         .overlay(alignment: .top) {
             // Floating bar and the upload banner share the top region — stack them so the
-            // banner appears BELOW the bar instead of colliding behind it.
-            VStack(spacing: 8) {
-                floatingTopBar
-                if !uploads.isEmpty {
-                    UploadBanner(uploads: uploads,
-                                 onRetry: { item in Task { await retryUpload(item) } },
-                                 onDismiss: { item in dismissUpload(item) })
-                        .accessibilityIdentifier("upload-banner")
-                        .transition(.move(edge: .top).combined(with: .opacity))
+            // banner appears BELOW the bar instead of colliding behind it. Both fall away when
+            // the photo popup goes full-black immersive, so nothing floats over the photo.
+            if !popupImmersive {
+                VStack(spacing: 8) {
+                    floatingTopBar
+                    if !uploads.isEmpty {
+                        UploadBanner(uploads: uploads,
+                                     onRetry: { item in Task { await retryUpload(item) } },
+                                     onDismiss: { item in dismissUpload(item) })
+                            .accessibilityIdentifier("upload-banner")
+                            .transition(.move(edge: .top).combined(with: .opacity))
+                    }
                 }
+                .padding(.horizontal, 12)
+                .padding(.top, 8)
+                .transition(.opacity)
             }
-            .padding(.horizontal, 12)
-            .padding(.top, 8)
         }
         .onChange(of: pickedItem) { _, newItem in
             guard let newItem else { return }
@@ -266,7 +272,7 @@ struct TripDetailView: View {
     }
 
     private func deletePhoto(_ photo: Photo) {
-        withAnimation(.easeOut(duration: 0.2)) { popupIndex = nil }
+        closePopup()
         Task {
             do {
                 try await PhotoMutations(database: database, keychain: keychain).deletePhoto(photo)
@@ -503,31 +509,53 @@ struct TripDetailView: View {
     }
 
     private var photoStrip: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 10) {
-                ForEach(Array(photos.enumerated()), id: \.element.id) { index, photo in
-                    Button {
-                        openPopup(at: index)
-                    } label: {
-                        CachedImage(url: URL(string: photo.displayUrl), tripId: photo.tripId,
-                                    photoId: photo.id, tier: .display) {
-                            Color.secondary.opacity(0.15)
+        // As the popup pages between photos, keep the open photo's thumbnail centred in the strip
+        // (Photos.app filmstrip behaviour). At the first/last photo the ScrollView clamps, so the
+        // edge thumbnail simply rests against the end rather than forcing a centre.
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    ForEach(Array(photos.enumerated()), id: \.element.id) { index, photo in
+                        Button {
+                            openPopup(at: index)
+                        } label: {
+                            CachedImage(url: URL(string: photo.displayUrl), tripId: photo.tripId,
+                                        photoId: photo.id, tier: .display) {
+                                Color.secondary.opacity(0.15)
+                            }
+                            .frame(width: 92, height: 92)
+                            .clipShape(RoundedRectangle(cornerRadius: 12))
                         }
-                        .frame(width: 92, height: 92)
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .buttonStyle(.plain)
+                        .id(photo.id)
                     }
-                    .buttonStyle(.plain)
+                }
+                .padding(.horizontal)
+                .padding(.vertical, 12)
+            }
+            .frame(height: 116)
+            .background(.thinMaterial)
+            .onChange(of: popupIndex) { _, newValue in
+                guard let newValue, photos.indices.contains(newValue) else { return }
+                withAnimation(.easeInOut(duration: 0.25)) {
+                    proxy.scrollTo(photos[newValue].id, anchor: .center)
                 }
             }
-            .padding(.horizontal)
-            .padding(.vertical, 12)
         }
-        .frame(height: 116)
-        .background(.thinMaterial)
     }
 
     private func openPopup(at index: Int) {
+        popupImmersive = false
         withAnimation(.easeIn(duration: 0.2)) { popupIndex = index }
+    }
+
+    /// Dismiss the popup. ALWAYS clear `popupImmersive` here too — otherwise dismissing from the
+    /// black immersive view leaves the map's floating title bar hidden until the next open.
+    private func closePopup() {
+        withAnimation(.easeOut(duration: 0.2)) {
+            popupIndex = nil
+            popupImmersive = false
+        }
     }
 
     private var routeCoordinates: [CLLocationCoordinate2D] {
