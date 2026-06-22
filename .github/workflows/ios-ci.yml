@@ -78,8 +78,7 @@ jobs:
             -project RoadTrip.xcodeproj \
             -scheme "${{ env.IOS_SCHEME }}" \
             -destination "platform=iOS Simulator,name=${{ env.SIMULATOR_NAME }}" \
-            -derivedDataPath "${{ env.DERIVED_DATA }}" \
-            CODE_SIGNING_ALLOWED=NO
+            -derivedDataPath "${{ env.DERIVED_DATA }}"
 
       - name: Run unit tests (RoadTripTests)
         working-directory: ios-swift/RoadTrip
@@ -90,8 +89,7 @@ jobs:
             -destination "platform=iOS Simulator,name=${{ env.SIMULATOR_NAME }}" \
             -derivedDataPath "${{ env.DERIVED_DATA }}" \
             -only-testing:RoadTripTests \
-            -resultBundlePath "${{ env.DERIVED_DATA }}/RoadTripTests.xcresult" \
-            CODE_SIGNING_ALLOWED=NO
+            -resultBundlePath "${{ env.DERIVED_DATA }}/RoadTripTests.xcresult"
 
       # UI tests run on the runner's iOS version (18.x), which differs from a developer's
       # local simulator. They are informational for now (continue-on-error) until validated
@@ -114,8 +112,7 @@ jobs:
             -skip-testing:RoadTripUITests/RoadTripUITests/testImportTripFlow \
             -skip-testing:RoadTripUITests/RoadTripUITests/testImportInvalidTokenShowsError \
             -skip-testing:RoadTripUITests/RoadTripUITests/testLibraryPickStagesPhoto \
-            -resultBundlePath "${{ env.DERIVED_DATA }}/RoadTripUITests.xcresult" \
-            CODE_SIGNING_ALLOWED=NO
+            -resultBundlePath "${{ env.DERIVED_DATA }}/RoadTripUITests.xcresult"
 
       - name: Upload unit test xcresult
         uses: actions/upload-artifact@v6
