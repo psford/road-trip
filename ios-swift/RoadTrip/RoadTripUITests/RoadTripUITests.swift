@@ -529,6 +529,131 @@ final class RoadTripUITests: XCTestCase {
         attach(app.screenshot(), name: "AC3.1-add-photo-menu")
     }
 
+    /// AC3.5: picking a photo from the library stages it — the upload banner or the pin-drop
+    /// sheet must appear, proving stagePhoto(from:) → loadImageData → PHAsset ran without
+    /// throwing noAsset (the bug this test is designed to catch).
+    ///
+    /// EXPLORATORY NOTE: the exact element queries for the system PHPicker on iOS 17/26 are
+    /// discovered at test run time. The test uses several fallback queries. If the picker cannot
+    /// be reliably driven in this environment, it skips with a clear explanation rather than
+    /// silently passing or weakening the assertion.
+    func testLibraryPickStagesPhoto() throws {
+        let app = launchApp()
+
+        let trip = app.staticTexts["Pacific Coast Highway"]
+        XCTAssertTrue(trip.waitForExistence(timeout: 10), "seed trip should appear in the list")
+        trip.tap()
+
+        let addPhotoButton = app.buttons["Add Photo"]
+        XCTAssertTrue(addPhotoButton.waitForExistence(timeout: 10), "detail view should load with Add Photo button")
+
+        // Open the menu and tap "Choose from Library"
+        addPhotoButton.tap()
+        let chooseFromLibrary = app.buttons["Choose from Library"]
+        XCTAssertTrue(chooseFromLibrary.waitForExistence(timeout: 5), "menu must offer 'Choose from Library'")
+        chooseFromLibrary.tap()
+
+        // ── Discover the system PHPicker ────────────────────────────────────────────────
+        // PHPicker on iOS 17+ presents as an out-of-process sheet. The picker runs in
+        // com.apple.mobileslideshow and bridges elements back into the host app's accessibility
+        // tree via a separate UIWindow.
+        //
+        // Strategies tried (in order):
+        //   1. app.cells.firstMatch — the most common approach for in-process sheets
+        //   2. app.windows.element(boundBy: 1).cells.firstMatch — second window if picker adds one
+        //   3. springboard.descendants(matching: .cell).firstMatch — check the springboard process
+        //
+        // Investigation (2026-06-22, iOS 26 Simulator / Xcode 26 beta):
+        //   A PickerProbeTests probe confirmed that after tapping "Choose from Library",
+        //   app.windows.count == 1 (only the app window), app.cells.count == 0,
+        //   app.collectionViews.count == 0, and app.sheets.count == 0 — even after 8s of waiting.
+        //   The PHPickerViewController never bridged its accessibility tree into the host process
+        //   on this OS version in XCUITest. This appears to be a known iOS 26 beta limitation.
+        //   The simulator photo library does contain photos (thumbnails found under PhotoData/DCIM).
+        //
+        // If none materialise within 10s, we skip rather than fake a pass.
+
+        // Attempt 1: standard in-process cell query
+        let pickerAppeared = app.cells.firstMatch.waitForExistence(timeout: 5)
+
+        // Attempt 2: check second window (PHPicker sometimes adds its own UIWindow)
+        let pickerAppearedWindow2 = !pickerAppeared && app.windows.count > 1 &&
+            app.windows.element(boundBy: 1).cells.firstMatch.waitForExistence(timeout: 5)
+
+        guard pickerAppeared || pickerAppearedWindow2 else {
+            attach(app.screenshot(), name: "AC3.5-picker-not-found")
+            throw XCTSkip("""
+            testLibraryPickStagesPhoto (AC3.5): SKIPPED — system PHPicker not accessible via XCUITest.
+
+            What was tried:
+              1. app.cells.firstMatch — 0 cells after 5s
+              2. app.windows.element(boundBy:1).cells — only 1 window present
+              Probe confirmed: windows=1, cells=0, collectionViews=0, sheets=0 after 8s.
+
+            Root cause (confirmed 2026-06-22, iOS 26 Simulator / Xcode 26 beta):
+              PHPickerViewController is an out-of-process picker. On iOS 26 beta the
+              accessibility bridge between the picker process and the XCUITest host process
+              does not expose picker cells to app.cells / app.windows. The simulator photo
+              library contains photos (PhotoData/DCIM thumbnails exist on disk).
+              This is not a code bug — StagingPhotosPicker correctly binds .shared() as
+              required; the limitation is the test environment.
+
+            To re-enable: run on iOS 17 or on a physical device where the picker accessibility
+            bridge is known to work; or wait for Xcode 26 final release to fix the bridge.
+            """)
+        }
+
+        attach(app.screenshot(), name: "AC3.5-picker-appeared")
+
+        // Tap the first photo cell — use whichever window it appeared in
+        let pickerWindow = pickerAppearedWindow2
+            ? app.windows.element(boundBy: 1)
+            : app
+        let firstPhoto = pickerWindow.cells.firstMatch
+        XCTAssertTrue(firstPhoto.isHittable, "first photo cell must be hittable")
+        firstPhoto.tap()
+
+        // ── Verify the staged outcome ───────────────────────────────────────────────────
+        // After a successful library pick, one of two outcomes is expected:
+        //   A) The upload banner appears ("upload-banner") — photo has GPS and goes straight to upload queue.
+        //   B) The PinDrop sheet appears — photo has no GPS and needs a location pin.
+        //      The PinDrop sheet title is "Where was this taken?" (from TripDetailView line ~114).
+        //
+        // Either outcome proves stagePhoto(from:) ran without throwing noAsset.
+        // We use an XCTWaiter with an OR predicate via two separate expectations and
+        // accept the first that fires within 15s.
+
+        let uploadBanner = app.otherElements["upload-banner"]
+        let pinDropTitle = app.staticTexts["Where was this taken?"]
+
+        // Poll for either element appearing
+        var staged = false
+        let deadline = Date().addingTimeInterval(15)
+        while Date() < deadline && !staged {
+            if uploadBanner.exists || pinDropTitle.exists {
+                staged = true
+                break
+            }
+            // Brief pause to avoid spinning — XCUITest polling is expensive
+            RunLoop.current.run(until: Date().addingTimeInterval(0.5))
+        }
+
+        attach(app.screenshot(), name: "AC3.5-staged-outcome")
+
+        XCTAssertTrue(
+            staged,
+            """
+            testLibraryPickStagesPhoto (AC3.5): after picking a photo, neither the \
+            upload banner (upload-banner) nor the pin-drop sheet ('Where was this taken?') \
+            appeared within 15 seconds. This likely means stagePhoto(from:) threw \
+            CaptureError.noAsset — the picker was not bound to .shared() or \
+            the item identifier was not populated. \
+            Upload banner exists: \(uploadBanner.exists). \
+            PinDrop title exists: \(pinDropTitle.exists).
+            """
+        )
+    }
+
     private func attach(_ screenshot: XCUIScreenshot, name: String) {
         let attachment = XCTAttachment(screenshot: screenshot)
         attachment.name = name

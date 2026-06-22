@@ -4,7 +4,20 @@ import GRDB
 
 /// Slice B.2: background-uploader behavior that needs no network. Aborting a stuck/failed
 /// upload must remove the queue row, the staged source file, AND any sliced block files.
+/// Mitigation 3c: configureShared/shared nil-guard contract.
 final class BackgroundUploadSessionTests: XCTestCase {
+
+    func testConfigureSharedMakesSharedNonNil() throws {
+        // configureShared is idempotent but tests run in the same process; reset isn't
+        // exposed on purpose (it's a launch-time-only API). If a prior test already called
+        // it, shared will already be non-nil — that's fine; the assertion still holds.
+        let db = try AppDatabase.makeInMemory()
+        let keychain = KeychainStore(service: "com.psford.roadtripmap.native.tests.shared.\(UUID().uuidString)")
+        let session = BackgroundUploadSession.configureShared(database: db, keychain: keychain)
+        XCTAssertNotNil(BackgroundUploadSession.shared,
+                        "configureShared must set shared so startUpload/retryUpload/dismissUpload guards pass")
+        withExtendedLifetime(session) {}
+    }
 
     func testAbortRemovesQueueRowStagedFileAndBlockFiles() async throws {
         let db = try AppDatabase.makeInMemory()

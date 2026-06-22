@@ -36,7 +36,7 @@ struct TripDetailView: View {
     @State private var secretToken: UUID?
     @State private var showCamera = false
     @State private var showLibraryPicker = false
-    @State private var locationProvider = OneShotLocationProvider()
+    @State private var locationProvider: any LocationProviding = OneShotLocationProvider()
 
     var body: some View {
         ZStack {
@@ -54,6 +54,7 @@ struct TripDetailView: View {
                                  onDismiss: { item in dismissUpload(item) })
                     Spacer()
                 }
+                .accessibilityIdentifier("upload-banner")
                 .transition(.move(edge: .top).combined(with: .opacity))
             }
 
@@ -127,8 +128,8 @@ struct TripDetailView: View {
         // raw bytes from the asset to keep location). `itemIdentifier` is only populated when the
         // picker is bound to the shared library — drop `.shared()` and every pick throws
         // CaptureError.noAsset ("Couldn't read that photo from your library"). See PhotoCaptureCoordinator.loadImageData.
-        .photosPicker(isPresented: $showLibraryPicker, selection: $pickedItem, matching: .images,
-                      preferredItemEncoding: .current, photoLibrary: .shared())
+        // StagingPhotosPicker hard-codes .shared() so this can't be accidentally dropped.
+        .stagingPhotosPicker(isPresented: $showLibraryPicker, selection: $pickedItem)
         .sheet(isPresented: $showCamera) {
             CameraPicker { image in
                 guard let image else { return }
@@ -264,17 +265,6 @@ struct TripDetailView: View {
         }
     }
 
-    /// Helper: race a one-shot location fetch against a timeout, returning nil on either denial or timeout.
-    private func locationWithTimeout(_ provider: OneShotLocationProvider, seconds: TimeInterval = 4) async -> CLLocationCoordinate2D? {
-        await withTaskGroup(of: CLLocationCoordinate2D?.self) { group in
-            group.addTask { await provider.currentCoordinate() }
-            group.addTask { try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000)); return nil }
-            let first = await group.next() ?? nil
-            group.cancelAll()
-            return first
-        }
-    }
-
     /// Camera capture path: transcode JPEG, fetch one-shot location, stage, and handle no-GPS case.
     private func stageCameraImage(_ image: UIImage) async {
         isStaging = true
@@ -366,17 +356,30 @@ struct TripDetailView: View {
     /// surfaces Retry), and the committed pin appears via the photos `ValueObservation` on
     /// revalidate — no manual reload here.
     private func startUpload(_ item: UploadQueueItem) {
-        BackgroundUploadSession.shared?.start(item.uploadId)
+        guard let session = BackgroundUploadSession.shared else {
+            assertionFailure("BackgroundUploadSession.shared is nil — configureShared must be called at launch before any upload")
+            captureMessage = "Upload system not ready. Please restart the app and try again."
+            return
+        }
+        session.start(item.uploadId)
     }
 
     private func retryUpload(_ item: UploadQueueItem) async {
-        BackgroundUploadSession.shared?.retry(item.uploadId)
+        guard let session = BackgroundUploadSession.shared else {
+            assertionFailure("BackgroundUploadSession.shared is nil — configureShared must be called at launch before any retry")
+            return
+        }
+        session.retry(item.uploadId)
     }
 
     /// Removes a stuck/failed upload (its row, staged file, and block files) so the banner can
     /// be cleared even when retry is futile (e.g. the source photo is gone).
     private func dismissUpload(_ item: UploadQueueItem) {
-        BackgroundUploadSession.shared?.abort(item.uploadId)
+        guard let session = BackgroundUploadSession.shared else {
+            assertionFailure("BackgroundUploadSession.shared is nil — configureShared must be called at launch before any dismiss")
+            return
+        }
+        session.abort(item.uploadId)
     }
 
     private var mapSection: some View {
@@ -520,8 +523,7 @@ private struct PostPhotoHereSheet: View {
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
-                PhotosPicker(selection: $item, matching: .images,
-                             preferredItemEncoding: .current, photoLibrary: .shared()) {
+                StagingPhotosPicker(selection: $item) {
                     Label("Choose Photo", systemImage: "photo.on.rectangle")
                 }
                 .buttonStyle(.borderedProminent)

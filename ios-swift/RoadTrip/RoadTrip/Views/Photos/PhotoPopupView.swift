@@ -29,10 +29,15 @@ struct PhotoPopupView: View {
             let imageHeight = min(360, max(220, geo.size.height * 0.46))
             let captionHeight: CGFloat = 104
             let cardHeight = imageHeight + captionHeight
+            // Backdrop dims as the card is dragged toward dismissal. Keep every term
+            // explicitly CGFloat (then convert once) so there's no ambiguous CGFloat/Double
+            // mix — Xcode 26 infers it, but Xcode 16.4's compiler flags it as ambiguous.
+            let dragProgress: CGFloat = min(dragOffset / dismissThreshold, 1)
+            let backdropOpacity: CGFloat = 0.55 * (1 - dragProgress)
 
             ZStack {
                 Color.black
-                    .opacity(0.55 * (1 - min(dragOffset / dismissThreshold, 1)))
+                    .opacity(Double(backdropOpacity))
                     .ignoresSafeArea()
                     .onTapGesture { onClose() }
 

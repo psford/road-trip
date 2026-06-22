@@ -66,6 +66,18 @@ targets:
         Release-TestFlight:
           # Selects the Azure dev slot base URL in APIEnvironment (#elseif DEVSLOT).
           SWIFT_ACTIVE_COMPILATION_CONDITIONS: $(inherited) DEVSLOT
+    # SwiftLint build phase — non-fatal; skipped gracefully when swiftlint is absent.
+    # Install: brew install swiftlint
+    # Never uses --strict so a lint warning never breaks the build.
+    postBuildScripts:
+      - name: SwiftLint
+        script: |
+          if which swiftlint >/dev/null 2>&1; then
+            swiftlint lint --config "${SRCROOT}/.swiftlint.yml" --quiet
+          else
+            echo "warning: SwiftLint not installed — skipping lint (brew install swiftlint)"
+          fi
+        basedOnDependencyAnalysis: false
 
   RoadTripTests:
     type: bundle.unit-test

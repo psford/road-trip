@@ -1,0 +1,150 @@
+#!/usr/bin/env bash
+# .githooks/pre-push
+#
+# If the push range touches ios-swift/, run:
+#   xcodegen generate && xcodebuild build-for-testing
+# on iPhone 17 simulator with -derivedDataPath .build-dd.
+#
+# Blocks on failure; skips if no ios-swift/ changes.
+# To bypass in an emergency: git push --no-verify
+#
+# Usage: invoked automatically by git push (after .githooks/install.sh is run).
+#        Reads the push range from stdin as per the git pre-push hook protocol.
+
+set -euo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+IOS_DIR="$REPO_ROOT/ios-swift/RoadTrip"
+PROJECT="$IOS_DIR/RoadTrip.xcodeproj"
+SCHEME="RoadTrip"
+SIM_NAME="iPhone 17"
+DERIVED_DATA="$IOS_DIR/.build-dd"
+
+# ─── Read push range from stdin ───────────────────────────────────────────────
+# git pre-push provides lines of:  <local-ref> <local-sha> <remote-ref> <remote-sha>
+# Collect all local SHAs being pushed
+
+local_shas=()
+while IFS=' ' read -r local_ref local_sha remote_ref remote_sha; do
+    # Skip delete pushes (local_sha is all zeros)
+    if [[ "$local_sha" == "0000000000000000000000000000000000000000" ]]; then
+        continue
+    fi
+    # Use remote_sha as range base; if remote doesn't exist yet use empty tree
+    if [[ "$remote_sha" == "0000000000000000000000000000000000000000" ]]; then
+        range="$local_sha"
+        base_arg="--root"
+    else
+        range="${remote_sha}..${local_sha}"
+        base_arg=""
+    fi
+    local_shas+=("$range")
+done
+
+if [[ ${#local_shas[@]} -eq 0 ]]; then
+    echo "pre-push: no commits to push; skipping."
+    exit 0
+fi
+
+# ─── Check if any pushed commits touch ios-swift/ ────────────────────────────
+
+ios_changed=false
+for range in "${local_shas[@]}"; do
+    if git diff --name-only "$range" 2>/dev/null | grep -q '^ios-swift/'; then
+        ios_changed=true
+        break
+    fi
+    # Handle --root case (initial push with no remote base)
+    if git log --name-only --format="" "$range" 2>/dev/null | grep -q '^ios-swift/'; then
+        ios_changed=true
+        break
+    fi
+done
+
+if [[ "$ios_changed" == false ]]; then
+    echo "pre-push: no ios-swift/ changes in push range; skipping iOS build."
+    exit 0
+fi
+
+echo "pre-push: ios-swift/ changes detected — running xcodegen + build-for-testing."
+echo "          (bypass with: git push --no-verify)"
+echo ""
+
+# ─── xcodegen generate ───────────────────────────────────────────────────────
+
+if ! command -v xcodegen >/dev/null 2>&1; then
+    echo "pre-push: WARNING: xcodegen not found (brew install xcodegen)."
+    echo "          Cannot regenerate project; proceeding with existing .xcodeproj."
+else
+    echo "pre-push: running xcodegen generate..."
+    cd "$IOS_DIR"
+    if ! xcodegen generate; then
+        echo "pre-push: ERROR: xcodegen generate failed. Push blocked."
+        echo "          Fix project.yml and try again, or git push --no-verify to bypass."
+        exit 1
+    fi
+    echo "pre-push: xcodegen generate OK."
+fi
+
+# ─── Resolve simulator UDID ──────────────────────────────────────────────────
+
+SIM_UDID=$(xcrun simctl list devices available -j 2>/dev/null | \
+    python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+devices = data.get('devices', {})
+for runtime, devs in devices.items():
+    for d in devs:
+        if '$SIM_NAME' in d.get('name', '') and d.get('isAvailable', False):
+            print(d['udid'])
+            sys.exit(0)
+" 2>/dev/null || true)
+
+if [[ -z "$SIM_UDID" ]]; then
+    echo "pre-push: WARNING: could not find '$SIM_NAME' simulator."
+    echo "          Falling back to first available iPhone simulator."
+    SIM_UDID=$(xcrun simctl list devices available -j 2>/dev/null | \
+        python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+for runtime, devs in data.get('devices', {}).items():
+    for d in devs:
+        name = d.get('name', '')
+        if 'iPhone' in name and d.get('isAvailable', False):
+            print(d['udid'])
+            sys.exit(0)
+" 2>/dev/null || true)
+fi
+
+if [[ -z "$SIM_UDID" ]]; then
+    echo "pre-push: ERROR: no iPhone simulator available. Push blocked."
+    echo "          Boot a simulator with: open -a Simulator"
+    echo "          Or bypass with: git push --no-verify"
+    exit 1
+fi
+
+echo "pre-push: using simulator $SIM_UDID ($SIM_NAME)."
+
+# ─── build-for-testing ───────────────────────────────────────────────────────
+
+echo "pre-push: running xcodebuild build-for-testing..."
+cd "$IOS_DIR"
+
+if xcodebuild \
+    build-for-testing \
+    -project "$PROJECT" \
+    -scheme "$SCHEME" \
+    -destination "platform=iOS Simulator,id=$SIM_UDID" \
+    -derivedDataPath "$DERIVED_DATA" \
+    -quiet \
+    CODE_SIGNING_ALLOWED=NO \
+    2>&1; then
+    echo "pre-push: build-for-testing SUCCEEDED. Push allowed."
+    exit 0
+else
+    echo ""
+    echo "pre-push: ERROR: build-for-testing FAILED. Push blocked."
+    echo "          Fix the build errors above."
+    echo "          To bypass in an emergency: git push --no-verify"
+    exit 1
+fi
