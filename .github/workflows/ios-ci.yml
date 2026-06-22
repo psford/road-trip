@@ -52,11 +52,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Select Xcode ${{ env.XCODE_VERSION }}
-        run: sudo xcode-select -s /Applications/Xcode_${{ env.XCODE_VERSION }}.app
-
-      - name: Show Xcode version
-        run: xcodebuild -version
+      # Use the runner's DEFAULT Xcode — it owns the pre-installed iOS simulator runtime
+      # and the iPhone 16 simulators. Pinning a specific Xcode (e.g. 16.3) can select one
+      # whose iOS runtime isn't installed ("iOS X is not installed"), which is what broke
+      # earlier runs. Just log which Xcode/runtime we got.
+      - name: Show Xcode + available runtimes
+        run: |
+          xcodebuild -version
+          xcrun simctl list runtimes | grep -i ios || true
 
       - name: Install XcodeGen
         run: brew install xcodegen
