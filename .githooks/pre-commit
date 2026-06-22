@@ -86,6 +86,7 @@ for f in $staged_swift; do
     # A line containing PhotosPicker( or .photosPicker( AND (selection: or matching:)
     # but NOT photoLibrary:
     single_line_hits=$(echo "$staged_content" | grep -nE '(PhotosPicker\(|\.photosPicker\()' | \
+        grep -viE 'stagingphotospicker' | \
         grep -E '(selection:|matching:)' | \
         grep -vE 'photoLibrary:' | \
         awk -F: '{print $1}' || true)
@@ -108,7 +109,7 @@ for f in $staged_swift; do
         for (i = 1; i < NR; i++) {
             pair = lines[i] "\n" lines[i+1]
             # Pair contains a picker call
-            if (pair ~ /(PhotosPicker\(|\.photosPicker\()/) {
+            if (pair ~ /(PhotosPicker\(|\.photosPicker\()/ && pair !~ /[Ss]tagingPhotosPicker/) {
                 # Pair contains selection: or matching:
                 if (pair ~ /(selection:|matching:)/) {
                     # Pair does NOT contain photoLibrary:
