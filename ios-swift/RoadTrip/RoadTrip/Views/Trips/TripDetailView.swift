@@ -217,9 +217,9 @@ struct TripDetailView: View {
     /// identical in size and color. The fixed frame normalizes differing SF Symbol glyph widths.
     private func mapControlIcon(_ systemName: String) -> some View {
         Image(systemName: systemName)
-            .font(.title3)
-            .frame(width: 24, height: 24)
-            .padding(8)
+            .font(.title2)
+            .frame(width: 29, height: 29)
+            .padding(10)
             .background(.regularMaterial, in: Circle())
     }
 

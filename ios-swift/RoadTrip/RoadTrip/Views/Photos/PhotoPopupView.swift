@@ -11,6 +11,9 @@ struct PhotoPopupView: View {
     var onDelete: ((Photo) -> Void)? = nil
 
     @State private var dragOffset: CGFloat = 0
+    /// photoId → aspect ratio (width / height), learned from each loaded image so the card can
+    /// size to the photo with no letterbox. Defaults to 4:3 until a photo's image loads.
+    @State private var aspectByPhoto: [Int: CGFloat] = [:]
 
     /// The photo currently shown (selection clamped to a valid index).
     private var currentPhoto: Photo? {
@@ -22,12 +25,17 @@ struct PhotoPopupView: View {
 
     var body: some View {
         GeometryReader { geo in
-            // DEFINITE heights for both the image and the caption band. A flexible image
-            // frame let `scaledToFill` resize the card the instant the AsyncImage finished
-            // loading (~150ms after appear), pushing it past the screen. With fixed heights
-            // the loaded image is always clipped to its slot — the layout never changes.
-            let imageHeight = min(360, max(220, geo.size.height * 0.46))
+            // The card fills a near-full width; the image height follows the CURRENT photo's aspect
+            // ratio (learned from its loaded image, cached per-photo), CAPPED at maxImageHeight so a
+            // tall portrait can't run off-screen. Bounded both ways → it never overflows (the failure
+            // that drove the old fixed-size design). The cap is the only thing that can show a bar,
+            // and only for an extreme aspect (panorama / very tall).
+            let inset: CGFloat = 8
+            let cardWidth = geo.size.width - inset * 2
+            let maxImageHeight = geo.size.height * 0.62
             let captionHeight: CGFloat = 104
+            let currentAspect = currentPhoto.flatMap { aspectByPhoto[$0.id] } ?? 4.0 / 3.0
+            let imageHeight = min(maxImageHeight, cardWidth / currentAspect)
             let cardHeight = imageHeight + captionHeight
             // Backdrop dims as the card is dragged toward dismissal. Keep every term
             // explicitly CGFloat (then convert once) so there's no ambiguous CGFloat/Double
@@ -81,15 +89,15 @@ struct PhotoPopupView: View {
                     TabView(selection: $selection) {
                         ForEach(Array(photos.enumerated()), id: \.element.id) { index, photo in
                             VStack(alignment: .leading, spacing: 0) {
-                                // A fixed-size clear box defines the slot; the image is an OVERLAY, so it can
-                                // never affect layout regardless of its aspect ratio (portrait, landscape, or
-                                // a rotated source). scaledToFill fills the slot, clipped() trims the overflow.
+                                // The image overlays a bounded clear box, so it can never push the layout
+                                // off-screen. The box matches the current photo's aspect, so `.fit` fills it
+                                // edge-to-edge with no bars; onAspect feeds each photo's size back up.
                                 Color.clear
-                                    .frame(maxWidth: .infinity)
-                                    .frame(height: imageHeight)
+                                    .frame(width: cardWidth, height: imageHeight)
                                     .overlay {
                                         CachedImage(url: URL(string: photo.displayUrl), tripId: photo.tripId,
-                                                    photoId: photo.id, tier: .display) {
+                                                    photoId: photo.id, tier: .display, contentMode: .fit,
+                                                    onAspect: { aspectByPhoto[photo.id] = $0 }) {
                                             Color.secondary.opacity(0.12).overlay(ProgressView())
                                         }
                                     }
@@ -113,12 +121,14 @@ struct PhotoPopupView: View {
                                 // The page dots (multi-photo) render at the band's bottom — its padding gives room.
                                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                             }
-                            .frame(height: imageHeight + captionHeight)
+                            .frame(width: cardWidth, height: imageHeight + captionHeight)
                             .tag(index)
                         }
                     }
                     .tabViewStyle(.page(indexDisplayMode: photos.count > 1 ? .always : .never))
-                    .frame(height: cardHeight)
+                    .frame(width: cardWidth, height: cardHeight)
+                    // Card height morphs smoothly to each photo's aspect as you swipe.
+                    .animation(.spring(response: 0.35, dampingFraction: 0.85), value: cardHeight)
                 }
                 .background(.regularMaterial)
                 .clipShape(RoundedRectangle(cornerRadius: 16))
