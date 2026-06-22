@@ -23,7 +23,7 @@ extension OneShotLocationProvider: LocationProviding {}
 /// Extracted from TripDetailView so it can be called with any `LocationProviding`
 /// implementation — real or fake — making camera-staging logic unit-testable.
 @MainActor
-func locationWithTimeout(_ provider: any LocationProviding, seconds: TimeInterval = 4) async -> CLLocationCoordinate2D? {
+func locationWithTimeout(_ provider: any LocationProviding, seconds: TimeInterval = 10) async -> CLLocationCoordinate2D? {
     await withTaskGroup(of: CLLocationCoordinate2D?.self) { group in
         group.addTask { await provider.currentCoordinate(timeout: seconds) }
         group.addTask { try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000)); return nil }
