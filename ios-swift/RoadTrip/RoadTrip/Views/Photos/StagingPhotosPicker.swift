@@ -22,14 +22,14 @@ import Photos
 /// - `photoLibrary: .shared()` — required so `item.itemIdentifier` is populated
 struct StagingPhotosPicker<Label: View>: View {
     @Binding var selection: PhotosPickerItem?
-    // Store as AnyView so the generic Label type is erased: avoids a strict-concurrency warning
-    // about capturing non-Sendable generic types in the PhotosPicker @ViewBuilder closure.
-    private let labelView: AnyView
+    // PhotosPicker's `label` parameter is `@Sendable`, so store the closure as @Sendable and
+    // forward it directly. (Erasing to AnyView and using that property in the closure tripped a
+    // main-actor-from-Sendable warning; a plain non-Sendable closure tripped a conversion warning.)
+    private let label: @Sendable () -> Label
 
-    @MainActor
-    init(selection: Binding<PhotosPickerItem?>, @ViewBuilder label: () -> Label) {
+    init(selection: Binding<PhotosPickerItem?>, @ViewBuilder label: @escaping @Sendable () -> Label) {
         self._selection = selection
-        self.labelView = AnyView(label())
+        self.label = label
     }
 
     var body: some View {
@@ -37,10 +37,9 @@ struct StagingPhotosPicker<Label: View>: View {
             selection: $selection,
             matching: .images,
             preferredItemEncoding: .current,
-            photoLibrary: .shared()
-        ) {
-            labelView
-        }
+            photoLibrary: .shared(),
+            label: label
+        )
     }
 }
 

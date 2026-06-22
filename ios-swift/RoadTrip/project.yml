@@ -75,7 +75,7 @@ targets:
           if which swiftlint >/dev/null 2>&1; then
             swiftlint lint --config "${SRCROOT}/.swiftlint.yml" --quiet
           else
-            echo "warning: SwiftLint not installed — skipping lint (brew install swiftlint)"
+            echo "SwiftLint not installed — skipping lint (brew install swiftlint to enable)"
           fi
         basedOnDependencyAnalysis: false
 
