@@ -374,7 +374,7 @@ extension BackgroundUploadSession: URLSessionDelegate, URLSessionTaskDelegate {
 
     /// All queued background events for this session have been delivered — fire the saved
     /// completion handler on the main thread so UIKit can snapshot the UI and suspend us.
-    func urlSessionDidFinishEvents(forBackgroundSession session: URLSession) {
+    func urlSessionDidFinishEvents(forBackgroundURLSession session: URLSession) {
         lock.lock(); let box = backgroundCompletionHandler; backgroundCompletionHandler = nil; lock.unlock()
         if let box { DispatchQueue.main.async { box.run() } }
     }

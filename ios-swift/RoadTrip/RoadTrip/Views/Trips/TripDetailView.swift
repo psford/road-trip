@@ -185,7 +185,7 @@ struct TripDetailView: View {
                 ShareLink(item: inviteText(name: trip.name, secret: secretToken)) {
                     Label("Invite to edit", systemImage: "person.badge.plus")
                 }
-            } label: { Label("Share", systemImage: "square.and.arrow.up") }
+            } label: { Label("Share", systemImage: "square.and.arrow.up").labelStyle(.iconOnly) }
         }
     }
 
@@ -199,7 +199,10 @@ struct TripDetailView: View {
                 showLibraryPicker = true
             } label: { Label("Choose from Library", systemImage: "photo.on.rectangle") }
         } label: {
-            Label("Add Photo", systemImage: "plus")
+            // Icon-only (SF Symbol photo.badge.plus) to give the trip name room; the
+            // "Add Photo" accessibility label/identifier are kept for VoiceOver + UI tests.
+            Label("Add Photo", systemImage: "photo.badge.plus")
+                .labelStyle(.iconOnly)
         }
         .accessibilityLabel(Text("Add Photo"))
         .accessibilityIdentifier("Add Photo")
@@ -417,6 +420,9 @@ struct TripDetailView: View {
                 MapCompass()
                 MapScaleView()
             }
+            // Inset the map's safe area so MapKit's controls (compass/user-location) sit BELOW
+            // the floating top bar instead of under it — same collision class as the route toggle.
+            .safeAreaPadding(.top, 70)
             .overlay(alignment: .topTrailing) {
                 Button {
                     showRoute = !showRoute
