@@ -1,0 +1,216 @@
+name: iOS CI
+
+# Builds and tests the native iOS app.
+# Triggered on PRs and pushes to develop/main when ios-swift/ changes.
+#
+# What runs:
+#   1. Install xcodegen (brew)
+#   2. xcodegen generate → regenerate RoadTrip.xcodeproj from project.yml
+#   3. Boot iPhone 17 (or fallback iPhone simulator)
+#   4. xcodebuild build-for-testing
+#   5. Run RoadTripTests (unit tests)
+#   6. Run RoadTripUITests excluding the 3 live-backend tests and the
+#      known-skipped PHPicker test (iOS 26 beta limitation)
+#   7. Upload xcresult artifact
+#
+# NOTE: This workflow targets macos-15 with Xcode 16 (stable). Upgrade to
+# macos-26/Xcode 26 when those runners become generally available.
+#
+# CANNOT be executed locally — YAML correctness verified with yamllint/python3.
+
+"on":
+  push:
+    branches:
+      - develop
+      - main
+    paths:
+      - 'ios-swift/**'
+  pull_request:
+    branches:
+      - develop
+      - main
+    paths:
+      - 'ios-swift/**'
+  workflow_dispatch:
+    inputs:
+      run_ui_tests:
+        description: 'Run UI tests (slower; requires simulator boot)'
+        required: false
+        default: 'true'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+
+env:
+  XCODE_VERSION: '16.3'
+  IOS_PROJECT: ios-swift/RoadTrip/RoadTrip.xcodeproj
+  IOS_SCHEME: RoadTrip
+  # iPhone 17 is available on macos-15 runners with Xcode 16.3
+  SIMULATOR_NAME: 'iPhone 17'
+  DERIVED_DATA: ios-swift/RoadTrip/.build-dd
+
+jobs:
+  ios-build-and-test:
+    name: Build & Test (iOS)
+    runs-on: macos-15
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Select Xcode ${{ env.XCODE_VERSION }}
+        run: sudo xcode-select -s /Applications/Xcode_${{ env.XCODE_VERSION }}.app
+
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project from project.yml
+        working-directory: ios-swift/RoadTrip
+        run: xcodegen generate
+
+      - name: Resolve simulator UDID
+        id: sim
+        run: |
+          # Try to find iPhone 17 first; fall back to any available iPhone simulator
+          UDID=$(xcrun simctl list devices available -j | python3 -c "
+          import sys, json
+          data = json.load(sys.stdin)
+          preferred = '${{ env.SIMULATOR_NAME }}'
+          # First pass: exact name match
+          for runtime, devs in data.get('devices', {}).items():
+              for d in devs:
+                  if d.get('name') == preferred and d.get('isAvailable', False):
+                      print(d['udid'])
+                      exit(0)
+          # Second pass: any available iPhone (newest by name heuristic)
+          candidates = []
+          for runtime, devs in data.get('devices', {}).items():
+              for d in devs:
+                  name = d.get('name', '')
+                  if 'iPhone' in name and d.get('isAvailable', False):
+                      candidates.append((name, d['udid']))
+          if candidates:
+              candidates.sort(reverse=True)
+              print(candidates[0][1])
+              exit(0)
+          exit(1)
+          " 2>&1)
+          if [ $? -ne 0 ] || [ -z "$UDID" ]; then
+            echo "::error::No iPhone simulator available. Cannot run iOS tests."
+            exit 1
+          fi
+          echo "udid=$UDID" >> "$GITHUB_OUTPUT"
+          echo "Using simulator: $UDID"
+
+      - name: Boot simulator
+        run: |
+          xcrun simctl boot "${{ steps.sim.outputs.udid }}" 2>/dev/null || true
+          # Wait for the simulator to reach the Booted state (up to 60s)
+          for i in $(seq 1 30); do
+            STATE=$(xcrun simctl list devices -j | python3 -c "
+          import sys, json
+          data = json.load(sys.stdin)
+          for rt, devs in data.get('devices', {}).items():
+              for d in devs:
+                  if d['udid'] == '${{ steps.sim.outputs.udid }}':
+                      print(d.get('state', 'Unknown'))
+                      exit(0)
+          ")
+            if [ "$STATE" = "Booted" ]; then
+              echo "Simulator booted."
+              break
+            fi
+            sleep 2
+          done
+
+      - name: Build for testing
+        working-directory: ios-swift/RoadTrip
+        run: |
+          xcodebuild \
+            build-for-testing \
+            -project RoadTrip.xcodeproj \
+            -scheme "${{ env.IOS_SCHEME }}" \
+            -destination "platform=iOS Simulator,id=${{ steps.sim.outputs.udid }}" \
+            -derivedDataPath .build-dd \
+            CODE_SIGNING_ALLOWED=NO \
+            2>&1 | xcpretty --color || xcodebuild \
+            build-for-testing \
+            -project RoadTrip.xcodeproj \
+            -scheme "${{ env.IOS_SCHEME }}" \
+            -destination "platform=iOS Simulator,id=${{ steps.sim.outputs.udid }}" \
+            -derivedDataPath .build-dd \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: Run unit tests (RoadTripTests)
+        working-directory: ios-swift/RoadTrip
+        run: |
+          xcodebuild \
+            test-without-building \
+            -project RoadTrip.xcodeproj \
+            -scheme "${{ env.IOS_SCHEME }}" \
+            -destination "platform=iOS Simulator,id=${{ steps.sim.outputs.udid }}" \
+            -derivedDataPath .build-dd \
+            -only-testing:RoadTripTests \
+            -resultBundlePath .build-dd/RoadTripTests.xcresult \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: Run UI tests (RoadTripUITests, excluding live-backend + known-skip)
+        if: github.event_name != 'workflow_dispatch' || github.event.inputs.run_ui_tests == 'true'
+        working-directory: ios-swift/RoadTrip
+        run: |
+          # Excluded tests:
+          #   testCreateTripFlow         — requires live backend on :5100
+          #   testImportTripFlow         — requires live backend on :5100
+          #   testImportInvalidTokenShowsError — requires live backend on :5100
+          #   testLibraryPickStagesPhoto — PHPicker inaccessible via XCUITest on iOS 26
+          #     beta (documented skip via XCTSkip in the test itself; excluded here to
+          #     avoid wasting simulator time on a test that unconditionally skips).
+          xcodebuild \
+            test-without-building \
+            -project RoadTrip.xcodeproj \
+            -scheme "${{ env.IOS_SCHEME }}" \
+            -destination "platform=iOS Simulator,id=${{ steps.sim.outputs.udid }}" \
+            -derivedDataPath .build-dd \
+            -only-testing:RoadTripUITests \
+            -skip-testing:RoadTripUITests/RoadTripUITests/testCreateTripFlow \
+            -skip-testing:RoadTripUITests/RoadTripUITests/testImportTripFlow \
+            -skip-testing:RoadTripUITests/RoadTripUITests/testImportInvalidTokenShowsError \
+            -skip-testing:RoadTripUITests/RoadTripUITests/testLibraryPickStagesPhoto \
+            -resultBundlePath .build-dd/RoadTripUITests.xcresult \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: Upload unit test xcresult
+        uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: RoadTripTests-xcresult-${{ github.run_number }}
+          path: ios-swift/RoadTrip/.build-dd/RoadTripTests.xcresult
+          retention-days: 14
+
+      - name: Upload UI test xcresult
+        uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: RoadTripUITests-xcresult-${{ github.run_number }}
+          path: ios-swift/RoadTrip/.build-dd/RoadTripUITests.xcresult
+          retention-days: 14
+
+  # Gate job for branch protection — require a single named check
+  ios-ci-gate:
+    name: iOS CI gate
+    needs: ios-build-and-test
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Check ios-build-and-test result
+        run: |
+          if [ "${{ needs.ios-build-and-test.result }}" != "success" ]; then
+            echo "::error::ios-build-and-test failed or was cancelled."
+            exit 1
+          fi
+          echo "iOS CI gate: passed."
