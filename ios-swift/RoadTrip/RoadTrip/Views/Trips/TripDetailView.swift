@@ -143,24 +143,29 @@ struct TripDetailView: View {
     }
 
     @ViewBuilder private var floatingTopBar: some View {
-        HStack(spacing: 12) {
-            Button { dismiss() } label: {
-                Image(systemName: "chevron.backward")
-                    .font(.headline)
-            }
-            .accessibilityLabel(Text("Back"))
-            .accessibilityIdentifier("trip-back")
-
+        ZStack {
+            // Centered trip name. Back (left) and Share (right) are single glyphs, so the title
+            // sits at the true center; horizontal padding keeps it clear of those buttons.
             Text(trip.name)
                 .font(.headline)
                 .lineLimit(1)
                 .truncationMode(.tail)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 44)
 
-            if secretToken != nil {
-                shareMenu
+            HStack(spacing: 12) {
+                Button { dismiss() } label: {
+                    Image(systemName: "chevron.backward")
+                        .font(.headline)
+                }
+                .accessibilityLabel(Text("Back"))
+                .accessibilityIdentifier("trip-back")
+
+                Spacer()
+
+                if secretToken != nil {
+                    shareMenu
+                }
             }
-            addPhotoMenu
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
@@ -199,14 +204,23 @@ struct TripDetailView: View {
                 showLibraryPicker = true
             } label: { Label("Choose from Library", systemImage: "photo.on.rectangle") }
         } label: {
-            // Icon-only (SF Symbol photo.badge.plus) to give the trip name room; the
-            // "Add Photo" accessibility label/identifier are kept for VoiceOver + UI tests.
-            Label("Add Photo", systemImage: "photo.badge.plus")
-                .labelStyle(.iconOnly)
+            // Styled like the recenter/route map controls — it now lives at the lower-right.
+            // Accessibility label/identifier kept for VoiceOver + UI tests.
+            mapControlIcon("photo.badge.plus")
         }
         .accessibilityLabel(Text("Add Photo"))
         .accessibilityIdentifier("Add Photo")
         .disabled(isStaging)
+    }
+
+    /// Shared style for the floating map-overlay controls (recenter, route toggle) so they are
+    /// identical in size and color. The fixed frame normalizes differing SF Symbol glyph widths.
+    private func mapControlIcon(_ systemName: String) -> some View {
+        Image(systemName: systemName)
+            .font(.title3)
+            .frame(width: 24, height: 24)
+            .padding(8)
+            .background(.regularMaterial, in: Circle())
     }
 
     private func loadShareTokens() {
@@ -415,29 +429,49 @@ struct TripDetailView: View {
                     }
                 }
             }
+            // MapCompass appears only when rotated; MapScaleView only during zoom. We drop
+            // MapUserLocationButton and provide our own recenter button below so the two
+            // map-overlay controls share one consistent style and can't collide.
             .mapControls {
-                MapUserLocationButton()
                 MapCompass()
                 MapScaleView()
             }
-            // Inset the map's safe area so MapKit's controls (compass/user-location) sit BELOW
-            // the floating top bar instead of under it — same collision class as the route toggle.
-            .safeAreaPadding(.top, 70)
+            // Custom control cluster (top-trailing, below the floating bar). Built by hand rather
+            // than via .mapControls so both buttons match in size, color, and alignment and are
+            // vertically stacked — no collision with MapKit's auto-placed user-location button.
             .overlay(alignment: .topTrailing) {
-                Button {
-                    showRoute = !showRoute
-                } label: {
-                    Image(systemName: showRoute ? "point.topleft.down.curvedto.point.bottomright.up"
-                                                : "point.topleft.down.curvedto.point.bottomright.up.fill")
-                        .font(.title3)
-                        .padding(8)
-                        .background(.regularMaterial, in: Circle())
+                VStack(spacing: 10) {
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.3)) {
+                            cameraPosition = .userLocation(fallback: .automatic)
+                        }
+                    } label: {
+                        mapControlIcon("location")
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(Text("Center on my location"))
+                    .accessibilityIdentifier("recenter-location")
+
+                    Button {
+                        showRoute = !showRoute
+                    } label: {
+                        mapControlIcon(showRoute ? "point.topleft.down.curvedto.point.bottomright.up"
+                                                 : "point.topleft.down.curvedto.point.bottomright.up.fill")
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(Text(showRoute ? "Hide route" : "Show route"))
+                    .accessibilityIdentifier("route-toggle")
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel(Text(showRoute ? "Hide route" : "Show route"))
-                .accessibilityIdentifier("route-toggle")
                 .padding(.top, 70)
                 .padding(.trailing, 12)
+            }
+            // Primary action — Add Photo — pulled out of the top bar and placed prominently at the
+            // lower-right (same size/style and trailing column as the recenter + route controls).
+            // Posting photos is the app's core action, so it shouldn't hide in a top corner.
+            .overlay(alignment: .bottomTrailing) {
+                addPhotoMenu
+                    .padding(.trailing, 12)
+                    .padding(.bottom, 16)
             }
             // Long-press to post a photo at that spot (Apple Maps "drop a pin" pattern).
             // `.simultaneousGesture` keeps pan/zoom and pin taps working; the long-press
