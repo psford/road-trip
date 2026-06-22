@@ -23,12 +23,28 @@ struct TripListView: View {
                         } label: {
                             TripRow(trip: trip)
                         }
+                        .swipeActions(edge: .trailing) {
+                            Button {
+                                archive(trip)
+                            } label: {
+                                Label("Archive", systemImage: "archivebox")
+                            }
+                            .tint(.orange)
+                        }
                     }
                     .listStyle(.plain)
                 }
             }
             .navigationTitle("My Trips")
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    NavigationLink {
+                        ArchivedTripsView(database: database, keychain: keychain)
+                    } label: {
+                        Label("Archived", systemImage: "archivebox")
+                    }
+                    .accessibilityLabel("Archived")
+                }
                 ToolbarItem(placement: .topBarLeading) {
                     Button { showingImport = true } label: {
                         Label("Import via Token", systemImage: "square.and.arrow.down")
@@ -55,9 +71,12 @@ struct TripListView: View {
     }
 
     /// Streams the trip list from GRDB; re-fires whenever any trip row changes.
+    /// Filters out archived trips (where `archivedAt` is not nil).
     private func observeTrips() async {
         let observation = ValueObservation.tracking { db in
-            try Trip.order(Column("createdAt").desc).fetchAll(db)
+            try Trip.filter(Column("archivedAt") == nil)
+                    .order(Column("createdAt").desc)
+                    .fetchAll(db)
         }
         do {
             for try await rows in observation.values(in: database.dbQueue) {
@@ -70,11 +89,28 @@ struct TripListView: View {
 
     /// For each trip with a SecretToken in the Keychain, refresh metadata + photos.
     /// Sample/offline trips (no token) are left as-is.
+    /// Archived trips are skipped (they remain archived locally and won't be network-revalidated).
     private func revalidateOwnedTrips() async {
-        let known = (try? await database.dbQueue.read { try Trip.fetchAll($0) }) ?? []
+        let known = (try? await database.dbQueue.read { try Trip.filter(Column("archivedAt") == nil).fetchAll($0) }) ?? []
         for trip in known {
             guard let token = try? keychain.token(kind: .secret, tripId: trip.id) else { continue }
             await RoadTripAPI.shared.revalidate(tripId: trip.id, secretToken: token.uuidString, into: database, keychain: keychain)
+        }
+    }
+
+    /// Archives a trip locally by setting `archivedAt = Date()`.
+    /// Captured `trip.id` is immutable and safe for async closure (@Sendable).
+    /// ValueObservation automatically removes the trip from the list via the filter.
+    /// Note: The end-to-end swipe→Archived→Restore UI flow test lands in Phase 3
+    /// (testArchiveAndRestoreFlow), so no redundant UI test is added here.
+    private func archive(_ trip: Trip) {
+        let id = trip.id
+        Task {
+            try? await database.dbQueue.write { db in
+                guard var t = try Trip.fetchOne(db, key: id) else { return }
+                t.archivedAt = Date()
+                try t.update(db)
+            }
         }
     }
 }

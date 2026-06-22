@@ -18,12 +18,11 @@ struct TripDetailView: View {
 
     @Environment(\.dismiss) private var dismiss
 
+    @AppStorage("showRoute") private var showRoute = true
+
     @State private var photos: [Photo] = []
     @State private var cameraPosition: MapCameraPosition = .automatic
     @State private var popupIndex: Int?   // index into `photos`; nil = closed
-    @State private var showingDeleteConfirm = false
-    @State private var isDeleting = false
-    @State private var deleteError: String?
     @State private var pickedItem: PhotosPickerItem?
     @State private var isStaging = false
     @State private var captureMessage: String?
@@ -35,6 +34,9 @@ struct TripDetailView: View {
     @State private var pendingPost: IdentifiableCoordinate?
     @State private var shareViewToken: UUID?
     @State private var secretToken: UUID?
+    @State private var showCamera = false
+    @State private var showLibraryPicker = false
+    @State private var locationProvider = OneShotLocationProvider()
 
     var body: some View {
         ZStack {
@@ -84,39 +86,11 @@ struct TripDetailView: View {
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
-        .navigationTitle(trip.name)
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                if let secretToken {                     // owned-trip gate (AC3.5: no token → no button)
-                    Menu {
-                        if let shareViewToken {          // older imports lacking a view token: item simply omitted
-                            ShareLink(item: TripShareLinks.shareViewURL(viewToken: shareViewToken,
-                                                                        baseURL: APIEnvironment.baseURL)) {
-                                Label("Share view link", systemImage: "link")
-                            }
-                        }
-                        ShareLink(item: inviteText(name: trip.name, secret: secretToken)) {
-                            Label("Invite to edit", systemImage: "person.badge.plus")
-                        }
-                    } label: { Label("Share", systemImage: "square.and.arrow.up") }
-                }
-            }
-            ToolbarItem(placement: .topBarTrailing) {
-                PhotosPicker(selection: $pickedItem, matching: .images,
-                             preferredItemEncoding: .current, photoLibrary: .shared()) {
-                    Label("Add Photo", systemImage: "plus")
-                }
-                .disabled(isStaging)
-            }
-            ToolbarItem(placement: .topBarTrailing) {
-                Button(role: .destructive) {
-                    showingDeleteConfirm = true
-                } label: {
-                    Label("Delete Trip", systemImage: "trash")
-                }
-                .disabled(isDeleting)
-            }
+        .toolbar(.hidden, for: .navigationBar)
+        .overlay(alignment: .top) {
+            floatingTopBar
+                .padding(.horizontal, 12)
+                .padding(.top, 8)
         }
         .onChange(of: pickedItem) { _, newItem in
             guard let newItem else { return }
@@ -129,20 +103,6 @@ struct TripDetailView: View {
             Button("OK", role: .cancel) {}
         } message: {
             Text(captureMessage ?? "")
-        }
-        .confirmationDialog("Delete this trip?", isPresented: $showingDeleteConfirm, titleVisibility: .visible) {
-            Button("Delete", role: .destructive) { Task { await deleteTrip() } }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("This permanently deletes “\(trip.name)” and its photos for everyone with the link.")
-        }
-        .alert("Couldn’t delete trip", isPresented: Binding(
-            get: { deleteError != nil },
-            set: { if !$0 { deleteError = nil } }
-        )) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(deleteError ?? "")
         }
         .sheet(item: $photoToMove) { photo in
             PinDropView(initialCoordinate: CLLocationCoordinate2D(latitude: photo.lat, longitude: photo.lng),
@@ -162,9 +122,82 @@ struct TripDetailView: View {
                 Task { await stage(picked, overrideCoordinate: post.coordinate) }
             }
         }
+        // `photoLibrary: .shared()` is REQUIRED, not optional: the staging pipeline resolves the
+        // picked item to a PHAsset via `item.itemIdentifier` (PhotosPicker strips EXIF, so we read
+        // raw bytes from the asset to keep location). `itemIdentifier` is only populated when the
+        // picker is bound to the shared library — drop `.shared()` and every pick throws
+        // CaptureError.noAsset ("Couldn't read that photo from your library"). See PhotoCaptureCoordinator.loadImageData.
+        .photosPicker(isPresented: $showLibraryPicker, selection: $pickedItem, matching: .images,
+                      preferredItemEncoding: .current, photoLibrary: .shared())
+        .sheet(isPresented: $showCamera) {
+            CameraPicker { image in
+                guard let image else { return }
+                Task { await stageCameraImage(image) }
+            }
+            .ignoresSafeArea()
+        }
         .task { await observePhotos() }
         .task { await observeUploads() }
         .task { loadShareTokens() }
+    }
+
+    @ViewBuilder private var floatingTopBar: some View {
+        HStack(spacing: 12) {
+            Button { dismiss() } label: {
+                Image(systemName: "chevron.backward")
+                    .font(.headline)
+            }
+            .accessibilityLabel(Text("Back"))
+            .accessibilityIdentifier("trip-back")
+
+            Text(trip.name)
+                .font(.headline)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            if secretToken != nil {
+                shareMenu
+            }
+            addPhotoMenu
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .shadow(radius: 4, y: 2)
+    }
+
+    @ViewBuilder private var shareMenu: some View {
+        if let secretToken {
+            Menu {
+                if let shareViewToken {
+                    ShareLink(item: TripShareLinks.shareViewURL(viewToken: shareViewToken,
+                                                                baseURL: APIEnvironment.baseURL)) {
+                        Label("Share view link", systemImage: "link")
+                    }
+                }
+                ShareLink(item: inviteText(name: trip.name, secret: secretToken)) {
+                    Label("Invite to edit", systemImage: "person.badge.plus")
+                }
+            } label: { Label("Share", systemImage: "square.and.arrow.up") }
+        }
+    }
+
+    @ViewBuilder private var addPhotoMenu: some View {
+        Menu {
+            Button {
+                showCamera = true
+            } label: { Label("Take Photo", systemImage: "camera") }
+                .disabled(!UIImagePickerController.isSourceTypeAvailable(.camera))
+            Button {
+                showLibraryPicker = true
+            } label: { Label("Choose from Library", systemImage: "photo.on.rectangle") }
+        } label: {
+            Label("Add Photo", systemImage: "plus")
+        }
+        .accessibilityLabel(Text("Add Photo"))
+        .accessibilityIdentifier("Add Photo")
+        .disabled(isStaging)
     }
 
     private func loadShareTokens() {
@@ -215,7 +248,7 @@ struct TripDetailView: View {
             do {
                 try await PhotoMutations(database: database, keychain: keychain).deletePhoto(photo)
             } catch {
-                showToast("Couldn’t delete that photo — it’s back on your map.")
+                showToast("Couldn't delete that photo — it's back on your map.")
             }
         }
     }
@@ -226,8 +259,40 @@ struct TripDetailView: View {
                 try await PhotoMutations(database: database, keychain: keychain)
                     .moveLocation(photo, lat: coordinate.latitude, lng: coordinate.longitude)
             } catch {
-                showToast("Couldn’t move that pin — it’s back where it was.")
+                showToast("Couldn't move that pin — it's back where it was.")
             }
+        }
+    }
+
+    /// Helper: race a one-shot location fetch against a timeout, returning nil on either denial or timeout.
+    private func locationWithTimeout(_ provider: OneShotLocationProvider, seconds: TimeInterval = 4) async -> CLLocationCoordinate2D? {
+        await withTaskGroup(of: CLLocationCoordinate2D?.self) { group in
+            group.addTask { await provider.currentCoordinate() }
+            group.addTask { try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000)); return nil }
+            let first = await group.next() ?? nil
+            group.cancelAll()
+            return first
+        }
+    }
+
+    /// Camera capture path: transcode JPEG, fetch one-shot location, stage, and handle no-GPS case.
+    private func stageCameraImage(_ image: UIImage) async {
+        isStaging = true
+        defer { isStaging = false }
+
+        guard let data = image.jpegData(compressionQuality: 0.9) else { return }
+        let coordinate = await locationWithTimeout(locationProvider)
+        let filename = "camera-\(UUID().uuidString).jpg"
+        do {
+            let item = try await PhotoCaptureCoordinator(database: database)
+                .stagePhoto(imageData: data, filename: filename, tripId: trip.id, overrideCoordinate: coordinate)
+            if item.exifLat == nil || item.exifLon == nil {
+                stagedNeedingLocation = item
+            } else {
+                startUpload(item)
+            }
+        } catch {
+            captureMessage = "Couldn't add that photo. Please try again."
         }
     }
 
@@ -272,7 +337,7 @@ struct TripDetailView: View {
         // the picker selection alone doesn't grant it.
         let status = await PHPhotoLibrary.requestAuthorization(for: .readWrite)
         guard status == .authorized || status == .limited else {
-            captureMessage = "Road Trip needs photo access to keep a photo’s location. You can enable it in Settings."
+            captureMessage = "Road Trip needs photo access to keep a photo's location. You can enable it in Settings."
             return
         }
 
@@ -290,9 +355,9 @@ struct TripDetailView: View {
             // shows progress, and the pin appears when it commits.
             startUpload(staged)
         } catch PhotoCaptureCoordinator.CaptureError.noAsset {
-            captureMessage = "Couldn’t read that photo from your library. Try another, or grant full photo access."
+            captureMessage = "Couldn't read that photo from your library. Try another, or grant full photo access."
         } catch {
-            captureMessage = "Couldn’t add that photo. Please try again."
+            captureMessage = "Couldn't add that photo. Please try again."
         }
     }
 
@@ -314,26 +379,16 @@ struct TripDetailView: View {
         BackgroundUploadSession.shared?.abort(item.uploadId)
     }
 
-    private func deleteTrip() async {
-        isDeleting = true
-        do {
-            try await RoadTripAPI.shared.deleteTrip(trip, from: database, keychain: keychain)
-            dismiss()   // pop back to the list; ValueObservation drops the row
-        } catch RoadTripAPIError.networkUnavailable {
-            deleteError = "Couldn’t reach the server. Check your connection and try again."
-            isDeleting = false
-        } catch {
-            deleteError = "The server couldn’t delete this trip. Please try again."
-            isDeleting = false
-        }
-    }
-
     private var mapSection: some View {
         MapReader { proxy in
             Map(position: $cameraPosition) {
-                if routeCoordinates.count >= 2 {
-                    MapPolyline(coordinates: routeCoordinates)
-                        .stroke(.tint, style: StrokeStyle(lineWidth: 3, lineCap: .round, lineJoin: .round))
+                if showRoute, routeCoordinates.count >= 2 {
+                    MapPolyline(coordinates: RouteCurve.curved(through: routeCoordinates))
+                        .stroke(.tint, style: StrokeStyle(
+                            lineWidth: 3,
+                            lineCap: .round,
+                            lineJoin: .round,
+                            dash: [2, 10]))
                 }
 
                 ForEach(Array(photos.enumerated()), id: \.element.id) { index, photo in
@@ -353,6 +408,22 @@ struct TripDetailView: View {
                 MapUserLocationButton()
                 MapCompass()
                 MapScaleView()
+            }
+            .overlay(alignment: .topTrailing) {
+                Button {
+                    showRoute = !showRoute
+                } label: {
+                    Image(systemName: showRoute ? "point.topleft.down.curvedto.point.bottomright.up"
+                                                : "point.topleft.down.curvedto.point.bottomright.up.fill")
+                        .font(.title3)
+                        .padding(8)
+                        .background(.regularMaterial, in: Circle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(Text(showRoute ? "Hide route" : "Show route"))
+                .accessibilityIdentifier("route-toggle")
+                .padding(.top, 70)
+                .padding(.trailing, 12)
             }
             // Long-press to post a photo at that spot (Apple Maps "drop a pin" pattern).
             // `.simultaneousGesture` keeps pan/zoom and pin taps working; the long-press
@@ -445,7 +516,7 @@ private struct PostPhotoHereSheet: View {
                     .foregroundStyle(.red)
                 Text("Add a photo here")
                     .font(.headline)
-                Text("It’ll be pinned to this spot on your map, wherever the photo was actually taken.")
+                Text("It'll be pinned to this spot on your map, wherever the photo was actually taken.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)

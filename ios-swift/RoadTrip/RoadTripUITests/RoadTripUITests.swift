@@ -77,35 +77,41 @@ final class RoadTripUITests: XCTestCase {
         attach(app.screenshot(), name: "imported-photo-popup")
     }
 
-    /// AC1.4: deleting a trip removes it from the list (server DELETE + local cascade +
-    /// Keychain cleanup). Creates an owned trip first so the server DELETE path runs.
-    func testDeleteTripFlow() {
+    /// AC4.3 + AC4.2: The trip detail screen has no Delete control (moved to Archived view in Phase 3).
+    /// Verifies the floating bar is present and the back button navigates home.
+    /// Permanent deletion is covered by testPermanentDeleteRequiresConfirmation (Phase 3, AC2.4),
+    /// which exercises the complete archive→delete flow in the Archived view.
+    func testTripDetailHasNoDeleteAndBackWorks() {
         let app = launchApp()
 
-        app.buttons["New Trip"].tap()
-        let nameField = app.textFields["Trip name"]
-        XCTAssertTrue(nameField.waitForExistence(timeout: 5))
-        nameField.tap()
-        nameField.typeText("Trip To Delete")
-        app.buttons["Create"].tap()
+        // Arrange: Open the "Pacific Coast Highway" seed trip (the anchor other detail tests use)
+        let trip = app.staticTexts["Pacific Coast Highway"]
+        XCTAssertTrue(trip.waitForExistence(timeout: 10), "seed trip should appear in the list")
+        trip.tap()
 
-        let created = app.staticTexts["Trip To Delete"]
-        XCTAssertTrue(created.waitForExistence(timeout: 15), "trip should be created")
-        created.tap()
+        // Wait for the detail view to load by anchoring on a detail-only element ("Add Photo")
+        let addPhotoButton = app.buttons["Add Photo"]
+        XCTAssertTrue(addPhotoButton.waitForExistence(timeout: 5), "detail view should load with Add Photo button")
 
+        // AC4.1: Assert the floating bar is present by checking for the back button
+        let backButton = app.buttons["trip-back"]
+        XCTAssertTrue(backButton.waitForExistence(timeout: 5),
+                      "floating bar should be present with back button (AC4.1)")
+
+        // AC4.3: Assert the "Delete Trip" button does NOT exist on the detail screen
         let deleteButton = app.buttons["Delete Trip"]
-        XCTAssertTrue(deleteButton.waitForExistence(timeout: 10), "detail view should have a delete control")
-        deleteButton.tap()
+        XCTAssertFalse(deleteButton.exists,
+                       "trip detail should NOT show a Delete button (AC4.3 — deletion is now in Archived view)")
 
-        // Confirm in the dialog (wait for it to present before tapping).
-        let confirm = app.buttons["Delete"]
-        XCTAssertTrue(confirm.waitForExistence(timeout: 5), "confirmation dialog should appear")
-        confirm.tap()
+        // AC4.2: Tap the back button and verify we're back on the My Trips list
+        backButton.tap()
 
-        XCTAssertTrue(
-            app.staticTexts["Trip To Delete"].waitForNonExistence(timeout: 15),
-            "deleted trip should disappear from the list (AC1.4)")
-        attach(app.screenshot(), name: "AC1.4-trip-deleted")
+        // Assert we're back on My Trips by checking for the list title or a known seed trip
+        let tripListTitle = app.staticTexts["My Trips"]
+        XCTAssertTrue(tripListTitle.waitForExistence(timeout: 5),
+                      "back button should return to My Trips list (AC4.2)")
+
+        attach(app.screenshot(), name: "AC4.3-no-delete-AC4.2-back-works")
     }
 
     /// AC1.5: an invalid token surfaces an error and adds no trip.
@@ -229,6 +235,298 @@ final class RoadTripUITests: XCTestCase {
         XCTAssertFalse(shareButton.exists,
                        "SampleData trip should NOT show a Share button (AC3.5 — no secret token)")
         attach(app.screenshot(), name: "AC3.5-share-button-absent")
+    }
+
+    /// AC1.3: the route toggle persists its state (via @AppStorage). Opens the "Pacific Coast
+    /// Highway" seed trip and exercises the toggle: tap to hide, verify label flips, tap again
+    /// to show, verify label flips back. (Persistence across app launches is optional per the
+    /// spec and may be added to the device checklist if full relaunch proves flaky in CI.)
+    func testRouteToggleShowsAndHides() {
+        let app = launchApp()
+
+        let trip = app.staticTexts["Pacific Coast Highway"]
+        XCTAssertTrue(trip.waitForExistence(timeout: 10), "seed trip should appear in the list")
+        trip.tap()
+
+        // Anchor on "Add Photo" to confirm detail view has loaded
+        let addPhotoButton = app.buttons["Add Photo"]
+        XCTAssertTrue(addPhotoButton.waitForExistence(timeout: 5), "detail view should load")
+
+        // Locate the route toggle button by its accessibility identifier
+        let routeToggle = app.buttons["route-toggle"]
+        XCTAssertTrue(routeToggle.waitForExistence(timeout: 5), "route toggle should exist and be accessible")
+        XCTAssertTrue(routeToggle.isHittable, "route toggle should be hittable")
+
+        // Initial label should be "Hide route" (toggle starts as true, showRoute = true)
+        var label = routeToggle.label
+        XCTAssertEqual(label, "Hide route", "route toggle should initially show 'Hide route'")
+
+        // Tap to hide the route
+        routeToggle.tap()
+
+        // Wait for the label to flip to "Show route" using an expectation.
+        // This ensures SwiftUI has re-rendered the accessibility label after the state change.
+        let expectShowRoute = expectation(
+            for: NSPredicate(format: "label == %@", "Show route"),
+            evaluatedWith: routeToggle
+        )
+        wait(for: [expectShowRoute], timeout: 20)
+
+        // Tap again to show the route
+        routeToggle.tap()
+
+        // Wait for the label to flip back to "Hide route"
+        let expectHideRoute = expectation(
+            for: NSPredicate(format: "label == %@", "Hide route"),
+            evaluatedWith: routeToggle
+        )
+        wait(for: [expectHideRoute], timeout: 20)
+
+        // Attach screenshot for artifact trail
+        attach(app.screenshot(), name: "AC1.3-route-toggle")
+    }
+
+    /// AC2.1 + AC2.2 + AC2.3: Archive a trip and restore it. Verifies the complete
+    /// archive→disappear→restore→reappear round trip. Uses the "Pacific Coast Highway"
+    /// seed trip (deterministic via -uitest launch argument).
+    ///
+    /// Flow: (1) From My Trips, swipe the seed trip row left and tap Archive button.
+    /// (2) Assert the trip no longer appears in My Trips (AC2.1 + AC2.2).
+    /// (3) Tap the Archived toolbar control to open ArchivedTripsView.
+    /// (4) Assert the trip appears in Archived list (AC2.3).
+    /// (5) Invoke Restore via swipe action.
+    /// (6) Navigate back to My Trips.
+    /// (7) Assert the trip reappears in My Trips (AC2.3).
+    func testArchiveAndRestoreFlow() {
+        let app = launchApp()
+
+        // Arrange: Locate the seed trip in My Trips list
+        let tripName = app.staticTexts["Pacific Coast Highway"]
+        XCTAssertTrue(tripName.waitForExistence(timeout: 10), "seed trip 'Pacific Coast Highway' should appear in My Trips")
+
+        // Act 1: Archive the trip by swiping its row left and tapping the Archive button
+        let tripRow = app.cells.containing(.staticText, identifier: "Pacific Coast Highway").firstMatch
+        XCTAssertTrue(tripRow.exists, "trip row should exist before archive")
+
+        // Swipe the row to reveal actions; use explicit waiting for action button
+        tripRow.swipeLeft()
+        let archiveButton = app.buttons["Archive"]
+        XCTAssertTrue(archiveButton.waitForExistence(timeout: 5), "Archive button should appear after swipe")
+        XCTAssertTrue(archiveButton.isHittable, "Archive button should be tappable")
+        archiveButton.tap()
+
+        // Assert 1: Trip disappears from My Trips list (AC2.1 + AC2.2)
+        XCTAssertTrue(
+            tripName.waitForNonExistence(timeout: 10),
+            "archived trip should disappear from My Trips list (AC2.1 + AC2.2)"
+        )
+
+        // Act 2: Navigate to Archived view via toolbar control
+        let archivedButton = app.buttons["Archived"]
+        XCTAssertTrue(archivedButton.waitForExistence(timeout: 5), "Archived toolbar control should be accessible")
+        archivedButton.tap()
+
+        // Assert 2: Trip appears in Archived view (AC2.3)
+        let archivedTripName = app.staticTexts["Pacific Coast Highway"]
+        XCTAssertTrue(
+            archivedTripName.waitForExistence(timeout: 10),
+            "archived trip should appear in Archived view (AC2.3)"
+        )
+        attach(app.screenshot(), name: "AC2.3-archived-list")
+
+        // Act 3: Restore the trip by swiping and tapping Restore
+        let archivedRow = app.cells.containing(.staticText, identifier: "Pacific Coast Highway").firstMatch
+        XCTAssertTrue(archivedRow.exists, "archived trip row should exist")
+
+        archivedRow.swipeLeft()
+        let restoreButton = app.buttons["Restore"]
+        XCTAssertTrue(restoreButton.waitForExistence(timeout: 5), "Restore button should appear after swipe")
+        XCTAssertTrue(restoreButton.isHittable, "Restore button should be tappable")
+        restoreButton.tap()
+
+        // Act 4: Navigate back to My Trips
+        // Use the back gesture or button; XCTest swipeRight() performs a back gesture
+        app.navigationBars.element(boundBy: 0).buttons.element(boundBy: 0).tap()
+
+        // Assert 3: Trip reappears in My Trips (AC2.3)
+        let restoredTripName = app.staticTexts["Pacific Coast Highway"]
+        XCTAssertTrue(
+            restoredTripName.waitForExistence(timeout: 10),
+            "restored trip should reappear in My Trips list (AC2.3)"
+        )
+        attach(app.screenshot(), name: "AC2.3-restored")
+    }
+
+    /// AC2.6 + AC2.4 (local): Verify that "Delete permanently" requires confirmation,
+    /// and that cancelling the confirmation keeps the trip archived. Then delete permanently
+    /// and confirm, verifying the trip is gone from Archived and not in My Trips.
+    ///
+    /// Uses the SampleData trip (no secret token), so deletion is local-only and safe
+    /// (no server call required). Tests both the confirmation-cancel path (AC2.6) and the
+    /// delete-confirm path (AC2.4 at the UI level; the server-DELETE half is an integration
+    /// concern exercised via device testing or live backends).
+    ///
+    /// Flow: (1) Archive the "Weekend Getaway" trip (another SampleData trip with no token).
+    /// (2) Open Archived view.
+    /// (3) Invoke "Delete permanently" and tap Cancel; assert trip is still in Archived.
+    /// (4) Invoke "Delete permanently" again and tap "Delete permanently" in the confirmation;
+    /// (5) Assert trip disappears from Archived and is not in My Trips.
+    func testPermanentDeleteRequiresConfirmation() {
+        let app = launchApp()
+
+        // Arrange: Locate the SampleData trip "Weekend Getaway" (no secret token, safe to delete)
+        let tripName = app.staticTexts["Weekend Getaway"]
+        XCTAssertTrue(tripName.waitForExistence(timeout: 10), "seed trip 'Weekend Getaway' should appear in My Trips")
+
+        // Act 1: Archive the trip
+        let tripRow = app.cells.containing(.staticText, identifier: "Weekend Getaway").firstMatch
+        XCTAssertTrue(tripRow.exists, "trip row should exist before archive")
+
+        tripRow.swipeLeft()
+        let archiveButton = app.buttons["Archive"]
+        XCTAssertTrue(archiveButton.waitForExistence(timeout: 5), "Archive button should appear after swipe")
+        archiveButton.tap()
+
+        // Assert: Trip is now in Archived (not in My Trips)
+        XCTAssertTrue(
+            tripName.waitForNonExistence(timeout: 10),
+            "trip should be archived and removed from My Trips"
+        )
+
+        // Act 2: Navigate to Archived view
+        let archivedButton = app.buttons["Archived"]
+        XCTAssertTrue(archivedButton.waitForExistence(timeout: 5), "Archived toolbar control should be accessible")
+        archivedButton.tap()
+
+        let archivedTripName = app.staticTexts["Weekend Getaway"]
+        XCTAssertTrue(archivedTripName.waitForExistence(timeout: 10), "archived trip should appear in Archived view")
+
+        // Act 3: Invoke "Delete permanently" via the row swipe action, show dialog, then dismiss it (AC2.6)
+        let archivedRow = app.cells.containing(.staticText, identifier: "Weekend Getaway").firstMatch
+        archivedRow.swipeLeft()
+
+        // Use the accessibility identifier to target the swipe-action button uniquely
+        let deleteActionButton = app.buttons["delete-permanently-action"]
+        XCTAssertTrue(deleteActionButton.waitForExistence(timeout: 5), "Delete permanently swipe action should appear after swipe")
+        deleteActionButton.tap()
+
+        // Assert: Confirmation dialog appears
+        let confirmDialog = app.staticTexts["Delete permanently?"]
+        XCTAssertTrue(confirmDialog.waitForExistence(timeout: 5), "confirmation dialog should appear with title")
+
+        // Test Cancel: Find and tap the Cancel button. SwiftUI's confirmationDialog action sheet may not expose
+        // all buttons in the accessibility hierarchy, so we'll look for all buttons and find the one that's not
+        // the destructive action. Since there's a "Delete permanently" button visible, the other button is Cancel.
+        let allButtons = app.buttons.allElementsBoundByIndex
+        var foundCancelButton = false
+        for button in allButtons {
+            // Skip the BackButton and the delete action buttons
+            if button.label != "Delete permanently" && button.identifier != "BackButton" && button.identifier != "delete-permanently-action" {
+                button.tap()
+                foundCancelButton = true
+                break
+            }
+        }
+
+        // If we can't find a button by filtering, wait for the dialog to be tapped by a specific button.
+        // As a fallback, if we're still in the dialog after a short wait, try swiping down to dismiss.
+        if !foundCancelButton {
+            // Try swiping down on the action sheet to dismiss it (a gesture that works on iOS 17+)
+            let actionSheetArea = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.85))
+            let topArea = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
+            actionSheetArea.press(forDuration: 0.2, thenDragTo: topArea)
+        }
+
+        // Assert: Confirmation dialog disappears after dismissing — AC2.6
+        XCTAssertTrue(
+            confirmDialog.waitForNonExistence(timeout: 5),
+            "confirmation dialog should dismiss after cancelling (AC2.6)"
+        )
+
+        // Assert: Trip is still in Archived after cancel (cancel was a no-op)
+        let stillArchivedName = app.staticTexts["Weekend Getaway"]
+        XCTAssertTrue(
+            stillArchivedName.waitForExistence(timeout: 5),
+            "trip should still be archived after cancelling delete (AC2.6)"
+        )
+
+        // Act 4: Invoke "Delete permanently" again and confirm
+        let archivedRowAgain = app.cells.containing(.staticText, identifier: "Weekend Getaway").firstMatch
+        archivedRowAgain.swipeLeft()
+
+        let deleteActionButtonAgain = app.buttons["delete-permanently-action"]
+        XCTAssertTrue(deleteActionButtonAgain.waitForExistence(timeout: 5), "Delete permanently button should appear again")
+        deleteActionButtonAgain.tap()
+
+        // Tap "Delete permanently" in the confirmation dialog.
+        // The destructive button (Delete permanently) is distinct from the Cancel button.
+        let confirmDialogAgain = app.staticTexts["Delete permanently?"]
+        XCTAssertTrue(confirmDialogAgain.waitForExistence(timeout: 5), "confirmation dialog should appear again")
+
+        // Find the destructive "Delete permanently" button by label
+        let confirmDeleteButton = app.buttons["Delete permanently"]
+        XCTAssertTrue(confirmDeleteButton.waitForExistence(timeout: 5), "Delete permanently button should appear in confirmation dialog")
+        confirmDeleteButton.tap()
+
+        // Assert: Confirmation dialog disappears after confirm (title goes away)
+        XCTAssertTrue(
+            confirmDialogAgain.waitForNonExistence(timeout: 5),
+            "confirmation dialog should dismiss after tapping confirm button"
+        )
+
+        // Assert: Trip disappears from Archived — AC2.4 (local) / AC2.6
+        XCTAssertTrue(
+            app.staticTexts["Weekend Getaway"].waitForNonExistence(timeout: 10),
+            "trip should disappear from Archived after confirming delete (AC2.4 + AC2.6)"
+        )
+
+        // Assert: Trip is not in My Trips either (complete removal)
+        // Navigate back to My Trips if we're still in Archived
+        let backButton = app.navigationBars.element(boundBy: 0).buttons.element(boundBy: 0)
+        if backButton.waitForExistence(timeout: 2) {
+            backButton.tap()
+        }
+
+        // Verify trip is not in My Trips
+        XCTAssertFalse(
+            app.staticTexts["Weekend Getaway"].exists,
+            "deleted trip should not exist in My Trips after permanent delete"
+        )
+    }
+
+    /// AC3.1: the + menu offers "Take Photo" and "Choose from Library" buttons.
+    /// "Take Photo" is disabled on the simulator (no camera), so we assert it EXISTS
+    /// (as per AC3.1, don't test camera interactions on simulator). Verifies the menu
+    /// surfaces both options.
+    func testAddPhotoMenuOffersCameraAndLibrary() {
+        let app = launchApp()
+
+        let trip = app.staticTexts["Pacific Coast Highway"]
+        XCTAssertTrue(trip.waitForExistence(timeout: 10), "seed trip should appear in the list")
+        trip.tap()
+
+        // Anchor on "Add Photo" button to confirm detail view has loaded
+        let addPhotoButton = app.buttons["Add Photo"]
+        XCTAssertTrue(addPhotoButton.waitForExistence(timeout: 5), "detail view should load with Add Photo button")
+
+        // Tap the Add Photo menu to open it
+        addPhotoButton.tap()
+
+        // AC3.1: assert the menu surfaces "Take Photo" button (exists on simulator, disabled)
+        let takePhotoButton = app.buttons["Take Photo"]
+        XCTAssertTrue(takePhotoButton.waitForExistence(timeout: 5),
+                      "menu should offer 'Take Photo' button (AC3.1)")
+
+        // AC3.1: assert the menu surfaces "Choose from Library" button
+        let chooseFromLibraryButton = app.buttons["Choose from Library"]
+        XCTAssertTrue(chooseFromLibraryButton.waitForExistence(timeout: 5),
+                      "menu should offer 'Choose from Library' button (AC3.1)")
+
+        // Choose from Library should be hittable (camera interactions are device-only)
+        XCTAssertTrue(chooseFromLibraryButton.isHittable,
+                      "Choose from Library should be hittable")
+
+        attach(app.screenshot(), name: "AC3.1-add-photo-menu")
     }
 
     private func attach(_ screenshot: XCUIScreenshot, name: String) {

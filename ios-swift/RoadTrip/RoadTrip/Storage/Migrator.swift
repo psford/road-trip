@@ -79,6 +79,15 @@ enum AppMigrator {
             }
         }
 
+        // v3 (Phase 2): soft-archive support. Adds a nullable archivedAt column to track
+        // when a trip was locally archived by the user. nil = active; non-nil = archived.
+        // The server is unaware of the archive flag — all trip data remains intact for restore.
+        migrator.registerMigration("v3") { db in
+            try db.alter(table: Trip.databaseTableName) { t in
+                t.add(column: "archivedAt", .datetime)
+            }
+        }
+
         return migrator
     }
 }
