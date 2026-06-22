@@ -54,6 +54,7 @@ struct TripDetailView: View {
                                  onDismiss: { item in dismissUpload(item) })
                     Spacer()
                 }
+                .accessibilityIdentifier("upload-banner")
                 .transition(.move(edge: .top).combined(with: .opacity))
             }
 

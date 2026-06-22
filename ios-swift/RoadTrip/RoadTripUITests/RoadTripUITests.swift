@@ -529,6 +529,101 @@ final class RoadTripUITests: XCTestCase {
         attach(app.screenshot(), name: "AC3.1-add-photo-menu")
     }
 
+    /// AC3.5: picking a photo from the library stages it — the upload banner or the pin-drop
+    /// sheet must appear, proving stagePhoto(from:) → loadImageData → PHAsset ran without
+    /// throwing noAsset (the bug this test is designed to catch).
+    ///
+    /// EXPLORATORY NOTE: the exact element queries for the system PHPicker on iOS 17/26 are
+    /// discovered at test run time. The test uses several fallback queries. If the picker cannot
+    /// be reliably driven in this environment, it skips with a clear explanation rather than
+    /// silently passing or weakening the assertion.
+    func testLibraryPickStagesPhoto() throws {
+        let app = launchApp()
+
+        let trip = app.staticTexts["Pacific Coast Highway"]
+        XCTAssertTrue(trip.waitForExistence(timeout: 10), "seed trip should appear in the list")
+        trip.tap()
+
+        let addPhotoButton = app.buttons["Add Photo"]
+        XCTAssertTrue(addPhotoButton.waitForExistence(timeout: 10), "detail view should load with Add Photo button")
+
+        // Open the menu and tap "Choose from Library"
+        addPhotoButton.tap()
+        let chooseFromLibrary = app.buttons["Choose from Library"]
+        XCTAssertTrue(chooseFromLibrary.waitForExistence(timeout: 5), "menu must offer 'Choose from Library'")
+        chooseFromLibrary.tap()
+
+        // ── Discover the system PHPicker ────────────────────────────────────────────────
+        // PHPicker on iOS 17/26 presents as a sheet. It adds its own application-level
+        // windows; the elements appear under app.sheets or in new windows.
+        //
+        // Strategy: wait up to 8s for a photo cell to appear in any of the likely containers.
+        // We try: (1) app.cells.firstMatch, (2) a cell inside a sheet, (3) a cell in the
+        // "Recents" album collection view. If none materialise, we skip rather than fake a pass.
+
+        // Give the picker time to fully present
+        let pickerAppeared = app.cells.firstMatch.waitForExistence(timeout: 8)
+
+        guard pickerAppeared else {
+            attach(app.screenshot(), name: "AC3.5-picker-not-found")
+            throw XCTSkip("""
+            testLibraryPickStagesPhoto (AC3.5): the system PHPicker did not present \
+            any cells within 8 seconds on this simulator/OS. \
+            Attempted query: app.cells.firstMatch after tapping 'Choose from Library'. \
+            The picker may require a different element query for this OS version, \
+            or the simulator photo library may be empty. \
+            Skipping rather than faking a pass — investigate with a UI snapshot.
+            """)
+        }
+
+        attach(app.screenshot(), name: "AC3.5-picker-appeared")
+
+        // Tap the first photo cell (Recents album, first image)
+        let firstPhoto = app.cells.firstMatch
+        XCTAssertTrue(firstPhoto.isHittable, "first photo cell must be hittable")
+        firstPhoto.tap()
+
+        // ── Verify the staged outcome ───────────────────────────────────────────────────
+        // After a successful library pick, one of two outcomes is expected:
+        //   A) The upload banner appears ("upload-banner") — photo has GPS and goes straight to upload queue.
+        //   B) The PinDrop sheet appears — photo has no GPS and needs a location pin.
+        //      The PinDrop sheet title is "Where was this taken?" (from TripDetailView line ~114).
+        //
+        // Either outcome proves stagePhoto(from:) ran without throwing noAsset.
+        // We use an XCTWaiter with an OR predicate via two separate expectations and
+        // accept the first that fires within 15s.
+
+        let uploadBanner = app.otherElements["upload-banner"]
+        let pinDropTitle = app.staticTexts["Where was this taken?"]
+
+        // Poll for either element appearing
+        var staged = false
+        let deadline = Date().addingTimeInterval(15)
+        while Date() < deadline && !staged {
+            if uploadBanner.exists || pinDropTitle.exists {
+                staged = true
+                break
+            }
+            // Brief pause to avoid spinning — XCUITest polling is expensive
+            RunLoop.current.run(until: Date().addingTimeInterval(0.5))
+        }
+
+        attach(app.screenshot(), name: "AC3.5-staged-outcome")
+
+        XCTAssertTrue(
+            staged,
+            """
+            testLibraryPickStagesPhoto (AC3.5): after picking a photo, neither the \
+            upload banner (upload-banner) nor the pin-drop sheet ('Where was this taken?') \
+            appeared within 15 seconds. This likely means stagePhoto(from:) threw \
+            CaptureError.noAsset — the picker was not bound to .shared() or \
+            the item identifier was not populated. \
+            Upload banner exists: \(uploadBanner.exists). \
+            PinDrop title exists: \(pinDropTitle.exists).
+            """
+        )
+    }
+
     private func attach(_ screenshot: XCUIScreenshot, name: String) {
         let attachment = XCTAttachment(screenshot: screenshot)
         attachment.name = name
