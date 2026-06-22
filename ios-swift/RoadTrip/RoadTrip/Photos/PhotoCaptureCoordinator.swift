@@ -16,10 +16,14 @@ import PhotosUI
 struct PhotoCaptureCoordinator {
     let database: AppDatabase
     let stagingDirectory: URL
+    let assetLoader: any PhotoAssetLoading
 
-    init(database: AppDatabase, stagingDirectory: URL = PhotoCaptureCoordinator.defaultStagingDirectory) {
+    init(database: AppDatabase,
+         stagingDirectory: URL = PhotoCaptureCoordinator.defaultStagingDirectory,
+         assetLoader: any PhotoAssetLoading = SystemPhotoAssetLoader()) {
         self.database = database
         self.stagingDirectory = stagingDirectory
+        self.assetLoader = assetLoader
     }
 
     /// Persistent staging location — Application Support, NOT `temporaryDirectory` (which
@@ -106,27 +110,32 @@ struct PhotoCaptureCoordinator {
         return (data, "image/jpeg", filename)
     }
 
-    /// Resolves a picked item to its `PHAsset` and returns the raw image bytes (EXIF intact)
-    /// plus the original filename.
+    /// Resolves a picked item to its raw bytes (EXIF intact) via the injected `assetLoader`.
+    /// Returns the image data and original filename.
     private func loadImageData(from item: PhotosPickerItem) async throws -> (Data, String) {
-        guard let localId = item.itemIdentifier else { throw CaptureError.noAsset }
-        guard let asset = PHAsset.fetchAssets(withLocalIdentifiers: [localId], options: nil).firstObject else {
-            throw CaptureError.noAsset
-        }
-        let filename = PHAssetResource.assetResources(for: asset).first?.originalFilename ?? "photo.jpg"
-
-        let options = PHImageRequestOptions()
-        options.isNetworkAccessAllowed = true   // fetch from iCloud if not local
-        options.version = .current
-
-        return try await withCheckedThrowingContinuation { continuation in
-            PHImageManager.default().requestImageDataAndOrientation(for: asset, options: options) { data, _, _, _ in
-                if let data {
-                    continuation.resume(returning: (data, filename))
-                } else {
-                    continuation.resume(throwing: CaptureError.dataUnavailable)
-                }
-            }
-        }
+        guard let localId = assetLoader.itemIdentifier(for: item) else { throw CaptureError.noAsset }
+        return try await assetLoader.loadImageData(forIdentifier: localId)
     }
+
+#if DEBUG
+    /// Test-only entry point that drives the asset-loader pipeline from the identifier step,
+    /// bypassing the need for a real `PhotosPickerItem` (which cannot be constructed in unit
+    /// tests). The injected `assetLoader` fake controls every branch:
+    ///   • `identifier` is nil → throws `.noAsset` (simulates picker without .shared())
+    ///   • `loadImageData(forIdentifier:)` throws `.noAsset` → limited selection / no asset
+    ///   • `loadImageData(forIdentifier:)` throws `.dataUnavailable` → PHImageManager returned nil
+    ///   • `loadImageData(forIdentifier:)` returns data → stages photo normally
+    ///
+    /// In production code, always call `stagePhoto(from:tripId:overrideCoordinate:)` instead.
+    func stageUsingLoader(
+        identifier: String?,
+        tripId: UUID,
+        overrideCoordinate: CLLocationCoordinate2D? = nil
+    ) async throws -> UploadQueueItem {
+        guard let localId = identifier else { throw CaptureError.noAsset }
+        let (data, filename) = try await assetLoader.loadImageData(forIdentifier: localId)
+        return try await stagePhoto(imageData: data, filename: filename, tripId: tripId,
+                                    overrideCoordinate: overrideCoordinate)
+    }
+#endif
 }

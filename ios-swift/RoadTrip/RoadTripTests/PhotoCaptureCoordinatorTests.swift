@@ -3,8 +3,54 @@ import ImageIO
 import CoreGraphics
 import CoreLocation
 import UIKit
+import SwiftUI
 import UniformTypeIdentifiers
+import Photos
+import PhotosUI
 @testable import RoadTrip
+
+// MARK: - Fakes for PhotoAssetLoading (Mitigation 3a)
+
+/// Simulates a picker that was NOT bound to photoLibrary:.shared() — itemIdentifier is nil.
+private struct NilIdentifierLoader: PhotoAssetLoading {
+    func itemIdentifier(for item: PhotosPickerItem) -> String? { nil }
+    func fetchAsset(localIdentifier: String) -> PHAsset? { nil }
+    func loadImageData(forIdentifier localIdentifier: String) async throws -> (Data, String) {
+        throw PhotoCaptureCoordinator.CaptureError.noAsset
+    }
+}
+
+/// Simulates the limited-selection case: identifier is present but PHAsset lookup returns nil.
+private struct LimitedSelectionLoader: PhotoAssetLoading {
+    func itemIdentifier(for item: PhotosPickerItem) -> String? { "fake-id" }
+    func fetchAsset(localIdentifier: String) -> PHAsset? { nil }
+    func loadImageData(forIdentifier localIdentifier: String) async throws -> (Data, String) {
+        // Matches what SystemPhotoAssetLoader does when fetchAsset returns nil.
+        throw PhotoCaptureCoordinator.CaptureError.noAsset
+    }
+}
+
+/// Simulates PHImageManager returning no data (e.g. iCloud photo not yet downloaded).
+private struct NoDataLoader: PhotoAssetLoading {
+    func itemIdentifier(for item: PhotosPickerItem) -> String? { "fake-id" }
+    func fetchAsset(localIdentifier: String) -> PHAsset? { nil }
+    func loadImageData(forIdentifier localIdentifier: String) async throws -> (Data, String) {
+        throw PhotoCaptureCoordinator.CaptureError.dataUnavailable
+    }
+}
+
+/// Simulates a successful asset resolution — returns canned bytes and filename.
+private struct SuccessLoader: PhotoAssetLoading {
+    let data: Data
+    let filename: String
+    func itemIdentifier(for item: PhotosPickerItem) -> String? { "fake-id" }
+    func fetchAsset(localIdentifier: String) -> PHAsset? { nil }
+    func loadImageData(forIdentifier localIdentifier: String) async throws -> (Data, String) {
+        return (data, filename)
+    }
+}
+
+// MARK: - Tests
 
 /// Phase 5: the capture pipeline's testable core — turning raw picked-photo bytes into a
 /// persisted `.staged` UploadQueueItem with EXIF + a transcoded JPEG source file.
@@ -98,10 +144,83 @@ final class PhotoCaptureCoordinatorTests: XCTestCase {
 
     // MARK: - Helpers
 
+    // MARK: - PhotoAssetLoading protocol seam tests (Mitigation 3a)
+    //
+    // PhotosPickerItem and PHAsset cannot be constructed in unit tests (no public initialiser).
+    // The stageUsingLoader(identifier:tripId:) entry point (#if DEBUG) drives the pipeline
+    // from the identifier step so every branch can be exercised with fakes.
+
+    func testNilIdentifierThrowsNoAsset() async throws {
+        let (db, _, dir) = try makeCoordinator()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let tripId = try await seedTrip(db)
+        let coordinator = makeCoordinatorWithLoader(db: db, dir: dir, loader: NilIdentifierLoader())
+
+        do {
+            _ = try await coordinator.stageUsingLoader(identifier: nil, tripId: tripId)
+            XCTFail("expected CaptureError.noAsset")
+        } catch PhotoCaptureCoordinator.CaptureError.noAsset {
+            // expected
+        }
+    }
+
+    func testLimitedSelectionThrowsNoAsset() async throws {
+        let (db, _, dir) = try makeCoordinator()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let tripId = try await seedTrip(db)
+        let coordinator = makeCoordinatorWithLoader(db: db, dir: dir, loader: LimitedSelectionLoader())
+
+        do {
+            // LimitedSelectionLoader.loadImageData throws .noAsset to simulate fetchAsset→nil
+            _ = try await coordinator.stageUsingLoader(identifier: "fake-id", tripId: tripId)
+            XCTFail("expected CaptureError.noAsset")
+        } catch PhotoCaptureCoordinator.CaptureError.noAsset {
+            // expected
+        }
+    }
+
+    func testDataUnavailableThrowsDataUnavailable() async throws {
+        let (db, _, dir) = try makeCoordinator()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let tripId = try await seedTrip(db)
+        let coordinator = makeCoordinatorWithLoader(db: db, dir: dir, loader: NoDataLoader())
+
+        do {
+            _ = try await coordinator.stageUsingLoader(identifier: "fake-id", tripId: tripId)
+            XCTFail("expected CaptureError.dataUnavailable")
+        } catch PhotoCaptureCoordinator.CaptureError.dataUnavailable {
+            // expected
+        }
+    }
+
+    func testSuccessLoaderStagesPhoto() async throws {
+        let (db, _, dir) = try makeCoordinator()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let tripId = try await seedTrip(db)
+
+        // Use a JPEG with GPS so we can verify the EXIF round-trip via the success path.
+        let jpeg = makeImageData(uti: .jpeg, lat: 51.5074, latRef: "N",
+                                 lng: 0.1278, lngRef: "W", date: nil)!
+        let loader = SuccessLoader(data: jpeg, filename: "IMG_success.jpg")
+        let coordinator = makeCoordinatorWithLoader(db: db, dir: dir, loader: loader)
+
+        let item = try await coordinator.stageUsingLoader(identifier: "fake-id", tripId: tripId)
+        XCTAssertEqual(item.stage, .staged)
+        XCTAssertEqual(item.exifLat ?? .nan, 51.5074, accuracy: 0.0001)
+        XCTAssertEqual(item.exifLon ?? .nan, -0.1278, accuracy: 0.0001)
+
+        let count = try await db.dbQueue.read { try UploadQueueItem.fetchCount($0) }
+        XCTAssertEqual(count, 1)
+    }
+
     private func makeCoordinator() throws -> (AppDatabase, PhotoCaptureCoordinator, URL) {
         let db = try AppDatabase.makeInMemory()
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         return (db, PhotoCaptureCoordinator(database: db, stagingDirectory: dir), dir)
+    }
+
+    private func makeCoordinatorWithLoader(db: AppDatabase, dir: URL, loader: any PhotoAssetLoading) -> PhotoCaptureCoordinator {
+        PhotoCaptureCoordinator(database: db, stagingDirectory: dir, assetLoader: loader)
     }
 
     private func seedTrip(_ db: AppDatabase) async throws -> UUID {
