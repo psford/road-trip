@@ -1,6 +1,6 @@
 # Photos (native SwiftUI app)
 
-Last verified: 2026-06-21
+Last verified: 2026-06-22
 
 ## Purpose
 The capture/ingest core for adding photos to a trip: EXIF extraction, HEIC→JPEG
@@ -15,9 +15,12 @@ The SwiftUI capture bridges (camera/library pickers) live in `Views/Photos`.
     camera capture). EXIF GPS comes from `overrideCoordinate` when the image has none.
   - `stagePhoto(from:tripId:overrideCoordinate:)` — `PhotosPickerItem`/PHAsset path (library),
     preserves original EXIF; throws `CaptureError.noAsset` when the asset can't be resolved.
-- **`OneShotLocationProvider`** (`@MainActor`) — `currentCoordinate(timeout:) async -> CLLocationCoordinate2D?`.
-  One-shot CoreLocation; returns `nil` on denial/restriction/error/**timeout (hard 4s)**.
-  Never blocks indefinitely; never starts continuous updates.
+- **`OneShotLocationProvider`** (`@MainActor`, conforms to `LocationProviding`) —
+  `currentCoordinate(timeout:) async -> CLLocationCoordinate2D?`. Returns a recent **cached** fix
+  immediately when available, else `startUpdatingLocation()` and takes the **first usable fix**
+  then stops; `nil` on denial/restriction/error/timeout (default **10s**). Bounded, never hangs.
+  (Was a cold `requestLocation()` one-shot raced at 4s — it almost always lost, so camera photos
+  fell to manual pin-drop even with a fix; #112 switched to cached + streaming + 10s.)
 - **`EXIFExtractor` / `HEICTranscoder`** — pure-ish helpers for reading capture metadata and
   normalizing to upload-ready JPEG.
 - **`CameraPicker`** (`Views/Photos`) — `UIViewControllerRepresentable` over
@@ -32,10 +35,10 @@ The SwiftUI capture bridges (camera/library pickers) live in `Views/Photos`.
 - **Boundary**: capture/staging only — does not perform the network upload (that's `Upload/*`).
 
 ## Key Decisions
-- **Camera capture path (Phase 4)**: take-photo → `CameraPicker` → JPEG (`compressionQuality 0.9`)
-  → one-shot location raced against a 4s timeout (`locationWithTimeout` in TripDetailView) →
-  `stagePhoto(imageData:...)`. No fix → fall back to the existing pin-drop sheet
-  (`PinDropView`) before the photo can upload.
+- **Camera capture path**: take-photo → `CameraPicker` → JPEG (`compressionQuality 0.9`) →
+  `locationWithTimeout` (default 10s; cached-fix fast path + streamed first fix) →
+  `stagePhoto(imageData:...)`. No fix → fall back to the existing pin-drop sheet (`PinDropView`)
+  before the photo can upload.
 - **One-shot, timeout-bounded location**: capture must never hang waiting on a GPS fix; a missing
   fix degrades to manual pin-drop rather than blocking. `NSCameraUsageDescription` is declared in
   `project.yml`.
@@ -50,12 +53,17 @@ The SwiftUI capture bridges (camera/library pickers) live in `Views/Photos`.
 
 ## Key Files
 - `PhotoCaptureCoordinator.swift` — staging core (data + asset entry points).
-- `OneShotLocationProvider.swift` — one-shot CoreLocation with hard timeout.
+- `OneShotLocationProvider.swift` — cached-fix fast path + streamed first fix, 10s cap (`LocationProviding` seam).
 - `EXIFExtractor.swift` / `HEICTranscoder.swift` — metadata + transcode helpers.
 - `../Views/Photos/CameraPicker.swift` — UIImagePickerController camera bridge.
 - `../Views/Photos/PinDropView.swift` — manual location fallback sheet.
 
 ## Gotchas
+- **The library picker MUST use `photoLibrary: .shared()`** — `stagePhoto(from:)` resolves the
+  `PhotosPickerItem` to a PHAsset via `item.itemIdentifier`, which is `nil` without `.shared()`,
+  so every pick throws `CaptureError.noAsset` ("Couldn't read that photo from your library"). Use
+  the `StagingPhotosPicker` wrapper / `.stagingPhotosPicker` (both hard-code it); a committed
+  pre-commit hook also flags raw pickers that omit it. This shipped broken once.
 - Library staging requires `PHPhotoLibrary.requestAuthorization(.readWrite)` — the picker
   selection alone does NOT grant the access needed to read the PHAsset's EXIF.
 - Adding a Photos file means editing sources + `project.yml`, then regenerating the (gitignored)

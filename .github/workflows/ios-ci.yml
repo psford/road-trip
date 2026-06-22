@@ -17,12 +17,14 @@ name: iOS CI
       - main
     paths:
       - 'ios-swift/**'
+      - '!ios-swift/**/*.md'   # docs-only changes don't need the ~15-min build/test run
   pull_request:
     branches:
       - develop
       - main
     paths:
       - 'ios-swift/**'
+      - '!ios-swift/**/*.md'   # docs-only changes don't need the ~15-min build/test run
   workflow_dispatch:
     inputs:
       run_ui_tests:

@@ -1,6 +1,6 @@
 # Views/Trips (native SwiftUI app)
 
-Last verified: 2026-06-21
+Last verified: 2026-06-22
 
 ## Purpose
 SwiftUI screens for the trip lifecycle: the My Trips list, trip detail (map + photos),
@@ -16,9 +16,12 @@ delete UX and the trip-route map rendering.
   permanently** (behind a confirmation dialog). This is the **ONLY** screen that performs the
   real server delete, via `RoadTripAPI.shared.deleteTrip(_:from:keychain:)`.
 - **`TripDetailView`** — map + photo detail. Custom **floating inset top bar** (system nav bar
-  hidden via `.toolbar(.hidden, for: .navigationBar)`): back · left-justified title · Share
-  menu · add-photo Menu. **No delete control** (removed this phase — deletion lives only in
-  `ArchivedTripsView`). Add-photo is a `Menu` (Take Photo / Choose from Library).
+  hidden via `.toolbar(.hidden, for: .navigationBar)`): back · **centered** title · **icon-only**
+  Share menu. The **Add-Photo `Menu` is NOT in the bar** — it sits at the map's **lower-right** as
+  a map-control-style button (Take Photo / Choose from Library; `photo.badge.plus`). A top-right
+  **control cluster** holds a custom **recenter** button + the **route toggle** (shared
+  `mapControlIcon` style; the system `MapUserLocationButton` was dropped so the controls match and
+  never collide with the bar). **No delete control** — deletion lives only in `ArchivedTripsView`.
 - **`RouteCurve.curved(through:pointsPerSegment:) -> [CLLocationCoordinate2D]`** — pure
   (Functional Core, no I/O). Centripetal Catmull-Rom (alpha 0.5) smoothing of the route line.
   Passthrough when `< 3` points; never emits NaN/infinite coords (degenerate segments fall back
@@ -42,8 +45,11 @@ delete UX and the trip-route map rendering.
 - **Permanent delete moved out of trip detail** — destructive server delete now lives behind the
   archive flow (archive → Archived list → confirm → delete). TripDetailView's prior Delete action
   is gone, so the map screen has no irreversible action.
-- **Custom floating top bar over the system nav bar** — left-justified title + inset Share/+
-  controls; the system bar is hidden.
+- **Custom floating top bar over the system nav bar** — centered title, icon-only Share; system
+  bar hidden. Map controls are custom overlays (top-right recenter + route-toggle cluster;
+  lower-right Add-Photo) using a shared `mapControlIcon` style — built by hand rather than
+  `.mapControls` so they match in size/color and don't collide with the bar (a recurring bug we
+  fixed). Add-Photo is lower-right because posting photos is the app's core action.
 
 ## Invariants
 - My Trips shows active trips only; `ArchivedTripsView` shows archived only — both filter on
@@ -56,7 +62,9 @@ delete UX and the trip-route map rendering.
 ## Key Files
 - `TripListView.swift` — My Trips list, swipe-to-archive, Archived toolbar entry, revalidation.
 - `ArchivedTripsView.swift` — restore + permanent-delete (the only server-delete call site).
-- `TripDetailView.swift` — map/photo detail, floating top bar, `showRoute` toggle, add-photo menu.
+- `TripDetailView.swift` — map/photo detail; floating top bar (centered title, icon-only Share);
+  top-right recenter+route control cluster + lower-right Add-Photo menu (shared `mapControlIcon`);
+  `showRoute` toggle.
 - `RouteCurve.swift` — pure Catmull-Rom route smoothing (test seam, like `MapFraming`).
 - `MapFraming.swift` — pure map-region framing helper.
 
