@@ -47,17 +47,6 @@ struct TripDetailView: View {
                 }
             }
 
-            if !uploads.isEmpty {
-                VStack {
-                    UploadBanner(uploads: uploads,
-                                 onRetry: { item in Task { await retryUpload(item) } },
-                                 onDismiss: { item in dismissUpload(item) })
-                    Spacer()
-                }
-                .accessibilityIdentifier("upload-banner")
-                .transition(.move(edge: .top).combined(with: .opacity))
-            }
-
             if popupIndex != nil {
                 PhotoPopupView(
                     photos: photos,
@@ -89,9 +78,20 @@ struct TripDetailView: View {
         }
         .toolbar(.hidden, for: .navigationBar)
         .overlay(alignment: .top) {
-            floatingTopBar
-                .padding(.horizontal, 12)
-                .padding(.top, 8)
+            // Floating bar and the upload banner share the top region — stack them so the
+            // banner appears BELOW the bar instead of colliding behind it.
+            VStack(spacing: 8) {
+                floatingTopBar
+                if !uploads.isEmpty {
+                    UploadBanner(uploads: uploads,
+                                 onRetry: { item in Task { await retryUpload(item) } },
+                                 onDismiss: { item in dismissUpload(item) })
+                        .accessibilityIdentifier("upload-banner")
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.top, 8)
         }
         .onChange(of: pickedItem) { _, newItem in
             guard let newItem else { return }
@@ -164,8 +164,13 @@ struct TripDetailView: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .shadow(radius: 4, y: 2)
+        // Shadow goes on the background SHAPE only — applying .shadow to the whole bar
+        // makes the translucent material let each text glyph cast its own shadow ("bloom").
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(.regularMaterial)
+                .shadow(radius: 4, y: 2)
+        )
     }
 
     @ViewBuilder private var shareMenu: some View {
