@@ -6,8 +6,9 @@
 # See README.md in this directory for the loop.
 name: RoadTrip
 
-# Build configurations. Debug → local backend; Release → prod; Release-TestFlight →
-# Azure dev slot (the DEVSLOT compilation flag selects it in APIEnvironment).
+# Build configurations. Debug → local backend; Release → prod (TestFlight + App Store archive
+# with this). Release-TestFlight → Azure dev slot via the DEVSLOT flag — an OPT-IN release build
+# for testing against the dev slot; it is NOT the archive config anymore.
 configs:
   Debug: debug
   Release: release
@@ -64,6 +65,7 @@ targets:
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
       configs:
         Release-TestFlight:
+          # Opt-in dev-slot release build (NOT the TestFlight archive — that's `Release`/prod now).
           # Selects the Azure dev slot base URL in APIEnvironment (#elseif DEVSLOT).
           SWIFT_ACTIVE_COMPILATION_CONDITIONS: $(inherited) DEVSLOT
     # SwiftLint build phase — non-fatal; skipped gracefully when swiftlint is absent.
@@ -103,13 +105,15 @@ schemes:
         RoadTrip: all
     run:
       config: Debug
-      # Point Debug runs at the Azure dev slot so on-device builds reach a real backend
-      # (localhost is unreachable from a phone). Baked in here so `xcodegen generate` can't
-      # wipe it the way a manually-added scheme env var gets wiped. Only the run action —
-      # the test action stays on the APIEnvironment default (localhost) for integration tests.
+      # Point Debug runs at PROD — v1.0 ships on prod, so dev/device runs exercise the real
+      # backend (localhost is unreachable from a phone). The Azure dev slot is reserved for 1.1:
+      # flip this value to https://app-roadtripmap-prod-dev.azurewebsites.net (or build the
+      # Release-TestFlight config) when starting 1.1 work. Baked in here so `xcodegen generate`
+      # can't wipe it; only the run action — the test action stays on the APIEnvironment default
+      # (localhost) for local integration tests.
       environmentVariables:
         - variable: API_BASE_URL
-          value: https://app-roadtripmap-prod-dev.azurewebsites.net
+          value: https://app-roadtripmap-prod.azurewebsites.net
           isEnabled: true
     test:
       config: Debug
@@ -117,4 +121,4 @@ schemes:
         - RoadTripTests
         - RoadTripUITests
     archive:
-      config: Release-TestFlight   # TestFlight archives target the dev slot
+      config: Release   # TestFlight + App Store archives target PROD (no DEVSLOT flag → APIEnvironment #else)
