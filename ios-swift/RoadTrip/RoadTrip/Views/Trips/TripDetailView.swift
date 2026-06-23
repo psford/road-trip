@@ -40,18 +40,20 @@ struct TripDetailView: View {
     @State private var locationProvider: any LocationProviding = OneShotLocationProvider()
 
     var body: some View {
-        ZStack {
+        // Build the committed+optimistic list ONCE per render and thread it through, rather than
+        // recomputing it in the map, strip, popup, and empty-state separately.
+        let shown = displayPhotos
+        return ZStack {
             VStack(spacing: 0) {
-                mapSection
+                mapSection(shown)
                 // Show the strip when there's anything to show — committed or optimistic — so a
                 // brand-new trip whose first photo is added offline still gets a filmstrip entry.
-                if !displayPhotos.isEmpty {
-                    photoStrip
+                if !shown.isEmpty {
+                    photoStrip(shown)
                 }
             }
 
-            if let openIndex = openPopupIndex {
-                let shown = displayPhotos
+            if let openIndex = shown.firstIndex(where: { $0.id == popupPhotoID }) {
                 PhotoPopupView(
                     photos: shown,
                     // Track the open photo by IDENTITY, not position: when the list reorders (an
@@ -424,7 +426,7 @@ struct TripDetailView: View {
         session.abort(item.uploadId)
     }
 
-    private var mapSection: some View {
+    private func mapSection(_ shown: [Photo]) -> some View {
         MapReader { proxy in
             Map(position: $cameraPosition) {
                 if showRoute, routeCoordinates.count >= 2 {
@@ -439,7 +441,7 @@ struct TripDetailView: View {
                 // Committed AND optimistic (staged, not-yet-uploaded) photos render as one list, so
                 // an offline photo is a first-class pin — tappable into the same popup — differing
                 // only by an upload badge.
-                ForEach(Array(displayPhotos.enumerated()), id: \.element.id) { index, photo in
+                ForEach(Array(shown.enumerated()), id: \.element.id) { index, photo in
                     Annotation(photo.placeName, coordinate: photo.coordinate) {
                         Button {
                             openPopup(at: index)
@@ -502,9 +504,9 @@ struct TripDetailView: View {
             // requires a hold, so it won't fire on a quick tap or a pan.
             .simultaneousGesture(longPressToPost(proxy))
             .overlay {
-                // Key on displayPhotos (committed + optimistic) so a trip whose only photo is an
+                // Key on the combined list (committed + optimistic) so a trip whose only photo is an
                 // offline/pending one doesn't show "No photos yet" over its visible pending pin.
-                if displayPhotos.isEmpty {
+                if shown.isEmpty {
                     ContentUnavailableView(
                         "No photos yet",
                         systemImage: "photo.on.rectangle.angled",
@@ -528,14 +530,14 @@ struct TripDetailView: View {
             }
     }
 
-    private var photoStrip: some View {
+    private func photoStrip(_ shown: [Photo]) -> some View {
         // As the popup pages between photos, keep the open photo's thumbnail centred in the strip
         // (Photos.app filmstrip behaviour). At the first/last photo the ScrollView clamps, so the
         // edge thumbnail simply rests against the end rather than forcing a centre.
         ScrollViewReader { proxy in
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
-                    ForEach(Array(displayPhotos.enumerated()), id: \.element.id) { index, photo in
+                    ForEach(Array(shown.enumerated()), id: \.element.id) { index, photo in
                         Button {
                             openPopup(at: index)
                         } label: {
@@ -545,10 +547,7 @@ struct TripDetailView: View {
                             }
                             .frame(width: 92, height: 92)
                             .clipShape(RoundedRectangle(cornerRadius: 12))
-                            .overlay(alignment: .bottomTrailing) {
-                                if photo.isOptimistic { OptimisticUploadBadge(size: 20).padding(5) }
-                            }
-                            .opacity(photo.isOptimistic ? 0.9 : 1)
+                            .optimisticBadge(if: photo.isOptimistic, size: 20, alignment: .bottomTrailing, inset: 5)
                         }
                         .buttonStyle(.plain)
                         .id(photo.id)
@@ -735,10 +734,7 @@ private struct PinThumbnail: View {
         .frame(width: 40, height: 40)
         .clipShape(Circle())
         .overlay(Circle().stroke(.white, lineWidth: 2))
-        .overlay(alignment: .bottomTrailing) {
-            if photo.isOptimistic { OptimisticUploadBadge(size: 16).offset(x: 3, y: 3) }
-        }
-        .opacity(photo.isOptimistic ? 0.9 : 1)
+        .optimisticBadge(if: photo.isOptimistic, size: 16, alignment: .bottomTrailing, inset: 1)
         .shadow(radius: 2)
     }
 }
@@ -754,5 +750,17 @@ struct OptimisticUploadBadge: View {
             .symbolRenderingMode(.palette)
             .foregroundStyle(.white, .blue)
             .accessibilityHidden(true)
+    }
+}
+
+extension View {
+    /// The single optimistic-photo treatment used on the map pin, filmstrip, and popup: an upload
+    /// badge in `alignment` plus an optional dim — so the look can't drift between the three sites.
+    @ViewBuilder
+    func optimisticBadge(if show: Bool, size: CGFloat, alignment: Alignment, inset: CGFloat, dim: Bool = true) -> some View {
+        opacity(show && dim ? 0.9 : 1)
+            .overlay(alignment: alignment) {
+                if show { OptimisticUploadBadge(size: size).padding(inset) }
+            }
     }
 }

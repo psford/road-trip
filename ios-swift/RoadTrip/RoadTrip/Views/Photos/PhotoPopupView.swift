@@ -135,10 +135,8 @@ struct PhotoPopupView: View {
             }
             .clipShape(RoundedRectangle(cornerRadius: immersive ? 0 : 16))
             .shadow(radius: immersive ? 0 : 12)
-            .overlay(alignment: .topTrailing) {
-                // The only visual cue that this photo isn't posted yet.
-                if photo.isOptimistic { OptimisticUploadBadge(size: 28).padding(12) }
-            }
+            // The only visual cue that this photo isn't posted yet (no dim — it's the focused view).
+            .optimisticBadge(if: photo.isOptimistic, size: 28, alignment: .topTrailing, inset: 12, dim: false)
             .contentShape(Rectangle())
             .onTapGesture { withAnimation(.easeInOut(duration: 0.25)) { immersive.toggle() } }
             .accessibilityIdentifier("popup-photo")
