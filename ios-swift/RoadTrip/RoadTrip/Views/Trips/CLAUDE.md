@@ -21,7 +21,8 @@ delete UX and the trip-route map rendering.
   `ArchivedTripsView`). Add-photo is a `Menu` (Take Photo / Choose from Library). The floating
   bar **hides whenever the photo popup is full-black immersive** (`PhotoPopupView`'s `immersive`
   binds to `popupImmersive`); the bottom photo strip **centres the open photo's thumbnail** as the
-  popup pages (`ScrollViewReader` keyed on `popupIndex`).
+  popup pages (`ScrollViewReader` scrolls to `popupPhotoID`, the open photo's id — selection is
+  tracked by identity, not position, so a list reorder on commit doesn't jump the popup).
 - **`RouteCurve.curved(through:pointsPerSegment:) -> [CLLocationCoordinate2D]`** — pure
   (Functional Core, no I/O). Centripetal Catmull-Rom (alpha 0.5) smoothing of the route line.
   Passthrough when `< 3` points; never emits NaN/infinite coords (degenerate segments fall back
