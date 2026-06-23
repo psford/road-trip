@@ -12,8 +12,10 @@ struct RoadTripApp: App {
         let db = try! AppDatabase.makeShared()
         // SampleData is seeded only for UI tests (`-uitest`); real launches start empty
         // so users only see real, uploadable trips. See AppBootstrap.
-        let isUITest = ProcessInfo.processInfo.arguments.contains("-uitest")
-        try? AppBootstrap.prepare(db, isUITest: isUITest)
+        let arguments = ProcessInfo.processInfo.arguments
+        let isUITest = arguments.contains("-uitest")
+        try? AppBootstrap.prepare(db, isUITest: isUITest,
+                                  seedPendingUpload: arguments.contains("-uitest-pending-upload"))
         _database = State(initialValue: db)
 
         // Bind the background uploader to this database and resume any uploads left in flight

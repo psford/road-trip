@@ -183,6 +183,41 @@ final class RoadTripUITests: XCTestCase {
         attach(app.screenshot(), name: "AC1.3-popup-closed-via-backdrop")
     }
 
+    /// Poor-service support: a staged-but-not-yet-uploaded photo with a location shows an
+    /// optimistic ("pending") pin on the map immediately — before any upload — so a photo added in
+    /// a no-service area appears right away. Seeded via `-uitest-pending-upload` (no PhotosPicker).
+    func testStagedPhotoShowsOptimisticPendingPin() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-uitest", "-uitest-pending-upload"]
+        app.launch()
+
+        app.staticTexts["Pacific Coast Highway"].tap()
+        XCTAssertTrue(app.buttons["Bixby Bridge"].waitForExistence(timeout: 10), "trip map should render")
+
+        let pendingPin = app.descendants(matching: .any).matching(identifier: "pending-pin").firstMatch
+        XCTAssertTrue(pendingPin.waitForExistence(timeout: 10),
+                      "a staged photo with a location should show an optimistic pending pin immediately")
+
+        // The pending photo also appears in the bottom filmstrip (not just the map).
+        let stripItem = app.descendants(matching: .any).matching(identifier: "pending-strip-item").firstMatch
+        XCTAssertTrue(stripItem.waitForExistence(timeout: 5),
+                      "a staged photo should appear in the filmstrip too")
+
+        // No stuck "Uploading…" banner — it would otherwise sit there for the whole no-service
+        // period. The map pin + filmstrip are the indicators; the banner is for failures only.
+        let banner = app.descendants(matching: .any).matching(identifier: "upload-banner").firstMatch
+        XCTAssertFalse(banner.exists, "a waiting upload must not show a stuck progress banner")
+
+        attach(app.screenshot(), name: "optimistic-pending-pin")
+
+        // Behaves as if posted: tapping the optimistic photo opens it in the popup like any other.
+        stripItem.tap()
+        let popupPhoto = app.descendants(matching: .any).matching(identifier: "popup-photo").firstMatch
+        XCTAssertTrue(popupPhoto.waitForExistence(timeout: 5),
+                      "an optimistic photo should open in the popup, like a posted one")
+        attach(app.screenshot(), name: "optimistic-photo-popup")
+    }
+
     /// The chrome-free popup's interactions: tap → immersive (full-black) and back, swipe to page
     /// between photos, and long-press → Move Pin / Delete Photo. Drives each gesture and captures
     /// screenshots for visual review; asserts the page change and the long-press menu.
@@ -699,22 +734,21 @@ final class RoadTripUITests: XCTestCase {
 
         // ── Verify the staged outcome ───────────────────────────────────────────────────
         // After a successful library pick, one of two outcomes is expected:
-        //   A) The upload banner appears ("upload-banner") — photo has GPS and goes straight to upload queue.
+        //   A) An optimistic pending pin appears ("pending-pin") — photo has GPS and goes
+        //      straight to the upload queue (which now shows as a map pin, not a banner).
         //   B) The PinDrop sheet appears — photo has no GPS and needs a location pin.
         //      The PinDrop sheet title is "Where was this taken?" (from TripDetailView line ~114).
         //
         // Either outcome proves stagePhoto(from:) ran without throwing noAsset.
-        // We use an XCTWaiter with an OR predicate via two separate expectations and
-        // accept the first that fires within 15s.
 
-        let uploadBanner = app.otherElements["upload-banner"]
+        let pendingPin = app.descendants(matching: .any).matching(identifier: "pending-pin").firstMatch
         let pinDropTitle = app.staticTexts["Where was this taken?"]
 
         // Poll for either element appearing
         var staged = false
         let deadline = Date().addingTimeInterval(15)
         while Date() < deadline && !staged {
-            if uploadBanner.exists || pinDropTitle.exists {
+            if pendingPin.exists || pinDropTitle.exists {
                 staged = true
                 break
             }
@@ -727,12 +761,12 @@ final class RoadTripUITests: XCTestCase {
         XCTAssertTrue(
             staged,
             """
-            testLibraryPickStagesPhoto (AC3.5): after picking a photo, neither the \
-            upload banner (upload-banner) nor the pin-drop sheet ('Where was this taken?') \
+            testLibraryPickStagesPhoto (AC3.5): after picking a photo, neither an optimistic \
+            pending pin (pending-pin) nor the pin-drop sheet ('Where was this taken?') \
             appeared within 15 seconds. This likely means stagePhoto(from:) threw \
             CaptureError.noAsset — the picker was not bound to .shared() or \
             the item identifier was not populated. \
-            Upload banner exists: \(uploadBanner.exists). \
+            Pending pin exists: \(pendingPin.exists). \
             PinDrop title exists: \(pinDropTitle.exists).
             """
         )
