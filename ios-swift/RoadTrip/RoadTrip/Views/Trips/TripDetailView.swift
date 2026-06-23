@@ -43,16 +43,19 @@ struct TripDetailView: View {
         ZStack {
             VStack(spacing: 0) {
                 mapSection
-                if !photos.isEmpty {
+                // Show the strip when there's anything to show — committed or optimistic — so a
+                // brand-new trip whose first photo is added offline still gets a filmstrip entry.
+                if !displayPhotos.isEmpty {
                     photoStrip
                 }
             }
 
             if popupIndex != nil {
+                let shown = displayPhotos
                 PhotoPopupView(
-                    photos: photos,
+                    photos: shown,
                     selection: Binding(
-                        get: { min(max(popupIndex ?? 0, 0), photos.count - 1) },
+                        get: { min(max(popupIndex ?? 0, 0), max(shown.count - 1, 0)) },
                         set: { popupIndex = $0 }
                     ),
                     immersive: $popupImmersive,
@@ -86,8 +89,11 @@ struct TripDetailView: View {
             if !popupImmersive {
                 VStack(spacing: 8) {
                     floatingTopBar
-                    if !uploads.isEmpty {
-                        UploadBanner(uploads: uploads,
+                    // Only FAILED uploads get a banner (with Retry). In-progress/waiting uploads
+                    // are shown by their pending map pin + filmstrip thumbnail instead — a progress
+                    // banner would sit stuck on screen for the whole no-service period.
+                    if !failedUploads.isEmpty {
+                        UploadBanner(uploads: failedUploads,
                                      onRetry: { item in Task { await retryUpload(item) } },
                                      onDismiss: { item in dismissUpload(item) })
                             .accessibilityIdentifier("upload-banner")
@@ -422,7 +428,10 @@ struct TripDetailView: View {
                             dash: [2, 10]))
                 }
 
-                ForEach(Array(photos.enumerated()), id: \.element.id) { index, photo in
+                // Committed AND optimistic (staged, not-yet-uploaded) photos render as one list, so
+                // an offline photo is a first-class pin — tappable into the same popup — differing
+                // only by an upload badge.
+                ForEach(Array(displayPhotos.enumerated()), id: \.element.id) { index, photo in
                     Annotation(photo.placeName, coordinate: photo.coordinate) {
                         Button {
                             openPopup(at: index)
@@ -430,7 +439,8 @@ struct TripDetailView: View {
                             PinThumbnail(photo: photo)
                         }
                         .buttonStyle(.plain)
-                        .accessibilityLabel(Text(photo.placeName))
+                        .accessibilityLabel(Text(photo.isOptimistic ? "Photo uploading" : photo.placeName))
+                        .accessibilityIdentifier(photo.isOptimistic ? "pending-pin" : "photo-pin")
                         .accessibilityAddTraits(.isButton)
                     }
                 }
@@ -515,7 +525,7 @@ struct TripDetailView: View {
         ScrollViewReader { proxy in
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
-                    ForEach(Array(photos.enumerated()), id: \.element.id) { index, photo in
+                    ForEach(Array(displayPhotos.enumerated()), id: \.element.id) { index, photo in
                         Button {
                             openPopup(at: index)
                         } label: {
@@ -525,9 +535,14 @@ struct TripDetailView: View {
                             }
                             .frame(width: 92, height: 92)
                             .clipShape(RoundedRectangle(cornerRadius: 12))
+                            .overlay(alignment: .bottomTrailing) {
+                                if photo.isOptimistic { OptimisticUploadBadge(size: 20).padding(5) }
+                            }
+                            .opacity(photo.isOptimistic ? 0.9 : 1)
                         }
                         .buttonStyle(.plain)
                         .id(photo.id)
+                        .accessibilityIdentifier(photo.isOptimistic ? "pending-strip-item" : "strip-item")
                     }
                 }
                 .padding(.horizontal)
@@ -560,6 +575,18 @@ struct TripDetailView: View {
 
     private var routeCoordinates: [CLLocationCoordinate2D] {
         photos.map(\.coordinate)
+    }
+
+    /// The single list the map, filmstrip, and popup all render: committed photos plus optimistic
+    /// (staged, not-yet-uploaded) ones, so an offline photo behaves exactly like a posted one.
+    private var displayPhotos: [Photo] {
+        DisplayPhotos.build(committed: photos, pending: uploads)
+    }
+
+    /// Only genuinely failed uploads get the banner; waiting/in-progress ones are shown by their
+    /// optimistic pin + filmstrip thumbnail instead.
+    private var failedUploads: [UploadQueueItem] {
+        uploads.filter { $0.stage == .failed }
     }
 }
 
@@ -674,7 +701,9 @@ private struct UploadBanner: View {
     }
 }
 
-/// Circular thumbnail used as a map annotation marker.
+/// Circular thumbnail used as a map annotation marker. Renders committed (server) and optimistic
+/// (local `file://`) photos identically — `CachedImage`/`ImageLoader` resolve both — and overlays an
+/// upload badge while the photo is still optimistic.
 private struct PinThumbnail: View {
     let photo: Photo
 
@@ -686,6 +715,24 @@ private struct PinThumbnail: View {
         .frame(width: 40, height: 40)
         .clipShape(Circle())
         .overlay(Circle().stroke(.white, lineWidth: 2))
+        .overlay(alignment: .bottomTrailing) {
+            if photo.isOptimistic { OptimisticUploadBadge(size: 16).offset(x: 3, y: 3) }
+        }
+        .opacity(photo.isOptimistic ? 0.9 : 1)
         .shadow(radius: 2)
+    }
+}
+
+/// The "uploading" marker shown on an optimistic photo (map pin, filmstrip, popup) — the only visual
+/// difference from a posted photo.
+struct OptimisticUploadBadge: View {
+    var size: CGFloat = 16
+
+    var body: some View {
+        Image(systemName: "arrow.up.circle.fill")
+            .font(.system(size: size))
+            .symbolRenderingMode(.palette)
+            .foregroundStyle(.white, .blue)
+            .accessibilityHidden(true)
     }
 }
