@@ -29,7 +29,7 @@ struct CachedImage<Placeholder: View>: View {
         self.contentMode = contentMode
         self.onAspect = onAspect
         self.placeholder = placeholder()
-        _image = State(initialValue: ImageLoader.shared.memoryImage(for: url))
+        _image = State(initialValue: ImageLoader.shared.memoryImage(for: url, tier: tier))
     }
 
     var body: some View {

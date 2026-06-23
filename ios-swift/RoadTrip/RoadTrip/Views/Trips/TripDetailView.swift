@@ -22,7 +22,7 @@ struct TripDetailView: View {
 
     @State private var photos: [Photo] = []
     @State private var cameraPosition: MapCameraPosition = .automatic
-    @State private var popupIndex: Int?   // index into `photos`; nil = closed
+    @State private var popupPhotoID: Int?   // id of the open photo (stable across list changes); nil = closed
     @State private var popupImmersive = false   // popup tapped into full-black mode → hide the floating bar
     @State private var pickedItem: PhotosPickerItem?
     @State private var isStaging = false
@@ -40,20 +40,30 @@ struct TripDetailView: View {
     @State private var locationProvider: any LocationProviding = OneShotLocationProvider()
 
     var body: some View {
-        ZStack {
+        // Build the committed+optimistic list ONCE per render and thread it through, rather than
+        // recomputing it in the map, strip, popup, and empty-state separately.
+        let shown = displayPhotos
+        // The open photo has left the list (an optimistic photo committed/failed) → dismiss below.
+        let popupMissing = popupPhotoID != nil && !shown.contains { $0.id == popupPhotoID }
+        return ZStack {
             VStack(spacing: 0) {
-                mapSection
-                if !photos.isEmpty {
-                    photoStrip
+                mapSection(shown)
+                // Show the strip when there's anything to show — committed or optimistic — so a
+                // brand-new trip whose first photo is added offline still gets a filmstrip entry.
+                if !shown.isEmpty {
+                    photoStrip(shown)
                 }
             }
 
-            if popupIndex != nil {
+            if let openIndex = shown.firstIndex(where: { $0.id == popupPhotoID }) {
                 PhotoPopupView(
-                    photos: photos,
+                    photos: shown,
+                    // Track the open photo by IDENTITY, not position: when the list reorders (an
+                    // upload commits and sorts into capture-time order) the popup stays on the same
+                    // photo instead of jumping to whatever now sits at the old index.
                     selection: Binding(
-                        get: { min(max(popupIndex ?? 0, 0), photos.count - 1) },
-                        set: { popupIndex = $0 }
+                        get: { shown.firstIndex(where: { $0.id == popupPhotoID }) ?? openIndex },
+                        set: { idx in if shown.indices.contains(idx) { popupPhotoID = shown[idx].id } }
                     ),
                     immersive: $popupImmersive,
                     onClose: { closePopup() },
@@ -86,8 +96,11 @@ struct TripDetailView: View {
             if !popupImmersive {
                 VStack(spacing: 8) {
                     floatingTopBar
-                    if !uploads.isEmpty {
-                        UploadBanner(uploads: uploads,
+                    // Only FAILED uploads get a banner (with Retry). In-progress/waiting uploads
+                    // are shown by their pending map pin + filmstrip thumbnail instead — a progress
+                    // banner would sit stuck on screen for the whole no-service period.
+                    if !failedUploads.isEmpty {
+                        UploadBanner(uploads: failedUploads,
                                      onRetry: { item in Task { await retryUpload(item) } },
                                      onDismiss: { item in dismissUpload(item) })
                             .accessibilityIdentifier("upload-banner")
@@ -102,6 +115,11 @@ struct TripDetailView: View {
         .onChange(of: pickedItem) { _, newItem in
             guard let newItem else { return }
             Task { await stage(newItem) }
+        }
+        // If the open photo leaves the list (an optimistic photo finished uploading / failed), the
+        // popup has nothing valid to show — dismiss it rather than snap to a different photo.
+        .onChange(of: popupMissing) { _, missing in
+            if missing { closePopup() }
         }
         .alert("Photo", isPresented: Binding(
             get: { captureMessage != nil },
@@ -410,7 +428,7 @@ struct TripDetailView: View {
         session.abort(item.uploadId)
     }
 
-    private var mapSection: some View {
+    private func mapSection(_ shown: [Photo]) -> some View {
         MapReader { proxy in
             Map(position: $cameraPosition) {
                 if showRoute, routeCoordinates.count >= 2 {
@@ -422,7 +440,10 @@ struct TripDetailView: View {
                             dash: [2, 10]))
                 }
 
-                ForEach(Array(photos.enumerated()), id: \.element.id) { index, photo in
+                // Committed AND optimistic (staged, not-yet-uploaded) photos render as one list, so
+                // an offline photo is a first-class pin — tappable into the same popup — differing
+                // only by an upload badge.
+                ForEach(Array(shown.enumerated()), id: \.element.id) { index, photo in
                     Annotation(photo.placeName, coordinate: photo.coordinate) {
                         Button {
                             openPopup(at: index)
@@ -430,7 +451,8 @@ struct TripDetailView: View {
                             PinThumbnail(photo: photo)
                         }
                         .buttonStyle(.plain)
-                        .accessibilityLabel(Text(photo.placeName))
+                        .accessibilityLabel(Text(photo.isOptimistic ? "Photo uploading" : photo.placeName))
+                        .accessibilityIdentifier(photo.isOptimistic ? "pending-pin" : "photo-pin")
                         .accessibilityAddTraits(.isButton)
                     }
                 }
@@ -484,7 +506,9 @@ struct TripDetailView: View {
             // requires a hold, so it won't fire on a quick tap or a pan.
             .simultaneousGesture(longPressToPost(proxy))
             .overlay {
-                if photos.isEmpty {
+                // Key on the combined list (committed + optimistic) so a trip whose only photo is an
+                // offline/pending one doesn't show "No photos yet" over its visible pending pin.
+                if shown.isEmpty {
                     ContentUnavailableView(
                         "No photos yet",
                         systemImage: "photo.on.rectangle.angled",
@@ -508,14 +532,14 @@ struct TripDetailView: View {
             }
     }
 
-    private var photoStrip: some View {
+    private func photoStrip(_ shown: [Photo]) -> some View {
         // As the popup pages between photos, keep the open photo's thumbnail centred in the strip
         // (Photos.app filmstrip behaviour). At the first/last photo the ScrollView clamps, so the
         // edge thumbnail simply rests against the end rather than forcing a centre.
         ScrollViewReader { proxy in
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
-                    ForEach(Array(photos.enumerated()), id: \.element.id) { index, photo in
+                    ForEach(Array(shown.enumerated()), id: \.element.id) { index, photo in
                         Button {
                             openPopup(at: index)
                         } label: {
@@ -525,9 +549,11 @@ struct TripDetailView: View {
                             }
                             .frame(width: 92, height: 92)
                             .clipShape(RoundedRectangle(cornerRadius: 12))
+                            .optimisticBadge(if: photo.isOptimistic, size: 20, alignment: .bottomTrailing, inset: 5)
                         }
                         .buttonStyle(.plain)
                         .id(photo.id)
+                        .accessibilityIdentifier(photo.isOptimistic ? "pending-strip-item" : "strip-item")
                     }
                 }
                 .padding(.horizontal)
@@ -535,25 +561,27 @@ struct TripDetailView: View {
             }
             .frame(height: 116)
             .background(.thinMaterial)
-            .onChange(of: popupIndex) { _, newValue in
-                guard let newValue, photos.indices.contains(newValue) else { return }
+            .onChange(of: popupPhotoID) { _, newValue in
+                guard let newValue else { return }
                 withAnimation(.easeInOut(duration: 0.25)) {
-                    proxy.scrollTo(photos[newValue].id, anchor: .center)
+                    proxy.scrollTo(newValue, anchor: .center)   // strip cells are .id(photo.id)
                 }
             }
         }
     }
 
     private func openPopup(at index: Int) {
+        let shown = displayPhotos
+        guard shown.indices.contains(index) else { return }
         popupImmersive = false
-        withAnimation(.easeIn(duration: 0.2)) { popupIndex = index }
+        withAnimation(.easeIn(duration: 0.2)) { popupPhotoID = shown[index].id }
     }
 
     /// Dismiss the popup. ALWAYS clear `popupImmersive` here too — otherwise dismissing from the
     /// black immersive view leaves the map's floating title bar hidden until the next open.
     private func closePopup() {
         withAnimation(.easeOut(duration: 0.2)) {
-            popupIndex = nil
+            popupPhotoID = nil
             popupImmersive = false
         }
     }
@@ -561,6 +589,19 @@ struct TripDetailView: View {
     private var routeCoordinates: [CLLocationCoordinate2D] {
         photos.map(\.coordinate)
     }
+
+    /// The single list the map, filmstrip, and popup all render: committed photos plus optimistic
+    /// (staged, not-yet-uploaded) ones, so an offline photo behaves exactly like a posted one.
+    private var displayPhotos: [Photo] {
+        DisplayPhotos.build(committed: photos, pending: uploads)
+    }
+
+    /// Only genuinely failed uploads get the banner; waiting/in-progress ones are shown by their
+    /// optimistic pin + filmstrip thumbnail instead.
+    private var failedUploads: [UploadQueueItem] {
+        uploads.filter { $0.stage == .failed }
+    }
+
 }
 
 private extension Photo {
@@ -674,7 +715,9 @@ private struct UploadBanner: View {
     }
 }
 
-/// Circular thumbnail used as a map annotation marker.
+/// Circular thumbnail used as a map annotation marker. Renders committed (server) and optimistic
+/// (local `file://`) photos identically — `CachedImage`/`ImageLoader` resolve both — and overlays an
+/// upload badge while the photo is still optimistic.
 private struct PinThumbnail: View {
     let photo: Photo
 
@@ -686,6 +729,33 @@ private struct PinThumbnail: View {
         .frame(width: 40, height: 40)
         .clipShape(Circle())
         .overlay(Circle().stroke(.white, lineWidth: 2))
+        .optimisticBadge(if: photo.isOptimistic, size: 16, alignment: .bottomTrailing, inset: 1)
         .shadow(radius: 2)
+    }
+}
+
+/// The "uploading" marker shown on an optimistic photo (map pin, filmstrip, popup) — the only visual
+/// difference from a posted photo.
+struct OptimisticUploadBadge: View {
+    var size: CGFloat = 16
+
+    var body: some View {
+        Image(systemName: "arrow.up.circle.fill")
+            .font(.system(size: size))
+            .symbolRenderingMode(.palette)
+            .foregroundStyle(.white, .blue)
+            .accessibilityHidden(true)
+    }
+}
+
+extension View {
+    /// The single optimistic-photo treatment used on the map pin, filmstrip, and popup: an upload
+    /// badge in `alignment` plus an optional dim — so the look can't drift between the three sites.
+    @ViewBuilder
+    func optimisticBadge(if show: Bool, size: CGFloat, alignment: Alignment, inset: CGFloat, dim: Bool = true) -> some View {
+        opacity(show && dim ? 0.9 : 1)
+            .overlay(alignment: alignment) {
+                if show { OptimisticUploadBadge(size: size).padding(inset) }
+            }
     }
 }

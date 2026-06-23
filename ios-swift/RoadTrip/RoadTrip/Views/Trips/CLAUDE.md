@@ -21,7 +21,8 @@ delete UX and the trip-route map rendering.
   `ArchivedTripsView`). Add-photo is a `Menu` (Take Photo / Choose from Library). The floating
   bar **hides whenever the photo popup is full-black immersive** (`PhotoPopupView`'s `immersive`
   binds to `popupImmersive`); the bottom photo strip **centres the open photo's thumbnail** as the
-  popup pages (`ScrollViewReader` keyed on `popupIndex`).
+  popup pages (`ScrollViewReader` scrolls to `popupPhotoID`, the open photo's id — selection is
+  tracked by identity, not position, so a list reorder on commit doesn't jump the popup).
 - **`RouteCurve.curved(through:pointsPerSegment:) -> [CLLocationCoordinate2D]`** — pure
   (Functional Core, no I/O). Centripetal Catmull-Rom (alpha 0.5) smoothing of the route line.
   Passthrough when `< 3` points; never emits NaN/infinite coords (degenerate segments fall back
@@ -52,6 +53,15 @@ delete UX and the trip-route map rendering.
   swipe-down/backdrop dismiss; long-press → Move Pin / Delete. **All dismissal goes through
   `closePopup()`**, which MUST reset `popupImmersive` too — else dismissing from immersive leaves
   the floating bar hidden until the next open.
+- **Optimistic photos (poor-service capture)** — the map, filmstrip, and popup all render
+  `displayPhotos` = `DisplayPhotos.build(committed: photos, pending: uploads)`: committed photos PLUS
+  a synthesized `Photo` per in-flight upload (negative id → `photo.isOptimistic`, image URL pointed
+  at the local staged `file://`). So a photo added with no service is a first-class pin/thumbnail —
+  tappable into the same popup, only an `OptimisticUploadBadge` differs — and is replaced by its
+  committed twin on commit (de-duped by `uploadId`). `CachedImage`/`ImageLoader` resolve `file://`
+  URLs locally (downsampled), so there's no per-view image branching. Move/Delete are hidden on
+  optimistic photos (server actions). The upload **banner is failure-only** now — waiting/in-progress
+  uploads are shown by the pin/thumbnail, not a (would-be-stuck) progress banner.
 
 ## Invariants
 - My Trips shows active trips only; `ArchivedTripsView` shows archived only — both filter on

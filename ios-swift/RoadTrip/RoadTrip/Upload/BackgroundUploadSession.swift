@@ -1,5 +1,6 @@
 import Foundation
 import GRDB
+import Network
 
 /// The single background-`URLSession` uploader (design Phase 6, AC3.1/3.2). One session per
 /// process, identified by `backgroundIdentifier`, so block uploads keep running after the app
@@ -48,9 +49,30 @@ final class BackgroundUploadSession: NSObject, @unchecked Sendable {
     private let fileWriter: UploadBlockFileWriter
     private let configuration: URLSessionConfiguration
 
+    /// How long a "waiting for service" upload sits before a self-retry, as a safety net for the
+    /// case where the network path is `.satisfied` but a request still fails (server down, timeout,
+    /// captive portal) — there's no path *transition* to trigger reconcile in that case.
+    static let waitRetryDelay: TimeInterval = 20
+
     private let lock = NSLock()
     private var backgroundCompletionHandler: HandlerBox?
     private var attempts: [String: Int] = [:]
+    /// uploadIds with a `beginUpload` in flight — so a concurrent `reconcile()` (launch + a network
+    /// path-change firing nearly together) can't start the same upload twice.
+    private var inFlightStarts: Set<UUID> = []
+    /// uploadIds with a `commit` in flight — the block-completion path and a reconcile `.commit`
+    /// (now driven more often by the connectivity watch / wait-retry) must not commit the same
+    /// upload twice (double commit + double revalidate + a delete race).
+    private var inFlightCommits: Set<UUID> = []
+    /// At most one pending wait-retry timer at a time.
+    private var waitRetryScheduled = false
+
+    // Connectivity watch (lock-guarded). `lastPathSatisfied` starts true so launching online is a
+    // no-op (launch already runs `reconcile()`); launching offline then regaining service fires it.
+    private let pathMonitor = NWPathMonitor()
+    private let monitorQueue = DispatchQueue(label: "\(BackgroundUploadSession.backgroundIdentifier).netmonitor")
+    private var monitorStarted = false
+    private var lastPathSatisfied = true
 
     /// Carries UIKit's non-`Sendable` completion handler across the delegate-queue → main-thread
     /// hop. We only ever call it, so `@unchecked Sendable` is safe.
@@ -115,8 +137,34 @@ final class BackgroundUploadSession: NSObject, @unchecked Sendable {
 
     /// Materializes the `URLSession` so it re-registers as the delegate for the background
     /// identifier — must run on every launch (including a background relaunch) so the system
-    /// can deliver outstanding events to us. Cheap and idempotent.
-    func activate() { _ = session }
+    /// can deliver outstanding events to us. Cheap and idempotent. Also starts watching for
+    /// connectivity so uploads that waited out a no-service area retry the moment service returns.
+    func activate() {
+        _ = session
+        startNetworkMonitoring()
+    }
+
+    /// When the network transitions from unavailable → available, retry everything that was
+    /// waiting (a `.staged`/in-flight item with no live tasks re-plans to `.start`/`.resume`).
+    /// Started lazily from `activate()` so unit tests that construct the session directly aren't
+    /// perturbed by real network state.
+    private func startNetworkMonitoring() {
+        lock.lock()
+        if monitorStarted { lock.unlock(); return }
+        monitorStarted = true
+        lock.unlock()
+
+        pathMonitor.pathUpdateHandler = { [weak self] path in
+            guard let self else { return }
+            let satisfied = path.status == .satisfied
+            self.lock.lock()
+            let becameReachable = satisfied && !self.lastPathSatisfied
+            self.lastPathSatisfied = satisfied
+            self.lock.unlock()
+            if becameReachable { self.reconcile() }
+        }
+        pathMonitor.start(queue: monitorQueue)
+    }
 
     /// Reconcile persisted uploads with the system's live tasks on launch — the force-quit
     /// resume path (AC3.2). Safe to call every cold start.
@@ -161,6 +209,11 @@ final class BackgroundUploadSession: NSObject, @unchecked Sendable {
     /// Registers the upload (idempotent `request-upload`), persists the plan, and enqueues
     /// every block. Used for a fresh start and for a reconciler `.start`.
     private func beginUpload(_ uploadId: UUID) async {
+        // Claim the start so two concurrent reconciles (or a stage + a path-change reconcile) can't
+        // both request-upload + enqueue the same upload. Released when this call returns.
+        guard claimStart(uploadId) else { return }
+        defer { releaseStart(uploadId) }
+
         guard let item = try? await store.fetch(uploadId) else { return }
         guard let token = token(for: item.tripId) else {
             try? await store.setFailed(uploadId, message: "No upload token for this trip"); return
@@ -174,7 +227,7 @@ final class BackgroundUploadSession: NSObject, @unchecked Sendable {
             guard total > 0 else { try? await store.setFailed(uploadId, message: "The photo file is empty."); return }
             try enqueueBlocks(item: planned, indices: Array(0..<total), sasUrl: response.sasUrl)
         } catch {
-            try? await store.setFailed(uploadId, message: friendlyError(error))
+            await handleFailure(uploadId, error)
         }
     }
 
@@ -191,7 +244,7 @@ final class BackgroundUploadSession: NSObject, @unchecked Sendable {
             guard let refreshed = try? await store.fetch(uploadId) else { return }
             try enqueueBlocks(item: refreshed, indices: indices, sasUrl: response.sasUrl)
         } catch {
-            try? await store.setFailed(uploadId, message: friendlyError(error))
+            await handleFailure(uploadId, error)
         }
     }
 
@@ -275,6 +328,10 @@ final class BackgroundUploadSession: NSObject, @unchecked Sendable {
     // MARK: - Commit
 
     private func commit(_ item: UploadQueueItem) async {
+        // Only one commit run per upload at a time (block-completion vs a reconcile `.commit`).
+        guard claimCommitRun(item.uploadId) else { return }
+        defer { releaseCommitRun(item.uploadId) }
+
         guard let token = token(for: item.tripId), let photoId = item.serverPhotoId else {
             try? await store.setFailed(item.uploadId, message: "No upload token for this trip"); return
         }
@@ -289,7 +346,7 @@ final class BackgroundUploadSession: NSObject, @unchecked Sendable {
             removeStagedOriginal(item)
             resetAttempts(item.uploadId)
         } catch {
-            try? await store.setFailed(item.uploadId, message: friendlyError(error))
+            await handleFailure(item.uploadId, error)
         }
     }
 
@@ -349,6 +406,56 @@ final class BackgroundUploadSession: NSObject, @unchecked Sendable {
 
     private func resetAttempts(_ uploadId: UUID) {
         lock.lock(); attempts = attempts.filter { !$0.key.hasPrefix(uploadId.uuidString) }; lock.unlock()
+    }
+
+    /// Apply the offline policy to a thrown error. A transport-level failure (no service / timeout)
+    /// leaves the upload in its current stage so a later `reconcile()` — triggered when connectivity
+    /// returns — retries it; anything else marks it `.failed` so the banner can surface Retry.
+    private func handleFailure(_ uploadId: UUID, _ error: Error) async {
+        switch UploadFailurePolicy.decide(error, message: friendlyError(error)) {
+        case .waitForNetwork: scheduleWaitRetry()   // reconcile() also retries on a path-change
+        case .fail(let message): try? await store.setFailed(uploadId, message: message)
+        }
+    }
+
+    /// Schedules a single delayed `reconcile()` so an upload that's waiting on connectivity retries
+    /// even when there's no network path *transition* to fire the monitor (path already `.satisfied`
+    /// but the request failed: server down, timeout, captive portal). Re-arms itself on each failure
+    /// (reconcile → beginUpload → fail → schedule again), so it polls at `waitRetryDelay` only while
+    /// something is actually waiting, then stops once it succeeds or fails permanently.
+    private func scheduleWaitRetry() {
+        guard armWaitRetry() else { return }   // at most one timer in flight
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(BackgroundUploadSession.waitRetryDelay * 1_000_000_000))
+            guard let self else { return }
+            self.clearWaitRetry()
+            self.reconcile()
+        }
+    }
+
+    // Synchronous lock helpers (the lock is never held across an await — these mirror bumpAttempt).
+    private func claimStart(_ uploadId: UUID) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        return inFlightStarts.insert(uploadId).inserted
+    }
+    private func releaseStart(_ uploadId: UUID) {
+        lock.lock(); inFlightStarts.remove(uploadId); lock.unlock()
+    }
+    private func claimCommitRun(_ uploadId: UUID) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        return inFlightCommits.insert(uploadId).inserted
+    }
+    private func releaseCommitRun(_ uploadId: UUID) {
+        lock.lock(); inFlightCommits.remove(uploadId); lock.unlock()
+    }
+    private func armWaitRetry() -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        if waitRetryScheduled { return false }
+        waitRetryScheduled = true
+        return true
+    }
+    private func clearWaitRetry() {
+        lock.lock(); waitRetryScheduled = false; lock.unlock()
     }
 
     private func friendlyError(_ error: Error) -> String {

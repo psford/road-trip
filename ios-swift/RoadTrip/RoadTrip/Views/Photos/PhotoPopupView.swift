@@ -135,6 +135,8 @@ struct PhotoPopupView: View {
             }
             .clipShape(RoundedRectangle(cornerRadius: immersive ? 0 : 16))
             .shadow(radius: immersive ? 0 : 12)
+            // The only visual cue that this photo isn't posted yet (no dim — it's the focused view).
+            .optimisticBadge(if: photo.isOptimistic, size: 28, alignment: .topTrailing, inset: 12, dim: false)
             .contentShape(Rectangle())
             .onTapGesture { withAnimation(.easeInOut(duration: 0.25)) { immersive.toggle() } }
             .accessibilityIdentifier("popup-photo")
@@ -169,7 +171,9 @@ struct PhotoPopupView: View {
     /// they live on the photo's context menu, the way Photos.app surfaces per-item actions.
     @ViewBuilder
     private func applyMenu(to view: some View, photo: Photo) -> some View {
-        if hasMenu {
+        // No Move/Delete on an optimistic photo — it isn't on the server yet (those actions are
+        // server calls). They become available once it commits.
+        if hasMenu && !photo.isOptimistic {
             view.contextMenu {
                 if let onMovePin {
                     Button { onMovePin(photo) } label: { Label("Move Pin", systemImage: "mappin.and.ellipse") }

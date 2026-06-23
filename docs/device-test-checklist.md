@@ -49,7 +49,13 @@ grace are gone. The banner (ValueObservation) and Retry still surface progress/f
       Already-accepted blocks are NOT re-uploaded (check `completedBlockIndices` persistence).
 - [ ] **Airplane mode** on mid-upload → re-enable → queued upload resumes and commits.
 - [ ] Long-queued upload (>1.75h, or temporarily lower `SASRefresher.refreshAfterSeconds`) → SAS refresh path runs on resume.
-- [ ] No half-photos: a pin appears **only** after commit (AC3.6) — interrupting before commit never shows a partial pin.
+
+## 4a. Poor-service capture — optimistic pin + deferred upload (the headline B.2 ask)
+- [ ] **No service from the start** (airplane mode / dead zone) → add a GPS photo → an **optimistic pin + filmstrip thumbnail appear immediately** (translucent, upload badge); NO "couldn't reach server" failure and NO stuck progress banner.
+- [ ] **Tapping the optimistic photo** (pin or filmstrip) opens it in the popup like a posted one — the real photo shows (loaded from the local file), swipes among the others; only the upload badge differs. Move Pin / Delete are hidden until it commits.
+- [ ] **Re-enable service** (or drive back into coverage) → the pending upload **starts on its own** (`NWPathMonitor` → `reconcile()`), commits, and the optimistic pin is replaced by the committed pin (no duplicate).
+- [ ] **Force-quit while still offline** → relaunch (still offline) → optimistic pin is still there; regain service → it uploads.
+- [ ] A genuine failure (bad token, server 4xx/5xx) still shows the **Retry** banner (only no-connectivity waits).
 
 > Note: to exercise multi-block paths, a few-MB photo is usually a single 4 MB block. Use a
 > large/burst photo (or temporarily shrink `maxBlockSizeBytes` server-side) to get ≥2 blocks

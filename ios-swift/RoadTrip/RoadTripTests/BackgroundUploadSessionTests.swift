@@ -19,6 +19,60 @@ final class BackgroundUploadSessionTests: XCTestCase {
         withExtendedLifetime(session) {}
     }
 
+    /// Poor-service support: when the very first step (`request-upload` to our server) can't reach
+    /// the network, the upload must NOT be marked `.failed` — it stays `.staged` so a later
+    /// `reconcile()` (e.g. when service returns) retries it. Driven by pointing the API at an
+    /// unreachable host so `send` throws `.networkUnavailable` for real.
+    func testOfflineRequestUploadLeavesItemStagedNotFailed() async throws {
+        let db = try AppDatabase.makeInMemory()
+        let keychain = KeychainStore(service: "com.psford.roadtripmap.native.tests.offline.\(UUID().uuidString)")
+
+        let tripId = UUID()
+        try await db.dbQueue.write { d in
+            try Trip(id: tripId, name: "T", description: nil, slug: nil, photoCount: 0,
+                     createdAt: Date(timeIntervalSince1970: 1), cachedAt: Date(timeIntervalSince1970: 1)).insert(d)
+        }
+        try keychain.setToken(UUID(), kind: .secret, tripId: tripId)
+
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let stagedURL = dir.appendingPathComponent("staged.jpg")
+        try Data("jpeg".utf8).write(to: stagedURL)
+
+        let uploadId = UUID()
+        try await db.dbQueue.write { d in
+            try UploadQueueItem(
+                uploadId: uploadId, tripId: tripId, localFilePath: stagedURL.path,
+                filename: "IMG.jpg", contentType: "image/jpeg", sizeBytes: 4,
+                exifLat: 44, exifLon: -71, takenAt: nil, stage: .staged, bytesUploaded: 0, blockIds: [],
+                blockSizeBytes: nil, serverPhotoId: nil, completedBlockIndices: [],
+                sasUrl: nil, displaySasUrl: nil, thumbSasUrl: nil, blobPath: nil, sasIssuedAt: nil,
+                errorMessage: nil, createdAt: Date(timeIntervalSince1970: 1),
+                updatedAt: Date(timeIntervalSince1970: 1)).insert(d)
+        }
+
+        // Unreachable host → `request-upload` throws `.networkUnavailable` (connection refused).
+        let offlineAPI = RoadTripAPI(baseURL: URL(string: "http://127.0.0.1:1")!)
+        let session = BackgroundUploadSession(database: db, keychain: keychain, api: offlineAPI,
+                                              configuration: .ephemeral,
+                                              fileWriter: UploadBlockFileWriter(baseDirectory: dir.appendingPathComponent("blocks")))
+        session.start(uploadId)
+
+        // Give the fire-and-forget begin/request a window to run and fail. Bail early if it ever
+        // flips to `.failed` (the old behaviour) so the test fails fast and meaningfully.
+        let deadline = Date().addingTimeInterval(5)
+        while Date() < deadline {
+            let stage = try await db.dbQueue.read { try UploadQueueItem.fetchOne($0, key: uploadId)?.stage }
+            if stage == .failed { break }
+            try await Task.sleep(nanoseconds: 150_000_000)
+        }
+
+        let finalStage = try await db.dbQueue.read { try UploadQueueItem.fetchOne($0, key: uploadId)?.stage }
+        XCTAssertEqual(finalStage, .staged, "an offline request-upload must wait (stay staged), not fail")
+        withExtendedLifetime(session) {}
+    }
+
     func testAbortRemovesQueueRowStagedFileAndBlockFiles() async throws {
         let db = try AppDatabase.makeInMemory()
         let keychain = KeychainStore(service: "com.psford.roadtripmap.native.tests.abort.\(UUID().uuidString)")
