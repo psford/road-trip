@@ -1,5 +1,6 @@
 import Foundation
 import GRDB
+import Network
 
 /// The single background-`URLSession` uploader (design Phase 6, AC3.1/3.2). One session per
 /// process, identified by `backgroundIdentifier`, so block uploads keep running after the app
@@ -51,6 +52,13 @@ final class BackgroundUploadSession: NSObject, @unchecked Sendable {
     private let lock = NSLock()
     private var backgroundCompletionHandler: HandlerBox?
     private var attempts: [String: Int] = [:]
+
+    // Connectivity watch (lock-guarded). `lastPathSatisfied` starts true so launching online is a
+    // no-op (launch already runs `reconcile()`); launching offline then regaining service fires it.
+    private let pathMonitor = NWPathMonitor()
+    private let monitorQueue = DispatchQueue(label: "\(BackgroundUploadSession.backgroundIdentifier).netmonitor")
+    private var monitorStarted = false
+    private var lastPathSatisfied = true
 
     /// Carries UIKit's non-`Sendable` completion handler across the delegate-queue → main-thread
     /// hop. We only ever call it, so `@unchecked Sendable` is safe.
@@ -115,8 +123,34 @@ final class BackgroundUploadSession: NSObject, @unchecked Sendable {
 
     /// Materializes the `URLSession` so it re-registers as the delegate for the background
     /// identifier — must run on every launch (including a background relaunch) so the system
-    /// can deliver outstanding events to us. Cheap and idempotent.
-    func activate() { _ = session }
+    /// can deliver outstanding events to us. Cheap and idempotent. Also starts watching for
+    /// connectivity so uploads that waited out a no-service area retry the moment service returns.
+    func activate() {
+        _ = session
+        startNetworkMonitoring()
+    }
+
+    /// When the network transitions from unavailable → available, retry everything that was
+    /// waiting (a `.staged`/in-flight item with no live tasks re-plans to `.start`/`.resume`).
+    /// Started lazily from `activate()` so unit tests that construct the session directly aren't
+    /// perturbed by real network state.
+    private func startNetworkMonitoring() {
+        lock.lock()
+        if monitorStarted { lock.unlock(); return }
+        monitorStarted = true
+        lock.unlock()
+
+        pathMonitor.pathUpdateHandler = { [weak self] path in
+            guard let self else { return }
+            let satisfied = path.status == .satisfied
+            self.lock.lock()
+            let becameReachable = satisfied && !self.lastPathSatisfied
+            self.lastPathSatisfied = satisfied
+            self.lock.unlock()
+            if becameReachable { self.reconcile() }
+        }
+        pathMonitor.start(queue: monitorQueue)
+    }
 
     /// Reconcile persisted uploads with the system's live tasks on launch — the force-quit
     /// resume path (AC3.2). Safe to call every cold start.
@@ -174,7 +208,7 @@ final class BackgroundUploadSession: NSObject, @unchecked Sendable {
             guard total > 0 else { try? await store.setFailed(uploadId, message: "The photo file is empty."); return }
             try enqueueBlocks(item: planned, indices: Array(0..<total), sasUrl: response.sasUrl)
         } catch {
-            try? await store.setFailed(uploadId, message: friendlyError(error))
+            await handleFailure(uploadId, error)
         }
     }
 
@@ -191,7 +225,7 @@ final class BackgroundUploadSession: NSObject, @unchecked Sendable {
             guard let refreshed = try? await store.fetch(uploadId) else { return }
             try enqueueBlocks(item: refreshed, indices: indices, sasUrl: response.sasUrl)
         } catch {
-            try? await store.setFailed(uploadId, message: friendlyError(error))
+            await handleFailure(uploadId, error)
         }
     }
 
@@ -289,7 +323,7 @@ final class BackgroundUploadSession: NSObject, @unchecked Sendable {
             removeStagedOriginal(item)
             resetAttempts(item.uploadId)
         } catch {
-            try? await store.setFailed(item.uploadId, message: friendlyError(error))
+            await handleFailure(item.uploadId, error)
         }
     }
 
@@ -349,6 +383,16 @@ final class BackgroundUploadSession: NSObject, @unchecked Sendable {
 
     private func resetAttempts(_ uploadId: UUID) {
         lock.lock(); attempts = attempts.filter { !$0.key.hasPrefix(uploadId.uuidString) }; lock.unlock()
+    }
+
+    /// Apply the offline policy to a thrown error. A transport-level failure (no service / timeout)
+    /// leaves the upload in its current stage so a later `reconcile()` — triggered when connectivity
+    /// returns — retries it; anything else marks it `.failed` so the banner can surface Retry.
+    private func handleFailure(_ uploadId: UUID, _ error: Error) async {
+        switch UploadFailurePolicy.decide(error, message: friendlyError(error)) {
+        case .waitForNetwork: break
+        case .fail(let message): try? await store.setFailed(uploadId, message: message)
+        }
     }
 
     private func friendlyError(_ error: Error) -> String {
