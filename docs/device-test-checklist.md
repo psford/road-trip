@@ -15,9 +15,10 @@ the tactile pin drag, or TestFlight — so those wait for here.
   phone, trust the dev cert under Settings → General → VPN & Device Management.
 - Azure **dev slot** provisioned (design AC7) — until then, point at prod or a local backend
   reachable from the device.
-- Build/install the **Release-TestFlight** configuration (targets the dev slot via the
-  `DEVSLOT` flag → `APIEnvironment.defaultBaseURL`). For ad-hoc, the `API_BASE_URL` env var
-  overrides on the simulator (not on-device).
+- Backend targeting: **TestFlight / App Store archives use the `Release` config → PROD**. The
+  **`Release-TestFlight`** config (`DEVSLOT` flag → `APIEnvironment.defaultBaseURL`) is an opt-in
+  build for testing against the **dev slot**. Debug device runs hit the dev slot via the scheme's
+  `API_BASE_URL` env; on the simulator that env var overrides ad-hoc.
 
 ---
 
@@ -87,7 +88,7 @@ grace are gone. The banner (ValueObservation) and Retry still surface progress/f
 ## 8. TestFlight — Phase 8 (NOT BUILT YET)
 - [ ] App Store Connect record for `com.psford.roadtripmap.native`.
 - [ ] `PrivacyInfo.xcprivacy` (photo library, network, no tracking, no third-party SDKs).
-- [ ] Archive **Release-TestFlight** → upload via `xcrun altool`/`notarytool` → processed without rejection.
+- [ ] Archive **Release** (→ PROD) → upload via `xcrun altool`/`notarytool` → processed without rejection.
 - [ ] Patrick + dad enrolled as internal testers; build installs on both iPhones.
 - [ ] End-to-end on device: create trip → upload real photo → pin on map → open share link in Safari (the .NET view page still serves).
 
