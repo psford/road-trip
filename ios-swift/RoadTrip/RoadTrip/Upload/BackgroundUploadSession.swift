@@ -49,9 +49,19 @@ final class BackgroundUploadSession: NSObject, @unchecked Sendable {
     private let fileWriter: UploadBlockFileWriter
     private let configuration: URLSessionConfiguration
 
+    /// How long a "waiting for service" upload sits before a self-retry, as a safety net for the
+    /// case where the network path is `.satisfied` but a request still fails (server down, timeout,
+    /// captive portal) — there's no path *transition* to trigger reconcile in that case.
+    static let waitRetryDelay: TimeInterval = 20
+
     private let lock = NSLock()
     private var backgroundCompletionHandler: HandlerBox?
     private var attempts: [String: Int] = [:]
+    /// uploadIds with a `beginUpload` in flight — so a concurrent `reconcile()` (launch + a network
+    /// path-change firing nearly together) can't start the same upload twice.
+    private var inFlightStarts: Set<UUID> = []
+    /// At most one pending wait-retry timer at a time.
+    private var waitRetryScheduled = false
 
     // Connectivity watch (lock-guarded). `lastPathSatisfied` starts true so launching online is a
     // no-op (launch already runs `reconcile()`); launching offline then regaining service fires it.
@@ -195,6 +205,11 @@ final class BackgroundUploadSession: NSObject, @unchecked Sendable {
     /// Registers the upload (idempotent `request-upload`), persists the plan, and enqueues
     /// every block. Used for a fresh start and for a reconciler `.start`.
     private func beginUpload(_ uploadId: UUID) async {
+        // Claim the start so two concurrent reconciles (or a stage + a path-change reconcile) can't
+        // both request-upload + enqueue the same upload. Released when this call returns.
+        guard claimStart(uploadId) else { return }
+        defer { releaseStart(uploadId) }
+
         guard let item = try? await store.fetch(uploadId) else { return }
         guard let token = token(for: item.tripId) else {
             try? await store.setFailed(uploadId, message: "No upload token for this trip"); return
@@ -390,9 +405,42 @@ final class BackgroundUploadSession: NSObject, @unchecked Sendable {
     /// returns — retries it; anything else marks it `.failed` so the banner can surface Retry.
     private func handleFailure(_ uploadId: UUID, _ error: Error) async {
         switch UploadFailurePolicy.decide(error, message: friendlyError(error)) {
-        case .waitForNetwork: break
+        case .waitForNetwork: scheduleWaitRetry()   // reconcile() also retries on a path-change
         case .fail(let message): try? await store.setFailed(uploadId, message: message)
         }
+    }
+
+    /// Schedules a single delayed `reconcile()` so an upload that's waiting on connectivity retries
+    /// even when there's no network path *transition* to fire the monitor (path already `.satisfied`
+    /// but the request failed: server down, timeout, captive portal). Re-arms itself on each failure
+    /// (reconcile → beginUpload → fail → schedule again), so it polls at `waitRetryDelay` only while
+    /// something is actually waiting, then stops once it succeeds or fails permanently.
+    private func scheduleWaitRetry() {
+        guard armWaitRetry() else { return }   // at most one timer in flight
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(BackgroundUploadSession.waitRetryDelay * 1_000_000_000))
+            guard let self else { return }
+            self.clearWaitRetry()
+            self.reconcile()
+        }
+    }
+
+    // Synchronous lock helpers (the lock is never held across an await — these mirror bumpAttempt).
+    private func claimStart(_ uploadId: UUID) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        return inFlightStarts.insert(uploadId).inserted
+    }
+    private func releaseStart(_ uploadId: UUID) {
+        lock.lock(); inFlightStarts.remove(uploadId); lock.unlock()
+    }
+    private func armWaitRetry() -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        if waitRetryScheduled { return false }
+        waitRetryScheduled = true
+        return true
+    }
+    private func clearWaitRetry() {
+        lock.lock(); waitRetryScheduled = false; lock.unlock()
     }
 
     private func friendlyError(_ error: Error) -> String {

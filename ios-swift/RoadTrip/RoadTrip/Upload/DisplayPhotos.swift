@@ -13,14 +13,22 @@ extension Photo {
 /// (tap, swipe), differing only by an upload marker. Pure (no map, no disk).
 enum DisplayPhotos {
     static func build(committed: [Photo], pending: [UploadQueueItem]) -> [Photo] {
+        // Server-hydrated photos carry uploadId: nil, so the optimistic→committed hand-off can't
+        // de-dup by uploadId in practice. Correlate by LOCATION instead: during commit the committed
+        // twin sits at the same coordinate as the optimistic. Rounded to ~0.1m to tolerate any
+        // server-side coordinate rounding; two *distinct* photos at the same micro-degree is
+        // implausible (GPS jitter / continuous map taps never collide to 6 decimals).
         let committedUploadIds = Set(committed.compactMap(\.uploadId))
+        let committedCoords = Set(committed.map { CoordKey(lat: $0.lat, lng: $0.lng) })
         let optimistic: [Photo] = pending.compactMap { item in
             guard let lat = item.exifLat, let lng = item.exifLon else { return nil }
             switch item.stage {
             case .done, .failed: return nil   // committed → real pin; failed → banner, not a pin
             default: break
             }
-            guard !committedUploadIds.contains(item.uploadId) else { return nil }   // de-dup hand-off
+            // De-dup the commit hand-off (by uploadId if present, else by coordinate).
+            guard !committedUploadIds.contains(item.uploadId) else { return nil }
+            guard !committedCoords.contains(CoordKey(lat: lat, lng: lng)) else { return nil }
             let fileURL = URL(fileURLWithPath: item.localFilePath).absoluteString    // file://…
             return Photo(
                 id: item.uploadId.optimisticPhotoID,
@@ -31,6 +39,17 @@ enum DisplayPhotos {
                 takenAt: item.takenAt, uploadId: item.uploadId)
         }
         return committed + optimistic
+    }
+}
+
+/// A location rounded to ~0.1m (6 decimal degrees) so an optimistic photo and its committed twin
+/// hash equal despite any server-side rounding.
+private struct CoordKey: Hashable {
+    let lat: Int
+    let lng: Int
+    init(lat: Double, lng: Double) {
+        self.lat = Int((lat * 1_000_000).rounded())
+        self.lng = Int((lng * 1_000_000).rounded())
     }
 }
 

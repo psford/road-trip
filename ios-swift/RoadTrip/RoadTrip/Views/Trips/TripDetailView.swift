@@ -22,7 +22,7 @@ struct TripDetailView: View {
 
     @State private var photos: [Photo] = []
     @State private var cameraPosition: MapCameraPosition = .automatic
-    @State private var popupIndex: Int?   // index into `photos`; nil = closed
+    @State private var popupPhotoID: Int?   // id of the open photo (stable across list changes); nil = closed
     @State private var popupImmersive = false   // popup tapped into full-black mode → hide the floating bar
     @State private var pickedItem: PhotosPickerItem?
     @State private var isStaging = false
@@ -50,13 +50,16 @@ struct TripDetailView: View {
                 }
             }
 
-            if popupIndex != nil {
+            if let openIndex = openPopupIndex {
                 let shown = displayPhotos
                 PhotoPopupView(
                     photos: shown,
+                    // Track the open photo by IDENTITY, not position: when the list reorders (an
+                    // upload commits and sorts into capture-time order) the popup stays on the same
+                    // photo instead of jumping to whatever now sits at the old index.
                     selection: Binding(
-                        get: { min(max(popupIndex ?? 0, 0), max(shown.count - 1, 0)) },
-                        set: { popupIndex = $0 }
+                        get: { shown.firstIndex(where: { $0.id == popupPhotoID }) ?? openIndex },
+                        set: { idx in if shown.indices.contains(idx) { popupPhotoID = shown[idx].id } }
                     ),
                     immersive: $popupImmersive,
                     onClose: { closePopup() },
@@ -108,6 +111,11 @@ struct TripDetailView: View {
         .onChange(of: pickedItem) { _, newItem in
             guard let newItem else { return }
             Task { await stage(newItem) }
+        }
+        // If the open photo leaves the list (an optimistic photo finished uploading / failed), the
+        // popup has nothing valid to show — dismiss it rather than snap to a different photo.
+        .onChange(of: openPopupIndex) { _, idx in
+            if popupPhotoID != nil && idx == nil { closePopup() }
         }
         .alert("Photo", isPresented: Binding(
             get: { captureMessage != nil },
@@ -494,7 +502,9 @@ struct TripDetailView: View {
             // requires a hold, so it won't fire on a quick tap or a pan.
             .simultaneousGesture(longPressToPost(proxy))
             .overlay {
-                if photos.isEmpty {
+                // Key on displayPhotos (committed + optimistic) so a trip whose only photo is an
+                // offline/pending one doesn't show "No photos yet" over its visible pending pin.
+                if displayPhotos.isEmpty {
                     ContentUnavailableView(
                         "No photos yet",
                         systemImage: "photo.on.rectangle.angled",
@@ -550,25 +560,27 @@ struct TripDetailView: View {
             }
             .frame(height: 116)
             .background(.thinMaterial)
-            .onChange(of: popupIndex) { _, newValue in
-                guard let newValue, photos.indices.contains(newValue) else { return }
+            .onChange(of: popupPhotoID) { _, newValue in
+                guard let newValue else { return }
                 withAnimation(.easeInOut(duration: 0.25)) {
-                    proxy.scrollTo(photos[newValue].id, anchor: .center)
+                    proxy.scrollTo(newValue, anchor: .center)   // strip cells are .id(photo.id)
                 }
             }
         }
     }
 
     private func openPopup(at index: Int) {
+        let shown = displayPhotos
+        guard shown.indices.contains(index) else { return }
         popupImmersive = false
-        withAnimation(.easeIn(duration: 0.2)) { popupIndex = index }
+        withAnimation(.easeIn(duration: 0.2)) { popupPhotoID = shown[index].id }
     }
 
     /// Dismiss the popup. ALWAYS clear `popupImmersive` here too — otherwise dismissing from the
     /// black immersive view leaves the map's floating title bar hidden until the next open.
     private func closePopup() {
         withAnimation(.easeOut(duration: 0.2)) {
-            popupIndex = nil
+            popupPhotoID = nil
             popupImmersive = false
         }
     }
@@ -587,6 +599,14 @@ struct TripDetailView: View {
     /// optimistic pin + filmstrip thumbnail instead.
     private var failedUploads: [UploadQueueItem] {
         uploads.filter { $0.stage == .failed }
+    }
+
+    /// The index of the open photo in `displayPhotos`, resolved by id. `nil` when closed, or when
+    /// the open photo has left the list (an optimistic photo that just committed/failed) — that case
+    /// dismisses the popup rather than letting a stale index point at the wrong photo.
+    private var openPopupIndex: Int? {
+        guard let popupPhotoID else { return nil }
+        return displayPhotos.firstIndex { $0.id == popupPhotoID }
     }
 }
 

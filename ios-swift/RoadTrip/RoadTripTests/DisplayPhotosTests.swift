@@ -65,6 +65,28 @@ final class DisplayPhotosTests: XCTestCase {
         XCTAssertFalse(result[0].isOptimistic)
     }
 
+    func testCommittedPhotoAtSameCoordinateSuppressesOptimistic() {
+        // Server-hydrated photos carry uploadId: nil, so the commit hand-off must de-dup by
+        // location: during commit the committed twin sits at the SAME coordinate as the optimistic.
+        let committedAtSpot = Photo(id: 9, tripId: UUID(), thumbnailUrl: "https://s/t",
+                                    displayUrl: "https://s/d", originalUrl: "https://s/o",
+                                    lat: 44.5, lng: -71.5, placeName: "Bixby", caption: nil,
+                                    takenAt: nil, uploadId: nil)
+        let result = DisplayPhotos.build(committed: [committedAtSpot],
+                                         pending: [upload(stage: .committing, lat: 44.5, lon: -71.5)])
+        XCTAssertEqual(result.count, 1, "an optimistic photo at a committed photo's coordinate is suppressed (commit hand-off)")
+        XCTAssertFalse(result[0].isOptimistic)
+    }
+
+    func testOptimisticAtDifferentCoordinateIsKept() {
+        let committedAtSpot = Photo(id: 9, tripId: UUID(), thumbnailUrl: "", displayUrl: "",
+                                    originalUrl: "", lat: 44.5, lng: -71.5, placeName: "P",
+                                    caption: nil, takenAt: nil, uploadId: nil)
+        let result = DisplayPhotos.build(committed: [committedAtSpot],
+                                         pending: [upload(stage: .staged, lat: 40.0, lon: -71.0)])
+        XCTAssertEqual(result.count, 2, "a pending photo at a different location is NOT suppressed")
+    }
+
     func testCommittedPhotosAreNotOptimistic() {
         XCTAssertFalse(committed(id: 1).isOptimistic)
     }
