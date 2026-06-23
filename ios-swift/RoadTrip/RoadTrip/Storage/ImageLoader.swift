@@ -1,4 +1,5 @@
 import UIKit
+import ImageIO
 
 /// Resolves photo images through three layers so reopening a photo is instant and each
 /// image downloads at most once:
@@ -34,6 +35,17 @@ final class ImageLoader {
         let key = url.absoluteString as NSString
         if let cached = memory.object(forKey: key) { return cached }
 
+        // Optimistic (staged, not-yet-uploaded) photos point their image at the on-disk original
+        // via a file:// URL. Load + downsample it locally — never the network — so it renders in a
+        // no-service area. Downsampled off the main thread (the original is full-size).
+        if url.isFileURL {
+            guard let image = await Task.detached(priority: .utility, operation: {
+                Self.downsampledImage(at: url, maxPixel: 1500)
+            }).value else { return nil }
+            memory.setObject(image, forKey: key)
+            return image
+        }
+
         if let data = fileCache?.data(tripId: tripId, photoId: photoId, tier: tier),
            let image = UIImage(data: data) {
             memory.setObject(image, forKey: key)
@@ -44,5 +56,18 @@ final class ImageLoader {
         try? fileCache?.store(data, tripId: tripId, photoId: photoId, tier: tier)
         memory.setObject(image, forKey: key)
         return image
+    }
+
+    /// Decodes only as many pixels as needed from a local image file via ImageIO.
+    nonisolated private static func downsampledImage(at url: URL, maxPixel: Int) -> UIImage? {
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxPixel,
+        ]
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
+        else { return nil }
+        return UIImage(cgImage: cgImage)
     }
 }

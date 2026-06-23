@@ -57,6 +57,23 @@ final class ImageLoaderTests: XCTestCase {
                       "a cache miss should persist the downloaded bytes to disk")
     }
 
+    func testLoadsLocalFileURLWithoutNetwork() async throws {
+        // An optimistic (staged, not-yet-uploaded) photo points its image at the on-disk original
+        // via a file:// URL. The loader must read it locally — never the network — so it renders
+        // in a no-service area.
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let fileURL = dir.appendingPathComponent("staged.jpg")
+        try makeJPEG().write(to: fileURL)
+
+        let loader = await ImageLoader(fileCache: nil,
+                                       fetch: { _ in throw URLError(.notConnectedToInternet) })
+        let image = await loader.image(for: fileURL, tripId: UUID(), photoId: -1, tier: .display)
+
+        XCTAssertNotNil(image, "a file:// URL must load from disk even with no network")
+    }
+
     // MARK: - Helpers
 
     private func tempCache() throws -> PhotoFileCache {
