@@ -23,10 +23,18 @@ final class ImageLoader {
     }
 
     /// Synchronous memory-cache peek so a view can render a cached image on first frame
-    /// (no placeholder flash on reopen).
-    func memoryImage(for url: URL?) -> UIImage? {
+    /// (no placeholder flash on reopen). Tier-aware: file:// images cache per size, so the seed
+    /// must use the same key `image(for:)` wrote.
+    func memoryImage(for url: URL?, tier: PhotoFileCache.Tier) -> UIImage? {
         guard let url else { return nil }
-        return memory.object(forKey: url.absoluteString as NSString)
+        return memory.object(forKey: Self.cacheKey(url, tier: tier))
+    }
+
+    /// Memory-cache key. File URLs (optimistic photos) are decoded at a per-tier size, so they're
+    /// keyed per size; remote URLs are keyed by URL alone (the server already sizes per tier).
+    private static func cacheKey(_ url: URL, tier: PhotoFileCache.Tier) -> NSString {
+        url.isFileURL ? "\(url.absoluteString)#\(maxPixel(for: tier))" as NSString
+                      : url.absoluteString as NSString
     }
 
     /// Returns the image, hitting memory → disk → network in order. `nil` only if the
@@ -37,17 +45,16 @@ final class ImageLoader {
         // network — sized to the requesting tier so a 40pt pin doesn't decode the full original, and
         // keyed per-size so the small .thumb decode isn't served back for the larger .display.
         if url.isFileURL {
-            let maxPixel = Self.maxPixel(for: tier)
-            let key = "\(url.absoluteString)#\(maxPixel)" as NSString
+            let key = Self.cacheKey(url, tier: tier)
             if let cached = memory.object(forKey: key) { return cached }
             guard let image = await Task.detached(priority: .utility, operation: {
-                Self.downsampledImage(at: url, maxPixel: maxPixel)
+                Self.downsampledImage(at: url, maxPixel: Self.maxPixel(for: tier))
             }).value else { return nil }
             memory.setObject(image, forKey: key)
             return image
         }
 
-        let key = url.absoluteString as NSString
+        let key = Self.cacheKey(url, tier: tier)
         if let cached = memory.object(forKey: key) { return cached }
 
         if let data = fileCache?.data(tripId: tripId, photoId: photoId, tier: tier),

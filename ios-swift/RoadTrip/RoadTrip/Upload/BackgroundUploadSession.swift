@@ -60,6 +60,10 @@ final class BackgroundUploadSession: NSObject, @unchecked Sendable {
     /// uploadIds with a `beginUpload` in flight — so a concurrent `reconcile()` (launch + a network
     /// path-change firing nearly together) can't start the same upload twice.
     private var inFlightStarts: Set<UUID> = []
+    /// uploadIds with a `commit` in flight — the block-completion path and a reconcile `.commit`
+    /// (now driven more often by the connectivity watch / wait-retry) must not commit the same
+    /// upload twice (double commit + double revalidate + a delete race).
+    private var inFlightCommits: Set<UUID> = []
     /// At most one pending wait-retry timer at a time.
     private var waitRetryScheduled = false
 
@@ -324,6 +328,10 @@ final class BackgroundUploadSession: NSObject, @unchecked Sendable {
     // MARK: - Commit
 
     private func commit(_ item: UploadQueueItem) async {
+        // Only one commit run per upload at a time (block-completion vs a reconcile `.commit`).
+        guard claimCommitRun(item.uploadId) else { return }
+        defer { releaseCommitRun(item.uploadId) }
+
         guard let token = token(for: item.tripId), let photoId = item.serverPhotoId else {
             try? await store.setFailed(item.uploadId, message: "No upload token for this trip"); return
         }
@@ -432,6 +440,13 @@ final class BackgroundUploadSession: NSObject, @unchecked Sendable {
     }
     private func releaseStart(_ uploadId: UUID) {
         lock.lock(); inFlightStarts.remove(uploadId); lock.unlock()
+    }
+    private func claimCommitRun(_ uploadId: UUID) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        return inFlightCommits.insert(uploadId).inserted
+    }
+    private func releaseCommitRun(_ uploadId: UUID) {
+        lock.lock(); inFlightCommits.remove(uploadId); lock.unlock()
     }
     private func armWaitRetry() -> Bool {
         lock.lock(); defer { lock.unlock() }

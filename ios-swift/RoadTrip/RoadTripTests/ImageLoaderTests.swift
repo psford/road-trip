@@ -94,6 +94,23 @@ final class ImageLoaderTests: XCTestCase {
         XCTAssertGreaterThan(displayW, thumbW, ".display is not served the cached .thumb (separate keys)")
     }
 
+    func testMemoryImageSeedsLocalFilePerTier() async throws {
+        // CachedImage seeds its first frame synchronously via memoryImage(for:tier:); for a file://
+        // optimistic photo that must hit the SAME per-tier key image(for:) wrote, or every reopen
+        // flashes a placeholder.
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let fileURL = dir.appendingPathComponent("staged.jpg")
+        try makeJPEG(side: 64).write(to: fileURL)
+
+        let loader = await ImageLoader(fileCache: nil, fetch: { _ in throw URLError(.notConnectedToInternet) })
+        _ = await loader.image(for: fileURL, tripId: UUID(), photoId: -1, tier: .thumb)
+
+        let seeded = await loader.memoryImage(for: fileURL, tier: .thumb)
+        XCTAssertNotNil(seeded, "the synchronous seed must hit the per-tier file cache key written by image(for:)")
+    }
+
     // MARK: - Helpers
 
     private func makeJPEG(side: CGFloat) -> Data {

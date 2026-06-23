@@ -43,6 +43,8 @@ struct TripDetailView: View {
         // Build the committed+optimistic list ONCE per render and thread it through, rather than
         // recomputing it in the map, strip, popup, and empty-state separately.
         let shown = displayPhotos
+        // The open photo has left the list (an optimistic photo committed/failed) → dismiss below.
+        let popupMissing = popupPhotoID != nil && !shown.contains { $0.id == popupPhotoID }
         return ZStack {
             VStack(spacing: 0) {
                 mapSection(shown)
@@ -116,8 +118,8 @@ struct TripDetailView: View {
         }
         // If the open photo leaves the list (an optimistic photo finished uploading / failed), the
         // popup has nothing valid to show — dismiss it rather than snap to a different photo.
-        .onChange(of: openPopupIndex) { _, idx in
-            if popupPhotoID != nil && idx == nil { closePopup() }
+        .onChange(of: popupMissing) { _, missing in
+            if missing { closePopup() }
         }
         .alert("Photo", isPresented: Binding(
             get: { captureMessage != nil },
@@ -600,13 +602,6 @@ struct TripDetailView: View {
         uploads.filter { $0.stage == .failed }
     }
 
-    /// The index of the open photo in `displayPhotos`, resolved by id. `nil` when closed, or when
-    /// the open photo has left the list (an optimistic photo that just committed/failed) — that case
-    /// dismisses the popup rather than letting a stale index point at the wrong photo.
-    private var openPopupIndex: Int? {
-        guard let popupPhotoID else { return nil }
-        return displayPhotos.firstIndex { $0.id == popupPhotoID }
-    }
 }
 
 private extension Photo {
