@@ -15,9 +15,10 @@ the tactile pin drag, or TestFlight — so those wait for here.
   phone, trust the dev cert under Settings → General → VPN & Device Management.
 - Azure **dev slot** provisioned (design AC7) — until then, point at prod or a local backend
   reachable from the device.
-- Build/install the **Release-TestFlight** configuration (targets the dev slot via the
-  `DEVSLOT` flag → `APIEnvironment.defaultBaseURL`). For ad-hoc, the `API_BASE_URL` env var
-  overrides on the simulator (not on-device).
+- Backend targeting: **TestFlight / App Store archives use the `Release` config → PROD**. The
+  **`Release-TestFlight`** config (`DEVSLOT` flag → `APIEnvironment.defaultBaseURL`) is an opt-in
+  build for testing against the **dev slot**. Debug device runs hit the dev slot via the scheme's
+  `API_BASE_URL` env; on the simulator that env var overrides ad-hoc.
 
 ---
 
@@ -49,7 +50,13 @@ grace are gone. The banner (ValueObservation) and Retry still surface progress/f
       Already-accepted blocks are NOT re-uploaded (check `completedBlockIndices` persistence).
 - [ ] **Airplane mode** on mid-upload → re-enable → queued upload resumes and commits.
 - [ ] Long-queued upload (>1.75h, or temporarily lower `SASRefresher.refreshAfterSeconds`) → SAS refresh path runs on resume.
-- [ ] No half-photos: a pin appears **only** after commit (AC3.6) — interrupting before commit never shows a partial pin.
+
+## 4a. Poor-service capture — optimistic pin + deferred upload (the headline B.2 ask)
+- [ ] **No service from the start** (airplane mode / dead zone) → add a GPS photo → an **optimistic pin + filmstrip thumbnail appear immediately** (translucent, upload badge); NO "couldn't reach server" failure and NO stuck progress banner.
+- [ ] **Tapping the optimistic photo** (pin or filmstrip) opens it in the popup like a posted one — the real photo shows (loaded from the local file), swipes among the others; only the upload badge differs. Move Pin / Delete are hidden until it commits.
+- [ ] **Re-enable service** (or drive back into coverage) → the pending upload **starts on its own** (`NWPathMonitor` → `reconcile()`), commits, and the optimistic pin is replaced by the committed pin (no duplicate).
+- [ ] **Force-quit while still offline** → relaunch (still offline) → optimistic pin is still there; regain service → it uploads.
+- [ ] A genuine failure (bad token, server 4xx/5xx) still shows the **Retry** banner (only no-connectivity waits).
 
 > Note: to exercise multi-block paths, a few-MB photo is usually a single 4 MB block. Use a
 > large/burst photo (or temporarily shrink `maxBlockSizeBytes` server-side) to get ≥2 blocks
@@ -75,9 +82,22 @@ grace are gone. The banner (ValueObservation) and Retry still surface progress/f
 - [ ] **Photos render** on the map and in the popup (served from `road-trip-photos-dev`).
 - [ ] **Write access** works: add a test photo, confirm it commits, then remove it.
 
-## 7. TestFlight — Phase 8 (NOT BUILT YET)
+## 7. Route curve feel (new — Phase 1 AC1.4, device-only)
+- [ ] **AC1.4 (device):** On a real device, with a trip of clustered/irregular photo points, confirm the route curve looks smooth and playful and does NOT loop or overshoot. Toggle the route off/on and confirm it hides/shows. Confirm Apple Maps POIs remain visible (AC1.6).
+
+## 8. TestFlight — Phase 8 (NOT BUILT YET)
 - [ ] App Store Connect record for `com.psford.roadtripmap.native`.
 - [ ] `PrivacyInfo.xcprivacy` (photo library, network, no tracking, no third-party SDKs).
-- [ ] Archive **Release-TestFlight** → upload via `xcrun altool`/`notarytool` → processed without rejection.
+- [ ] Archive **Release** (→ PROD) → upload via `xcrun altool`/`notarytool` → processed without rejection.
 - [ ] Patrick + dad enrolled as internal testers; build installs on both iPhones.
 - [ ] End-to-end on device: create trip → upload real photo → pin on map → open share link in Safari (the .NET view page still serves).
+
+## 9. Camera capture (Phase 4)
+- [ ] **AC3.2/AC3.3 (device):** Take Photo → with Location allowed, the photo stages and uploads tagged with the current coordinate (pin appears at your location).
+- [ ] **AC3.4 (device):** Take Photo with Location denied (or no fix) → the pin-drop sheet appears; setting a pin stages/uploads the capture; nothing is lost; no crash.
+- [ ] **AC3.1/AC3.5 (device):** The `+` menu shows Take Photo + Choose from Library; library selection still stages as before.
+
+## 10. Floating top bar (Phase 5)
+- [ ] **AC4.1 (device):** Trip detail shows ONE floating inset bar over the map: back (left), trip name left-justified, then Share + +. Side margins look right; rounded; `.regularMaterial` legible over varied map content.
+- [ ] **Safe area:** the bar clears the notch/Dynamic Island and is not clipped; the route-toggle overlay (Phase 1) and map controls don't collide with it.
+- [ ] **AC4.2 (device):** Back returns to My Trips; Share hidden for SampleData (no secret token), shown for owned trips.

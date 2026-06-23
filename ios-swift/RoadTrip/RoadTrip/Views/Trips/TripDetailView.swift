@@ -18,12 +18,12 @@ struct TripDetailView: View {
 
     @Environment(\.dismiss) private var dismiss
 
+    @AppStorage("showRoute") private var showRoute = true
+
     @State private var photos: [Photo] = []
     @State private var cameraPosition: MapCameraPosition = .automatic
-    @State private var popupIndex: Int?   // index into `photos`; nil = closed
-    @State private var showingDeleteConfirm = false
-    @State private var isDeleting = false
-    @State private var deleteError: String?
+    @State private var popupPhotoID: Int?   // id of the open photo (stable across list changes); nil = closed
+    @State private var popupImmersive = false   // popup tapped into full-black mode → hide the floating bar
     @State private var pickedItem: PhotosPickerItem?
     @State private var isStaging = false
     @State private var captureMessage: String?
@@ -35,36 +35,40 @@ struct TripDetailView: View {
     @State private var pendingPost: IdentifiableCoordinate?
     @State private var shareViewToken: UUID?
     @State private var secretToken: UUID?
+    @State private var showCamera = false
+    @State private var showLibraryPicker = false
+    @State private var locationProvider: any LocationProviding = OneShotLocationProvider()
 
     var body: some View {
-        ZStack {
+        // Build the committed+optimistic list ONCE per render and thread it through, rather than
+        // recomputing it in the map, strip, popup, and empty-state separately.
+        let shown = displayPhotos
+        // The open photo has left the list (an optimistic photo committed/failed) → dismiss below.
+        let popupMissing = popupPhotoID != nil && !shown.contains { $0.id == popupPhotoID }
+        return ZStack {
             VStack(spacing: 0) {
-                mapSection
-                if !photos.isEmpty {
-                    photoStrip
+                mapSection(shown)
+                // Show the strip when there's anything to show — committed or optimistic — so a
+                // brand-new trip whose first photo is added offline still gets a filmstrip entry.
+                if !shown.isEmpty {
+                    photoStrip(shown)
                 }
             }
 
-            if !uploads.isEmpty {
-                VStack {
-                    UploadBanner(uploads: uploads,
-                                 onRetry: { item in Task { await retryUpload(item) } },
-                                 onDismiss: { item in dismissUpload(item) })
-                    Spacer()
-                }
-                .transition(.move(edge: .top).combined(with: .opacity))
-            }
-
-            if popupIndex != nil {
+            if let openIndex = shown.firstIndex(where: { $0.id == popupPhotoID }) {
                 PhotoPopupView(
-                    photos: photos,
+                    photos: shown,
+                    // Track the open photo by IDENTITY, not position: when the list reorders (an
+                    // upload commits and sorts into capture-time order) the popup stays on the same
+                    // photo instead of jumping to whatever now sits at the old index.
                     selection: Binding(
-                        get: { min(max(popupIndex ?? 0, 0), photos.count - 1) },
-                        set: { popupIndex = $0 }
+                        get: { shown.firstIndex(where: { $0.id == popupPhotoID }) ?? openIndex },
+                        set: { idx in if shown.indices.contains(idx) { popupPhotoID = shown[idx].id } }
                     ),
-                    onClose: { withAnimation(.easeOut(duration: 0.2)) { popupIndex = nil } },
+                    immersive: $popupImmersive,
+                    onClose: { closePopup() },
                     onMovePin: { photo in
-                        withAnimation(.easeOut(duration: 0.2)) { popupIndex = nil }
+                        closePopup()
                         photoToMove = photo
                     },
                     onDelete: { photo in deletePhoto(photo) }
@@ -84,43 +88,38 @@ struct TripDetailView: View {
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
-        .navigationTitle(trip.name)
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                if let secretToken {                     // owned-trip gate (AC3.5: no token → no button)
-                    Menu {
-                        if let shareViewToken {          // older imports lacking a view token: item simply omitted
-                            ShareLink(item: TripShareLinks.shareViewURL(viewToken: shareViewToken,
-                                                                        baseURL: APIEnvironment.baseURL)) {
-                                Label("Share view link", systemImage: "link")
-                            }
-                        }
-                        ShareLink(item: inviteText(name: trip.name, secret: secretToken)) {
-                            Label("Invite to edit", systemImage: "person.badge.plus")
-                        }
-                    } label: { Label("Share", systemImage: "square.and.arrow.up") }
+        .toolbar(.hidden, for: .navigationBar)
+        .overlay(alignment: .top) {
+            // Floating bar and the upload banner share the top region — stack them so the
+            // banner appears BELOW the bar instead of colliding behind it. Both fall away when
+            // the photo popup goes full-black immersive, so nothing floats over the photo.
+            if !popupImmersive {
+                VStack(spacing: 8) {
+                    floatingTopBar
+                    // Only FAILED uploads get a banner (with Retry). In-progress/waiting uploads
+                    // are shown by their pending map pin + filmstrip thumbnail instead — a progress
+                    // banner would sit stuck on screen for the whole no-service period.
+                    if !failedUploads.isEmpty {
+                        UploadBanner(uploads: failedUploads,
+                                     onRetry: { item in Task { await retryUpload(item) } },
+                                     onDismiss: { item in dismissUpload(item) })
+                            .accessibilityIdentifier("upload-banner")
+                            .transition(.move(edge: .top).combined(with: .opacity))
+                    }
                 }
-            }
-            ToolbarItem(placement: .topBarTrailing) {
-                PhotosPicker(selection: $pickedItem, matching: .images,
-                             preferredItemEncoding: .current, photoLibrary: .shared()) {
-                    Label("Add Photo", systemImage: "plus")
-                }
-                .disabled(isStaging)
-            }
-            ToolbarItem(placement: .topBarTrailing) {
-                Button(role: .destructive) {
-                    showingDeleteConfirm = true
-                } label: {
-                    Label("Delete Trip", systemImage: "trash")
-                }
-                .disabled(isDeleting)
+                .padding(.horizontal, 12)
+                .padding(.top, 8)
+                .transition(.opacity)
             }
         }
         .onChange(of: pickedItem) { _, newItem in
             guard let newItem else { return }
             Task { await stage(newItem) }
+        }
+        // If the open photo leaves the list (an optimistic photo finished uploading / failed), the
+        // popup has nothing valid to show — dismiss it rather than snap to a different photo.
+        .onChange(of: popupMissing) { _, missing in
+            if missing { closePopup() }
         }
         .alert("Photo", isPresented: Binding(
             get: { captureMessage != nil },
@@ -129,20 +128,6 @@ struct TripDetailView: View {
             Button("OK", role: .cancel) {}
         } message: {
             Text(captureMessage ?? "")
-        }
-        .confirmationDialog("Delete this trip?", isPresented: $showingDeleteConfirm, titleVisibility: .visible) {
-            Button("Delete", role: .destructive) { Task { await deleteTrip() } }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("This permanently deletes “\(trip.name)” and its photos for everyone with the link.")
-        }
-        .alert("Couldn’t delete trip", isPresented: Binding(
-            get: { deleteError != nil },
-            set: { if !$0 { deleteError = nil } }
-        )) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(deleteError ?? "")
         }
         .sheet(item: $photoToMove) { photo in
             PinDropView(initialCoordinate: CLLocationCoordinate2D(latitude: photo.lat, longitude: photo.lng),
@@ -162,9 +147,104 @@ struct TripDetailView: View {
                 Task { await stage(picked, overrideCoordinate: post.coordinate) }
             }
         }
+        // `photoLibrary: .shared()` is REQUIRED, not optional: the staging pipeline resolves the
+        // picked item to a PHAsset via `item.itemIdentifier` (PhotosPicker strips EXIF, so we read
+        // raw bytes from the asset to keep location). `itemIdentifier` is only populated when the
+        // picker is bound to the shared library — drop `.shared()` and every pick throws
+        // CaptureError.noAsset ("Couldn't read that photo from your library"). See PhotoCaptureCoordinator.loadImageData.
+        // StagingPhotosPicker hard-codes .shared() so this can't be accidentally dropped.
+        .stagingPhotosPicker(isPresented: $showLibraryPicker, selection: $pickedItem)
+        .sheet(isPresented: $showCamera) {
+            CameraPicker { image in
+                guard let image else { return }
+                Task { await stageCameraImage(image) }
+            }
+            .ignoresSafeArea()
+        }
         .task { await observePhotos() }
         .task { await observeUploads() }
         .task { loadShareTokens() }
+    }
+
+    @ViewBuilder private var floatingTopBar: some View {
+        ZStack {
+            // Centered trip name. Back (left) and Share (right) are single glyphs, so the title
+            // sits at the true center; horizontal padding keeps it clear of those buttons.
+            Text(trip.name)
+                .font(.headline)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .padding(.horizontal, 44)
+
+            HStack(spacing: 12) {
+                Button { dismiss() } label: {
+                    Image(systemName: "chevron.backward")
+                        .font(.headline)
+                }
+                .accessibilityLabel(Text("Back"))
+                .accessibilityIdentifier("trip-back")
+
+                Spacer()
+
+                if secretToken != nil {
+                    shareMenu
+                }
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        // Shadow goes on the background SHAPE only — applying .shadow to the whole bar
+        // makes the translucent material let each text glyph cast its own shadow ("bloom").
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(.regularMaterial)
+                .shadow(radius: 4, y: 2)
+        )
+    }
+
+    @ViewBuilder private var shareMenu: some View {
+        if let secretToken {
+            Menu {
+                if let shareViewToken {
+                    ShareLink(item: TripShareLinks.shareViewURL(viewToken: shareViewToken,
+                                                                baseURL: APIEnvironment.baseURL)) {
+                        Label("Share view link", systemImage: "link")
+                    }
+                }
+                ShareLink(item: inviteText(name: trip.name, secret: secretToken)) {
+                    Label("Invite to edit", systemImage: "person.badge.plus")
+                }
+            } label: { Label("Share", systemImage: "square.and.arrow.up").labelStyle(.iconOnly) }
+        }
+    }
+
+    @ViewBuilder private var addPhotoMenu: some View {
+        Menu {
+            Button {
+                showCamera = true
+            } label: { Label("Take Photo", systemImage: "camera") }
+                .disabled(!UIImagePickerController.isSourceTypeAvailable(.camera))
+            Button {
+                showLibraryPicker = true
+            } label: { Label("Choose from Library", systemImage: "photo.on.rectangle") }
+        } label: {
+            // Styled like the recenter/route map controls — it now lives at the lower-right.
+            // Accessibility label/identifier kept for VoiceOver + UI tests.
+            mapControlIcon("photo.badge.plus")
+        }
+        .accessibilityLabel(Text("Add Photo"))
+        .accessibilityIdentifier("Add Photo")
+        .disabled(isStaging)
+    }
+
+    /// Shared style for the floating map-overlay controls (recenter, route toggle) so they are
+    /// identical in size and color. The fixed frame normalizes differing SF Symbol glyph widths.
+    private func mapControlIcon(_ systemName: String) -> some View {
+        Image(systemName: systemName)
+            .font(.title2)
+            .frame(width: 29, height: 29)
+            .padding(10)
+            .background(.regularMaterial, in: Circle())
     }
 
     private func loadShareTokens() {
@@ -210,12 +290,12 @@ struct TripDetailView: View {
     }
 
     private func deletePhoto(_ photo: Photo) {
-        withAnimation(.easeOut(duration: 0.2)) { popupIndex = nil }
+        closePopup()
         Task {
             do {
                 try await PhotoMutations(database: database, keychain: keychain).deletePhoto(photo)
             } catch {
-                showToast("Couldn’t delete that photo — it’s back on your map.")
+                showToast("Couldn't delete that photo — it's back on your map.")
             }
         }
     }
@@ -226,8 +306,29 @@ struct TripDetailView: View {
                 try await PhotoMutations(database: database, keychain: keychain)
                     .moveLocation(photo, lat: coordinate.latitude, lng: coordinate.longitude)
             } catch {
-                showToast("Couldn’t move that pin — it’s back where it was.")
+                showToast("Couldn't move that pin — it's back where it was.")
             }
+        }
+    }
+
+    /// Camera capture path: transcode JPEG, fetch one-shot location, stage, and handle no-GPS case.
+    private func stageCameraImage(_ image: UIImage) async {
+        isStaging = true
+        defer { isStaging = false }
+
+        guard let data = image.jpegData(compressionQuality: 0.9) else { return }
+        let coordinate = await locationWithTimeout(locationProvider)
+        let filename = "camera-\(UUID().uuidString).jpg"
+        do {
+            let item = try await PhotoCaptureCoordinator(database: database)
+                .stagePhoto(imageData: data, filename: filename, tripId: trip.id, overrideCoordinate: coordinate)
+            if item.exifLat == nil || item.exifLon == nil {
+                stagedNeedingLocation = item
+            } else {
+                startUpload(item)
+            }
+        } catch {
+            captureMessage = "Couldn't add that photo. Please try again."
         }
     }
 
@@ -272,7 +373,7 @@ struct TripDetailView: View {
         // the picker selection alone doesn't grant it.
         let status = await PHPhotoLibrary.requestAuthorization(for: .readWrite)
         guard status == .authorized || status == .limited else {
-            captureMessage = "Road Trip needs photo access to keep a photo’s location. You can enable it in Settings."
+            captureMessage = "Road Trip needs photo access to keep a photo's location. You can enable it in Settings."
             return
         }
 
@@ -290,9 +391,9 @@ struct TripDetailView: View {
             // shows progress, and the pin appears when it commits.
             startUpload(staged)
         } catch PhotoCaptureCoordinator.CaptureError.noAsset {
-            captureMessage = "Couldn’t read that photo from your library. Try another, or grant full photo access."
+            captureMessage = "Couldn't read that photo from your library. Try another, or grant full photo access."
         } catch {
-            captureMessage = "Couldn’t add that photo. Please try again."
+            captureMessage = "Couldn't add that photo. Please try again."
         }
     }
 
@@ -301,42 +402,48 @@ struct TripDetailView: View {
     /// surfaces Retry), and the committed pin appears via the photos `ValueObservation` on
     /// revalidate — no manual reload here.
     private func startUpload(_ item: UploadQueueItem) {
-        BackgroundUploadSession.shared?.start(item.uploadId)
+        guard let session = BackgroundUploadSession.shared else {
+            assertionFailure("BackgroundUploadSession.shared is nil — configureShared must be called at launch before any upload")
+            captureMessage = "Upload system not ready. Please restart the app and try again."
+            return
+        }
+        session.start(item.uploadId)
     }
 
     private func retryUpload(_ item: UploadQueueItem) async {
-        BackgroundUploadSession.shared?.retry(item.uploadId)
+        guard let session = BackgroundUploadSession.shared else {
+            assertionFailure("BackgroundUploadSession.shared is nil — configureShared must be called at launch before any retry")
+            return
+        }
+        session.retry(item.uploadId)
     }
 
     /// Removes a stuck/failed upload (its row, staged file, and block files) so the banner can
     /// be cleared even when retry is futile (e.g. the source photo is gone).
     private func dismissUpload(_ item: UploadQueueItem) {
-        BackgroundUploadSession.shared?.abort(item.uploadId)
-    }
-
-    private func deleteTrip() async {
-        isDeleting = true
-        do {
-            try await RoadTripAPI.shared.deleteTrip(trip, from: database, keychain: keychain)
-            dismiss()   // pop back to the list; ValueObservation drops the row
-        } catch RoadTripAPIError.networkUnavailable {
-            deleteError = "Couldn’t reach the server. Check your connection and try again."
-            isDeleting = false
-        } catch {
-            deleteError = "The server couldn’t delete this trip. Please try again."
-            isDeleting = false
+        guard let session = BackgroundUploadSession.shared else {
+            assertionFailure("BackgroundUploadSession.shared is nil — configureShared must be called at launch before any dismiss")
+            return
         }
+        session.abort(item.uploadId)
     }
 
-    private var mapSection: some View {
+    private func mapSection(_ shown: [Photo]) -> some View {
         MapReader { proxy in
             Map(position: $cameraPosition) {
-                if routeCoordinates.count >= 2 {
-                    MapPolyline(coordinates: routeCoordinates)
-                        .stroke(.tint, style: StrokeStyle(lineWidth: 3, lineCap: .round, lineJoin: .round))
+                if showRoute, routeCoordinates.count >= 2 {
+                    MapPolyline(coordinates: RouteCurve.curved(through: routeCoordinates))
+                        .stroke(.tint, style: StrokeStyle(
+                            lineWidth: 3,
+                            lineCap: .round,
+                            lineJoin: .round,
+                            dash: [2, 10]))
                 }
 
-                ForEach(Array(photos.enumerated()), id: \.element.id) { index, photo in
+                // Committed AND optimistic (staged, not-yet-uploaded) photos render as one list, so
+                // an offline photo is a first-class pin — tappable into the same popup — differing
+                // only by an upload badge.
+                ForEach(Array(shown.enumerated()), id: \.element.id) { index, photo in
                     Annotation(photo.placeName, coordinate: photo.coordinate) {
                         Button {
                             openPopup(at: index)
@@ -344,22 +451,64 @@ struct TripDetailView: View {
                             PinThumbnail(photo: photo)
                         }
                         .buttonStyle(.plain)
-                        .accessibilityLabel(Text(photo.placeName))
+                        .accessibilityLabel(Text(photo.isOptimistic ? "Photo uploading" : photo.placeName))
+                        .accessibilityIdentifier(photo.isOptimistic ? "pending-pin" : "photo-pin")
                         .accessibilityAddTraits(.isButton)
                     }
                 }
             }
+            // MapCompass appears only when rotated; MapScaleView only during zoom. We drop
+            // MapUserLocationButton and provide our own recenter button below so the two
+            // map-overlay controls share one consistent style and can't collide.
             .mapControls {
-                MapUserLocationButton()
                 MapCompass()
                 MapScaleView()
+            }
+            // Custom control cluster (top-trailing, below the floating bar). Built by hand rather
+            // than via .mapControls so both buttons match in size, color, and alignment and are
+            // vertically stacked — no collision with MapKit's auto-placed user-location button.
+            .overlay(alignment: .topTrailing) {
+                VStack(spacing: 10) {
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.3)) {
+                            cameraPosition = .userLocation(fallback: .automatic)
+                        }
+                    } label: {
+                        mapControlIcon("location")
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(Text("Center on my location"))
+                    .accessibilityIdentifier("recenter-location")
+
+                    Button {
+                        showRoute = !showRoute
+                    } label: {
+                        mapControlIcon(showRoute ? "point.topleft.down.curvedto.point.bottomright.up"
+                                                 : "point.topleft.down.curvedto.point.bottomright.up.fill")
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(Text(showRoute ? "Hide route" : "Show route"))
+                    .accessibilityIdentifier("route-toggle")
+                }
+                .padding(.top, 70)
+                .padding(.trailing, 12)
+            }
+            // Primary action — Add Photo — pulled out of the top bar and placed prominently at the
+            // lower-right (same size/style and trailing column as the recenter + route controls).
+            // Posting photos is the app's core action, so it shouldn't hide in a top corner.
+            .overlay(alignment: .bottomTrailing) {
+                addPhotoMenu
+                    .padding(.trailing, 12)
+                    .padding(.bottom, 16)
             }
             // Long-press to post a photo at that spot (Apple Maps "drop a pin" pattern).
             // `.simultaneousGesture` keeps pan/zoom and pin taps working; the long-press
             // requires a hold, so it won't fire on a quick tap or a pan.
             .simultaneousGesture(longPressToPost(proxy))
             .overlay {
-                if photos.isEmpty {
+                // Key on the combined list (committed + optimistic) so a trip whose only photo is an
+                // offline/pending one doesn't show "No photos yet" over its visible pending pin.
+                if shown.isEmpty {
                     ContentUnavailableView(
                         "No photos yet",
                         systemImage: "photo.on.rectangle.angled",
@@ -383,37 +532,76 @@ struct TripDetailView: View {
             }
     }
 
-    private var photoStrip: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 10) {
-                ForEach(Array(photos.enumerated()), id: \.element.id) { index, photo in
-                    Button {
-                        openPopup(at: index)
-                    } label: {
-                        CachedImage(url: URL(string: photo.displayUrl), tripId: photo.tripId,
-                                    photoId: photo.id, tier: .display) {
-                            Color.secondary.opacity(0.15)
+    private func photoStrip(_ shown: [Photo]) -> some View {
+        // As the popup pages between photos, keep the open photo's thumbnail centred in the strip
+        // (Photos.app filmstrip behaviour). At the first/last photo the ScrollView clamps, so the
+        // edge thumbnail simply rests against the end rather than forcing a centre.
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    ForEach(Array(shown.enumerated()), id: \.element.id) { index, photo in
+                        Button {
+                            openPopup(at: index)
+                        } label: {
+                            CachedImage(url: URL(string: photo.displayUrl), tripId: photo.tripId,
+                                        photoId: photo.id, tier: .display) {
+                                Color.secondary.opacity(0.15)
+                            }
+                            .frame(width: 92, height: 92)
+                            .clipShape(RoundedRectangle(cornerRadius: 12))
+                            .optimisticBadge(if: photo.isOptimistic, size: 20, alignment: .bottomTrailing, inset: 5)
                         }
-                        .frame(width: 92, height: 92)
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .buttonStyle(.plain)
+                        .id(photo.id)
+                        .accessibilityIdentifier(photo.isOptimistic ? "pending-strip-item" : "strip-item")
                     }
-                    .buttonStyle(.plain)
+                }
+                .padding(.horizontal)
+                .padding(.vertical, 12)
+            }
+            .frame(height: 116)
+            .background(.thinMaterial)
+            .onChange(of: popupPhotoID) { _, newValue in
+                guard let newValue else { return }
+                withAnimation(.easeInOut(duration: 0.25)) {
+                    proxy.scrollTo(newValue, anchor: .center)   // strip cells are .id(photo.id)
                 }
             }
-            .padding(.horizontal)
-            .padding(.vertical, 12)
         }
-        .frame(height: 116)
-        .background(.thinMaterial)
     }
 
     private func openPopup(at index: Int) {
-        withAnimation(.easeIn(duration: 0.2)) { popupIndex = index }
+        let shown = displayPhotos
+        guard shown.indices.contains(index) else { return }
+        popupImmersive = false
+        withAnimation(.easeIn(duration: 0.2)) { popupPhotoID = shown[index].id }
+    }
+
+    /// Dismiss the popup. ALWAYS clear `popupImmersive` here too — otherwise dismissing from the
+    /// black immersive view leaves the map's floating title bar hidden until the next open.
+    private func closePopup() {
+        withAnimation(.easeOut(duration: 0.2)) {
+            popupPhotoID = nil
+            popupImmersive = false
+        }
     }
 
     private var routeCoordinates: [CLLocationCoordinate2D] {
         photos.map(\.coordinate)
     }
+
+    /// The single list the map, filmstrip, and popup all render: committed photos plus optimistic
+    /// (staged, not-yet-uploaded) ones, so an offline photo behaves exactly like a posted one.
+    private var displayPhotos: [Photo] {
+        DisplayPhotos.build(committed: photos, pending: uploads)
+    }
+
+    /// Only genuinely failed uploads get the banner; waiting/in-progress ones are shown by their
+    /// optimistic pin + filmstrip thumbnail instead.
+    private var failedUploads: [UploadQueueItem] {
+        uploads.filter { $0.stage == .failed }
+    }
+
 }
 
 private extension Photo {
@@ -445,12 +633,11 @@ private struct PostPhotoHereSheet: View {
                     .foregroundStyle(.red)
                 Text("Add a photo here")
                     .font(.headline)
-                Text("It’ll be pinned to this spot on your map, wherever the photo was actually taken.")
+                Text("It'll be pinned to this spot on your map, wherever the photo was actually taken.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
-                PhotosPicker(selection: $item, matching: .images,
-                             preferredItemEncoding: .current, photoLibrary: .shared()) {
+                StagingPhotosPicker(selection: $item) {
                     Label("Choose Photo", systemImage: "photo.on.rectangle")
                 }
                 .buttonStyle(.borderedProminent)
@@ -528,7 +715,9 @@ private struct UploadBanner: View {
     }
 }
 
-/// Circular thumbnail used as a map annotation marker.
+/// Circular thumbnail used as a map annotation marker. Renders committed (server) and optimistic
+/// (local `file://`) photos identically — `CachedImage`/`ImageLoader` resolve both — and overlays an
+/// upload badge while the photo is still optimistic.
 private struct PinThumbnail: View {
     let photo: Photo
 
@@ -540,6 +729,33 @@ private struct PinThumbnail: View {
         .frame(width: 40, height: 40)
         .clipShape(Circle())
         .overlay(Circle().stroke(.white, lineWidth: 2))
+        .optimisticBadge(if: photo.isOptimistic, size: 16, alignment: .bottomTrailing, inset: 1)
         .shadow(radius: 2)
+    }
+}
+
+/// The "uploading" marker shown on an optimistic photo (map pin, filmstrip, popup) — the only visual
+/// difference from a posted photo.
+struct OptimisticUploadBadge: View {
+    var size: CGFloat = 16
+
+    var body: some View {
+        Image(systemName: "arrow.up.circle.fill")
+            .font(.system(size: size))
+            .symbolRenderingMode(.palette)
+            .foregroundStyle(.white, .blue)
+            .accessibilityHidden(true)
+    }
+}
+
+extension View {
+    /// The single optimistic-photo treatment used on the map pin, filmstrip, and popup: an upload
+    /// badge in `alignment` plus an optional dim — so the look can't drift between the three sites.
+    @ViewBuilder
+    func optimisticBadge(if show: Bool, size: CGFloat, alignment: Alignment, inset: CGFloat, dim: Bool = true) -> some View {
+        opacity(show && dim ? 0.9 : 1)
+            .overlay(alignment: alignment) {
+                if show { OptimisticUploadBadge(size: size).padding(inset) }
+            }
     }
 }

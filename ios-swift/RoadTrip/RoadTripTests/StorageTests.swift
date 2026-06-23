@@ -36,6 +36,102 @@ final class StorageTests: XCTestCase {
         XCTAssertEqual(fetched, trip)
     }
 
+    // MARK: - Archive column (AC2.2, AC2.5)
+
+    func testArchiveColumnExists() throws {
+        let appDB = try AppDatabase.makeInMemory()
+        let columnNames = try appDB.dbQueue.read { db in
+            try db.columns(in: Trip.databaseTableName).map { $0.name }
+        }
+        XCTAssertTrue(columnNames.contains("archivedAt"), "archivedAt column should exist in schema")
+    }
+
+    func testArchiveRoundTripPreservesOtherFields() throws {
+        let appDB = try AppDatabase.makeInMemory()
+        let trip = makeTrip()
+        try appDB.dbQueue.write { db in try trip.insert(db) }
+
+        // Archive the trip (set archivedAt to now)
+        let archiveTime = Date()
+        try appDB.dbQueue.write { db in
+            guard var t = try Trip.fetchOne(db, key: trip.id) else {
+                XCTFail("trip not found")
+                return
+            }
+            t.archivedAt = archiveTime
+            try t.update(db)
+        }
+
+        // Fetch and verify all fields including archive flag
+        let fetched = try appDB.dbQueue.read { db in try Trip.fetchOne(db, key: trip.id) }
+        XCTAssertNotNil(fetched?.archivedAt, "archivedAt should be set")
+        XCTAssertEqual(fetched?.id, trip.id, "id should be unchanged")
+        XCTAssertEqual(fetched?.name, trip.name, "name should be unchanged")
+        XCTAssertEqual(fetched?.description, trip.description, "description should be unchanged")
+        XCTAssertEqual(fetched?.slug, trip.slug, "slug should be unchanged")
+        XCTAssertEqual(fetched?.photoCount, trip.photoCount, "photoCount should be unchanged")
+        XCTAssertEqual(fetched?.createdAt, trip.createdAt, "createdAt should be unchanged")
+        XCTAssertEqual(fetched?.cachedAt, trip.cachedAt, "cachedAt should be unchanged")
+    }
+
+    func testActiveFilterReturnsOnlyUnarchivedTrips() throws {
+        let appDB = try AppDatabase.makeInMemory()
+        let activeTrip = makeTrip(id: UUID(), slug: "active")
+        let archivedTrip = makeTrip(id: UUID(), slug: "archived")
+
+        try appDB.dbQueue.write { db in
+            try activeTrip.insert(db)
+            try archivedTrip.insert(db)
+
+            // Archive one trip
+            guard var t = try Trip.fetchOne(db, key: archivedTrip.id) else {
+                XCTFail("archived trip not found")
+                return
+            }
+            t.archivedAt = Date()
+            try t.update(db)
+        }
+
+        // Query for active trips only (archivedAt == nil)
+        let active = try appDB.dbQueue.read { db in
+            try Trip.filter(Column("archivedAt") == nil)
+                .order(Column("createdAt").desc)
+                .fetchAll(db)
+        }
+
+        XCTAssertEqual(active.count, 1, "should have exactly 1 active trip")
+        XCTAssertEqual(active[0].id, activeTrip.id, "active trip should be the unarchived one")
+    }
+
+    func testArchivedFilterReturnsOnlyArchivedTrips() throws {
+        let appDB = try AppDatabase.makeInMemory()
+        let activeTrip = makeTrip(id: UUID(), slug: "active")
+        let archivedTrip = makeTrip(id: UUID(), slug: "archived")
+
+        try appDB.dbQueue.write { db in
+            try activeTrip.insert(db)
+            try archivedTrip.insert(db)
+
+            // Archive one trip
+            guard var t = try Trip.fetchOne(db, key: archivedTrip.id) else {
+                XCTFail("archived trip not found")
+                return
+            }
+            t.archivedAt = Date()
+            try t.update(db)
+        }
+
+        // Query for archived trips only (archivedAt != nil)
+        let archived = try appDB.dbQueue.read { db in
+            try Trip.filter(Column("archivedAt") != nil)
+                .order(Column("createdAt").desc)
+                .fetchAll(db)
+        }
+
+        XCTAssertEqual(archived.count, 1, "should have exactly 1 archived trip")
+        XCTAssertEqual(archived[0].id, archivedTrip.id, "archived trip should be the archived one")
+    }
+
     func testImportedTripHasNilSlug() throws {
         let appDB = try AppDatabase.makeInMemory()
         let trip = makeTrip(slug: nil)

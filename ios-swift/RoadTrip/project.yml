@@ -6,8 +6,9 @@
 # See README.md in this directory for the loop.
 name: RoadTrip
 
-# Build configurations. Debug → local backend; Release → prod; Release-TestFlight →
-# Azure dev slot (the DEVSLOT compilation flag selects it in APIEnvironment).
+# Build configurations. Debug → local backend; Release → prod (TestFlight + App Store archive
+# with this). Release-TestFlight → Azure dev slot via the DEVSLOT flag — an OPT-IN release build
+# for testing against the dev slot; it is NOT the archive config anymore.
 configs:
   Debug: debug
   Release: release
@@ -24,8 +25,8 @@ settings:
   base:
     DEVELOPMENT_TEAM: GP2M7H6R3U          # Patrick's Apple Developer team (per design doc Phase 1)
     SWIFT_VERSION: "5.9"
-    MARKETING_VERSION: "0.1.0"
-    CURRENT_PROJECT_VERSION: "1"
+    MARKETING_VERSION: "1.0.0"             # v1.0 — first TestFlight/App Store release
+    CURRENT_PROJECT_VERSION: "1"           # build number; bump per upload to App Store Connect
     SWIFT_STRICT_CONCURRENCY: complete    # surface actor/Sendable issues early (background URLSession work in Phase 6)
     GENERATE_INFOPLIST_FILE: YES          # all targets (app + test bundles) get a synthesized Info.plist
 
@@ -42,6 +43,9 @@ targets:
     platform: iOS
     sources:
       - path: RoadTrip
+        # Exclude docs (CLAUDE.md etc.) so multiple same-named .md files don't collide as bundle resources
+        excludes:
+          - "**/*.md"
     dependencies:
       - package: GRDB
     settings:
@@ -53,6 +57,10 @@ targets:
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
         INFOPLIST_KEY_NSLocationWhenInUseUsageDescription: "Road Trip centers the map on your location, including when a trip has no photos yet."
         INFOPLIST_KEY_NSPhotoLibraryUsageDescription: "Road Trip reads the photos you pick so it can keep their location and date, then pin them on your trip map."
+        INFOPLIST_KEY_NSCameraUsageDescription: "Road Trip uses your camera to capture photos straight onto your trip map."
+        # Only standard HTTPS/TLS encryption → exempt from export compliance. Declaring it here
+        # skips the manual "missing compliance" prompt on every App Store Connect upload.
+        INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: "NO"
         # ATS exception so the simulator app can talk to the local dev backend over http://localhost:5100 (Phase 3 integration).
         INFOPLIST_KEY_NSAppTransportSecurity__NSAllowsLocalNetworking: "YES"
         TARGETED_DEVICE_FAMILY: "1"                        # iPhone only (design excludes iPad)
@@ -60,8 +68,21 @@ targets:
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
       configs:
         Release-TestFlight:
+          # Opt-in dev-slot release build (NOT the TestFlight archive — that's `Release`/prod now).
           # Selects the Azure dev slot base URL in APIEnvironment (#elseif DEVSLOT).
           SWIFT_ACTIVE_COMPILATION_CONDITIONS: $(inherited) DEVSLOT
+    # SwiftLint build phase — non-fatal; skipped gracefully when swiftlint is absent.
+    # Install: brew install swiftlint
+    # Never uses --strict so a lint warning never breaks the build.
+    postBuildScripts:
+      - name: SwiftLint
+        script: |
+          if which swiftlint >/dev/null 2>&1; then
+            swiftlint lint --config "${SRCROOT}/.swiftlint.yml" --quiet
+          else
+            echo "SwiftLint not installed — skipping lint (brew install swiftlint to enable)"
+          fi
+        basedOnDependencyAnalysis: false
 
   RoadTripTests:
     type: bundle.unit-test
@@ -87,13 +108,15 @@ schemes:
         RoadTrip: all
     run:
       config: Debug
-      # Point Debug runs at the Azure dev slot so on-device builds reach a real backend
-      # (localhost is unreachable from a phone). Baked in here so `xcodegen generate` can't
-      # wipe it the way a manually-added scheme env var gets wiped. Only the run action —
-      # the test action stays on the APIEnvironment default (localhost) for integration tests.
+      # Point Debug runs at PROD — v1.0 ships on prod, so dev/device runs exercise the real
+      # backend (localhost is unreachable from a phone). The Azure dev slot is reserved for 1.1:
+      # flip this value to https://app-roadtripmap-prod-dev.azurewebsites.net (or build the
+      # Release-TestFlight config) when starting 1.1 work. Baked in here so `xcodegen generate`
+      # can't wipe it; only the run action — the test action stays on the APIEnvironment default
+      # (localhost) for local integration tests.
       environmentVariables:
         - variable: API_BASE_URL
-          value: https://app-roadtripmap-prod-dev.azurewebsites.net
+          value: https://app-roadtripmap-prod.azurewebsites.net
           isEnabled: true
     test:
       config: Debug
@@ -101,4 +124,4 @@ schemes:
         - RoadTripTests
         - RoadTripUITests
     archive:
-      config: Release-TestFlight   # TestFlight archives target the dev slot
+      config: Release   # TestFlight + App Store archives target PROD (no DEVSLOT flag → APIEnvironment #else)

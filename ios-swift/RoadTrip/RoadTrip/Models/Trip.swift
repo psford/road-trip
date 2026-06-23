@@ -31,6 +31,10 @@ struct Trip: Codable, Identifiable, Equatable {
 
     /// When this row was last refreshed from the server (stale-while-revalidate).
     var cachedAt: Date
+
+    /// When this trip was locally archived by the user (soft delete).
+    /// `nil` = active; non-nil = locally archived (server is unaware, trip data intact).
+    var archivedAt: Date? = nil
 }
 
 // MARK: - GRDB persistence

@@ -1,0 +1,228 @@
+#!/usr/bin/env bash
+# .githooks/pre-commit
+#
+# Hard-blocks on:
+#   (a) project.yml staged but missing excludes: **/*.md (bundle-collision guard)
+#   (b) *.md files added under ios-swift/RoadTrip/RoadTrip/ with basename collisions
+#   (c) PhotosPicker/.photosPicker missing photoLibrary: in staged *.swift
+#       (single-line and awk 2-line window; excludes StagingPhotosPicker.swift)
+#   (d) removePersistentDomain( in staged *.swift
+#
+# Warns only (never exits 1) on:
+#   (e) A new pure-helper Swift file (non-View enum/struct) >~80 non-comment lines
+#       under Views/Trips|Photos without a companion <Name>Tests.swift
+
+set -euo pipefail
+
+PASS=0
+FAIL=1
+
+red()    { printf "\033[31m%s\033[0m\n" "$*"; }
+yellow() { printf "\033[33m%s\033[0m\n" "$*"; }
+green()  { printf "\033[32m%s\033[0m\n" "$*"; }
+bold()   { printf "\033[1m%s\033[0m\n" "$*"; }
+
+errors=0
+
+# ─── (a) project.yml bundle-collision guard ───────────────────────────────────
+# If project.yml is staged, assert it still contains the excludes: **/*.md guard.
+# That guard prevents multiple CLAUDE.md files from colliding as bundle resources.
+
+if git diff --cached --name-only | grep -q '^ios-swift/RoadTrip/project\.yml$'; then
+    staged_yml=$(git show ":ios-swift/RoadTrip/project.yml" 2>/dev/null || true)
+    if [[ -z "$staged_yml" ]]; then
+        staged_yml=$(git diff --cached -- ios-swift/RoadTrip/project.yml | grep '^+' | grep -v '^+++' | sed 's/^+//')
+    fi
+    if ! echo "$staged_yml" | grep -qE 'excludes:|"\*\*/\*\.md"'; then
+        red "BLOCKED (a): ios-swift/RoadTrip/project.yml no longer contains the"
+        red "            excludes: **/*.md guard (bundle-collision guard removed)."
+        red "            Restore the excludes block under the RoadTrip target's sources."
+        errors=$(( errors + 1 ))
+    fi
+fi
+
+# ─── (b) *.md basename collisions under ios-swift/RoadTrip/RoadTrip/ ─────────
+# If any new *.md files are added under the app source tree, check for basename
+# collisions (two files with the same name in different directories).
+
+new_mds=$(git diff --cached --name-only --diff-filter=A | grep '^ios-swift/RoadTrip/RoadTrip/.*\.md$' || true)
+if [[ -n "$new_mds" ]]; then
+    # Gather all .md files that will exist (committed + staged)
+    all_mds=$(git ls-files "ios-swift/RoadTrip/RoadTrip/*.md" 2>/dev/null; echo "$new_mds")
+    # Find basenames that appear more than once
+    duplicate_bases=$(echo "$all_mds" | xargs -I{} basename {} | sort | uniq -d || true)
+    if [[ -n "$duplicate_bases" ]]; then
+        red "BLOCKED (b): *.md basename collision detected under ios-swift/RoadTrip/RoadTrip/."
+        red "            Duplicate basenames (would collide as bundle resources):"
+        while IFS= read -r base; do
+            red "              $base"
+        done <<< "$duplicate_bases"
+        red "            Rename one of the files or add it to project.yml excludes."
+        errors=$(( errors + 1 ))
+    fi
+fi
+
+# ─── (c) PhotosPicker / .photosPicker missing photoLibrary: ──────────────────
+# Staged *.swift files (excluding StagingPhotosPicker.swift) must not contain
+# PhotosPicker( or .photosPicker( calls that have selection: or matching: but
+# lack photoLibrary: on the same or immediately adjacent line.
+#
+# Two checks:
+#   1. Single-line: entire call on one line (grep -E)
+#   2. Two-line window: call spans two lines (awk sliding window)
+
+staged_swift=$(git diff --cached --name-only --diff-filter=ACMR | \
+    grep '\.swift$' | \
+    grep -v 'StagingPhotosPicker\.swift' || true)
+
+picker_violations=""
+
+for f in $staged_swift; do
+    # Get the staged content of the file
+    staged_content=$(git show ":$f" 2>/dev/null || true)
+    [[ -z "$staged_content" ]] && continue
+
+    # ── Single-line check ─────────────────────────────────────────────────────
+    # A line containing PhotosPicker( or .photosPicker( AND (selection: or matching:)
+    # but NOT photoLibrary:
+    single_line_hits=$(echo "$staged_content" | grep -nE '(PhotosPicker\(|\.photosPicker\()' | \
+        grep -viE 'stagingphotospicker' | \
+        grep -E '(selection:|matching:)' | \
+        grep -vE 'photoLibrary:' | \
+        awk -F: '{print $1}' || true)
+
+    if [[ -n "$single_line_hits" ]]; then
+        while IFS= read -r linenum; do
+            picker_violations="${picker_violations}  $f:$linenum — single-line PhotosPicker/photosPicker missing photoLibrary:\n"
+        done <<< "$single_line_hits"
+    fi
+
+    # ── Two-line window check (awk) ───────────────────────────────────────────
+    # Catches calls where the opening token is on line N and parameters span
+    # line N+1.  If line N has PhotosPicker( or .photosPicker(, check lines N and
+    # N+1 together for (selection:|matching:) and absence of photoLibrary:.
+    two_line_hits=$(echo "$staged_content" | awk '
+    {
+        lines[NR] = $0
+    }
+    END {
+        for (i = 1; i < NR; i++) {
+            pair = lines[i] "\n" lines[i+1]
+            # Pair contains a picker call
+            if (pair ~ /(PhotosPicker\(|\.photosPicker\()/ && pair !~ /[Ss]tagingPhotosPicker/) {
+                # Pair contains selection: or matching:
+                if (pair ~ /(selection:|matching:)/) {
+                    # Pair does NOT contain photoLibrary:
+                    if (pair !~ /photoLibrary:/) {
+                        print i
+                    }
+                }
+            }
+        }
+    }' || true)
+
+    if [[ -n "$two_line_hits" ]]; then
+        while IFS= read -r linenum; do
+            picker_violations="${picker_violations}  $f:$linenum — multi-line PhotosPicker/photosPicker missing photoLibrary:\n"
+        done <<< "$two_line_hits"
+    fi
+done
+
+if [[ -n "$picker_violations" ]]; then
+    red "BLOCKED (c): PhotosPicker / .photosPicker call(s) missing photoLibrary: .shared()."
+    red "            Without photoLibrary: .shared(), item.itemIdentifier is nil and every"
+    red "            pick throws CaptureError.noAsset."
+    red "            Use StagingPhotosPicker or .stagingPhotosPicker instead."
+    red "            Violations:"
+    printf "%b" "$picker_violations" | while IFS= read -r line; do red "  $line"; done
+    errors=$(( errors + 1 ))
+fi
+
+# ─── (d) removePersistentDomain banned ───────────────────────────────────────
+# removePersistentDomain(forName:) corrupts the UserDefaults in-memory cache —
+# all in-flight writes for the domain are lost until next process launch.
+# This caused a real bug in AppBootstrap. Use removeObject(forKey:) per-key.
+
+domain_violations=""
+
+for f in $staged_swift; do
+    staged_content=$(git show ":$f" 2>/dev/null || true)
+    [[ -z "$staged_content" ]] && continue
+
+    hits=$(echo "$staged_content" | grep -n 'removePersistentDomain(' | awk -F: '{print $1}' || true)
+    if [[ -n "$hits" ]]; then
+        while IFS= read -r linenum; do
+            domain_violations="${domain_violations}  $f:$linenum\n"
+        done <<< "$hits"
+    fi
+done
+
+if [[ -n "$domain_violations" ]]; then
+    red "BLOCKED (d): removePersistentDomain(forName:) is banned."
+    red "            It corrupts the UserDefaults in-memory cache (all in-flight writes"
+    red "            for the domain are lost until next launch). Caused a real bug."
+    red "            Use UserDefaults.standard.removeObject(forKey:) per-key instead."
+    red "            See AppBootstrap.swift for the correct pattern."
+    red "            Violations:"
+    printf "%b" "$domain_violations" | while IFS= read -r line; do red "  $line"; done
+    errors=$(( errors + 1 ))
+fi
+
+# ─── (e) Non-obvious helper: warn if new pure-helper file >80 lines, no test ─
+# WARNING ONLY — never exits 1.
+#
+# Heuristic: a new *.swift file under Views/Trips or Views/Photos that:
+#   - Is NOT a View (filename does not end in View.swift and does not contain
+#     ': View' or 'some View' in its content)
+#   - Contains an enum or struct (pure-helper pattern)
+#   - Has >80 non-comment, non-blank source lines
+#   - Has no corresponding <BaseName>Tests.swift in RoadTripTests/
+#
+# Framing: non-obvious logic/math should ship with an oracle or property test.
+
+new_swift_views=$(git diff --cached --name-only --diff-filter=A | \
+    grep -E 'ios-swift/RoadTrip/RoadTrip/Views/(Trips|Photos)/[^/]+\.swift$' || true)
+
+for f in $new_swift_views; do
+    basename_noext=$(basename "$f" .swift)
+
+    # Skip View files (they get visual review, not unit tests)
+    if echo "$basename_noext" | grep -qiE 'View$'; then continue; fi
+
+    staged_content=$(git show ":$f" 2>/dev/null || true)
+    [[ -z "$staged_content" ]] && continue
+
+    # Must contain enum or struct (pure-helper pattern)
+    if ! echo "$staged_content" | grep -qE '^\s*(enum|struct)\s+'; then continue; fi
+
+    # Count non-comment, non-blank lines
+    source_lines=$(echo "$staged_content" | grep -v '^\s*//' | grep -v '^\s*$' | wc -l | tr -d ' ')
+    if [[ "$source_lines" -le 80 ]]; then continue; fi
+
+    # Check for a companion test file
+    test_file="ios-swift/RoadTrip/RoadTripTests/${basename_noext}Tests.swift"
+    if git ls-files --cached --others "$test_file" | grep -q . 2>/dev/null || \
+       git diff --cached --name-only --diff-filter=A | grep -q "$test_file"; then
+        continue
+    fi
+
+    yellow "WARNING (e): $f"
+    yellow "             This new helper file has $source_lines non-comment source lines"
+    yellow "             but no companion ${basename_noext}Tests.swift was found."
+    yellow "             Non-obvious logic and math should ship with an oracle or property"
+    yellow "             test so regressions surface before a crash report does."
+    yellow "             This is a reminder, not a block. Commit proceeds."
+done
+
+# ─── Result ───────────────────────────────────────────────────────────────────
+
+if [[ $errors -gt 0 ]]; then
+    echo ""
+    bold "pre-commit: $errors check(s) failed. Commit blocked."
+    bold "            Fix the issues above, re-stage, and commit again."
+    bold "            To bypass in an emergency: git commit --no-verify"
+    exit 1
+fi
+
+green "pre-commit: all checks passed."
+exit 0

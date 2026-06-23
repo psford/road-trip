@@ -76,4 +76,17 @@ struct KeychainStore {
         try removeToken(kind: .secret, tripId: tripId)
         try removeToken(kind: .view, tripId: tripId)
     }
+
+    /// Removes every token under this service. Used to reset state for UI tests (sample trips get
+    /// fresh random ids each run, so their tokens would otherwise orphan and accumulate).
+    func removeAllTokens() throws {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+        ]
+        let status = SecItemDelete(query as CFDictionary)
+        guard status == errSecSuccess || status == errSecItemNotFound else {
+            throw KeychainError.unexpectedStatus(status)
+        }
+    }
 }
