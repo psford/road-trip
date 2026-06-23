@@ -74,7 +74,33 @@ final class ImageLoaderTests: XCTestCase {
         XCTAssertNotNil(image, "a file:// URL must load from disk even with no network")
     }
 
+    func testLocalFileIsSizedPerTierAndCachedSeparately() async throws {
+        // A 40pt map pin (.thumb) shouldn't decode the full-res original; tiers must also cache
+        // separately so a small .thumb decode doesn't get served back for the larger .display.
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let fileURL = dir.appendingPathComponent("big.jpg")
+        try makeJPEG(side: 400).write(to: fileURL)
+
+        let loader = await ImageLoader(fileCache: nil, fetch: { _ in throw URLError(.notConnectedToInternet) })
+        let trip = UUID()
+        let thumb = await loader.image(for: fileURL, tripId: trip, photoId: -1, tier: .thumb)
+        let display = await loader.image(for: fileURL, tripId: trip, photoId: -1, tier: .display)
+
+        let thumbW = try XCTUnwrap(thumb).size.width
+        let displayW = try XCTUnwrap(display).size.width
+        XCTAssertLessThanOrEqual(thumbW, 200, ".thumb decodes small, not the full original")
+        XCTAssertGreaterThan(displayW, thumbW, ".display is not served the cached .thumb (separate keys)")
+    }
+
     // MARK: - Helpers
+
+    private func makeJPEG(side: CGFloat) -> Data {
+        UIGraphicsImageRenderer(size: CGSize(width: side, height: side)).jpegData(withCompressionQuality: 1) { ctx in
+            UIColor.systemTeal.setFill(); ctx.fill(CGRect(x: 0, y: 0, width: side, height: side))
+        }
+    }
 
     private func tempCache() throws -> PhotoFileCache {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)

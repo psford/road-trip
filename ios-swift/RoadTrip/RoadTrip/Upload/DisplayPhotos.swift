@@ -55,11 +55,14 @@ private struct CoordKey: Hashable {
 
 private extension UUID {
     /// A stable, negative pseudo-id for an optimistic photo (derived from the upload id, so it's
-    /// consistent across renders within a session). Negative keeps it clear of server ids (positive)
-    /// and sample data (900_000_000+).
+    /// consistent across renders within a session). Folds all 16 bytes (FNV-1a) so distinct uploads
+    /// don't collide; negative keeps it clear of server ids (positive) and sample data (900_000_000+).
     var optimisticPhotoID: Int {
         let b = uuid
-        let high = (Int(b.0) << 24) | (Int(b.1) << 16) | (Int(b.2) << 8) | Int(b.3)
-        return -(high & 0x7FFF_FFFF) - 1
+        let bytes = [b.0, b.1, b.2, b.3, b.4, b.5, b.6, b.7,
+                     b.8, b.9, b.10, b.11, b.12, b.13, b.14, b.15]
+        var hash: UInt64 = 1_469_598_103_934_665_603   // FNV-1a 64-bit offset basis
+        for byte in bytes { hash = (hash ^ UInt64(byte)) &* 1_099_511_628_211 }
+        return -Int(hash & 0x7FFF_FFFF_FFFF_FFFF) - 1   // mask to 63 bits → always a valid negative Int
     }
 }

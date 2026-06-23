@@ -90,4 +90,16 @@ final class DisplayPhotosTests: XCTestCase {
     func testCommittedPhotosAreNotOptimistic() {
         XCTAssertFalse(committed(id: 1).isOptimistic)
     }
+
+    func testOptimisticIDsDifferForUUIDsThatShareLeadingBytes() {
+        // Two uploads whose UUIDs differ only in a trailing byte must still get distinct optimistic
+        // ids — otherwise SwiftUI ForEach(id:) sees duplicate ids and mis-diffs the cells.
+        let a = UUID(uuid: (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16))
+        let b = UUID(uuid: (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 99))
+        let pa = DisplayPhotos.build(committed: [], pending: [upload(uploadId: a)]).first
+        let pb = DisplayPhotos.build(committed: [], pending: [upload(uploadId: b)]).first
+        XCTAssertNotNil(pa); XCTAssertNotNil(pb)
+        XCTAssertNotEqual(pa?.id, pb?.id, "distinct uploads must get distinct optimistic ids")
+        XCTAssertTrue((pa?.id ?? 0) < 0 && (pb?.id ?? 0) < 0, "optimistic ids are negative")
+    }
 }

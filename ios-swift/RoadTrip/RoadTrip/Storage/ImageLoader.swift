@@ -32,19 +32,23 @@ final class ImageLoader {
     /// Returns the image, hitting memory → disk → network in order. `nil` only if the
     /// network fails or the bytes don't decode.
     func image(for url: URL, tripId: UUID, photoId: Int, tier: PhotoFileCache.Tier) async -> UIImage? {
-        let key = url.absoluteString as NSString
-        if let cached = memory.object(forKey: key) { return cached }
-
-        // Optimistic (staged, not-yet-uploaded) photos point their image at the on-disk original
-        // via a file:// URL. Load + downsample it locally — never the network — so it renders in a
-        // no-service area. Downsampled off the main thread (the original is full-size).
+        // Optimistic (staged, not-yet-uploaded) photos point their image at the on-disk original via
+        // a file:// URL (all three tiers share one URL). Load + downsample it locally — never the
+        // network — sized to the requesting tier so a 40pt pin doesn't decode the full original, and
+        // keyed per-size so the small .thumb decode isn't served back for the larger .display.
         if url.isFileURL {
+            let maxPixel = Self.maxPixel(for: tier)
+            let key = "\(url.absoluteString)#\(maxPixel)" as NSString
+            if let cached = memory.object(forKey: key) { return cached }
             guard let image = await Task.detached(priority: .utility, operation: {
-                Self.downsampledImage(at: url, maxPixel: 1500)
+                Self.downsampledImage(at: url, maxPixel: maxPixel)
             }).value else { return nil }
             memory.setObject(image, forKey: key)
             return image
         }
+
+        let key = url.absoluteString as NSString
+        if let cached = memory.object(forKey: key) { return cached }
 
         if let data = fileCache?.data(tripId: tripId, photoId: photoId, tier: tier),
            let image = UIImage(data: data) {
@@ -56,6 +60,15 @@ final class ImageLoader {
         try? fileCache?.store(data, tripId: tripId, photoId: photoId, tier: tier)
         memory.setObject(image, forKey: key)
         return image
+    }
+
+    /// Target pixel size for a locally-decoded file, by tier — a map pin / strip thumbnail needs far
+    /// fewer pixels than the full-screen popup.
+    nonisolated private static func maxPixel(for tier: PhotoFileCache.Tier) -> Int {
+        switch tier {
+        case .thumb: return 200
+        case .display, .original: return 1500
+        }
     }
 
     /// Decodes only as many pixels as needed from a local image file via ImageIO.
