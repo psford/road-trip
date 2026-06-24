@@ -303,6 +303,8 @@ app.MapGet("/post/{secretToken}", () => Results.File("post.html", "text/html"));
 
 app.MapGet("/trips/{viewToken}", () => Results.File("trips.html", "text/html"));
 
+app.MapGet("/privacy", () => Results.File("privacy.html", "text/html"));
+
 app.MapGet("/api/trips/view/{viewToken}", async (string viewToken, RoadTripDbContext db) =>
 {
     // Validate view token format (UUID)
